@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>MandaYa - Solicita un envío</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
@@ -16,9 +16,27 @@
     <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
     
     <style>
-        body { background-color: #f8fafc; }
-        .sidebar { box-shadow: 4px 0 15px rgba(0, 0, 0, 0.1); }
-        #map { height: 100vh; width: 100%; z-index: 1; }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body { 
+            background-color: #f8fafc;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        }
+        
+        .sidebar { 
+            box-shadow: 4px 0 15px rgba(0, 0, 0, 0.1);
+            background: white;
+        }
+        
+        #map { 
+            height: 100vh; 
+            width: 100%; 
+            z-index: 1;
+        }
         
         .toast-message {
             position: fixed;
@@ -43,7 +61,8 @@
         .select-mode-badge {
             position: absolute;
             top: 20px;
-            left: 20px;
+            left: 50%;
+            transform: translateX(-50%);
             background: white;
             padding: 8px 16px;
             border-radius: 30px;
@@ -54,17 +73,20 @@
             display: flex;
             gap: 10px;
         }
+        
         .mode-btn {
             padding: 5px 12px;
             border-radius: 20px;
             cursor: pointer;
             transition: all 0.3s;
         }
+        
         .mode-btn.active { background: #FF6200; color: white; }
         .mode-btn.inactive { background: #e5e7eb; color: #4b5563; }
+        
         .delivery-info {
             position: absolute;
-            bottom: 80px;
+            bottom: 20px;
             right: 20px;
             background: white;
             padding: 12px 20px;
@@ -77,6 +99,7 @@
             align-items: center;
             gap: 10px;
         }
+        
         .delivery-online {
             background: #10b981;
             width: 10px;
@@ -84,11 +107,13 @@
             border-radius: 50%;
             animation: pulse 2s infinite;
         }
+        
         @keyframes pulse {
             0% { opacity: 1; transform: scale(1); }
             50% { opacity: 0.5; transform: scale(1.2); }
             100% { opacity: 1; transform: scale(1); }
         }
+        
         .loading-spinner {
             display: inline-block;
             width: 16px;
@@ -98,35 +123,44 @@
             border-top-color: white;
             animation: spin 1s ease-in-out infinite;
         }
+        
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
+        
         .custom-marker {
             cursor: grab;
         }
+        
         .custom-marker:active {
             cursor: grabbing;
         }
+        
         .moto-marker {
             background: transparent;
             border: none;
         }
+        
         .modal-uber {
             animation: slideUp 0.3s ease-out;
             position: relative;
             z-index: 10001;
         }
+        
         @keyframes slideUp {
             from { transform: translateY(30px); opacity: 0; }
             to { transform: translateY(0); opacity: 1; }
         }
+        
         .overflow-y-auto::-webkit-scrollbar {
-            width: 6px;
+            width: 4px;
         }
+        
         .overflow-y-auto::-webkit-scrollbar-track {
             background: #374151;
             border-radius: 10px;
         }
+        
         .overflow-y-auto::-webkit-scrollbar-thumb {
             background: #FF6200;
             border-radius: 10px;
@@ -144,20 +178,103 @@
         .leaflet-control-container {
             z-index: 10;
         }
+        
+        /* Responsive ajustes */
+        @media (max-width: 1024px) {
+            .sidebar-mobile-hidden {
+                display: none;
+            }
+            
+            .sidebar-mobile-visible {
+                display: flex;
+            }
+            
+            .delivery-info {
+                bottom: 80px;
+                right: 16px;
+                left: auto;
+                padding: 10px 16px;
+                font-size: 12px;
+            }
+            
+            .select-mode-badge {
+                top: 12px;
+                padding: 6px 12px;
+                font-size: 12px;
+                gap: 6px;
+            }
+            
+            .mode-btn {
+                padding: 4px 10px;
+                font-size: 12px;
+            }
+        }
+        
+        @media (min-width: 1024px) {
+            .sidebar-mobile-visible {
+                display: none;
+            }
+            
+            .sidebar-mobile-hidden {
+                display: flex;
+            }
+        }
+        
+        /* Botón flotante para mobile */
+        .fab-menu {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+        
+        .fab-button {
+            background: #FF6200;
+            width: 56px;
+            height: 56px;
+            border-radius: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .fab-button:hover {
+            transform: scale(1.05);
+            background: #E65C00;
+        }
+        
+        /* Tarjeta de resumen en mobile */
+        .tarifa-mobile {
+            background: linear-gradient(135deg, #FF6200, #FF8C00);
+            border-radius: 16px;
+            padding: 12px;
+            margin: 8px 0;
+        }
     </style>
 </head>
-<body class="flex h-screen overflow-hidden">
+<body class="h-screen overflow-hidden relative">
 
-    <div class="w-full lg:w-96 bg-white sidebar flex flex-col h-full overflow-auto z-10 relative">
-        <div class="bg-[#FF6200] text-white p-4 flex items-center justify-between">
+    <!-- SIDEBAR DESKTOP (visible en lg) -->
+    <div class="hidden lg:flex w-96 bg-white sidebar flex-col h-full overflow-auto z-10 relative shadow-xl">
+        <div class="bg-[#FF6200] text-white p-5 flex items-center justify-between sticky top-0 z-20">
             <div class="flex items-center gap-3">
-                <img src="img/logo.png" alt="MandaYa" class="w-10 h-10 object-contain" onerror="this.src='https://placehold.co/40x40/FF6200/white?text=M'">
-                <div><h1 class="font-bold text-xl">MandaYa</h1><p class="text-xs">Envío seguro • Rápido</p></div>
+                <div class="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
+                    <i class="fas fa-box text-white text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-xl">MandaYa</h1>
+                    <p class="text-xs opacity-90">Envío seguro • Rápido</p>
+                </div>
             </div>
-            <button onclick="verPerfil()" class="text-white"><i class="fas fa-user-circle text-3xl"></i></button>
+            <button onclick="verPerfil()" class="text-white hover:bg-white/20 rounded-full p-2 transition-all">
+                <i class="fas fa-user-circle text-3xl"></i>
+            </button>
         </div>
 
-        <div id="userInfo" class="bg-gray-50 p-3 border-b text-sm"></div>
+        <div id="userInfo" class="bg-gray-50 p-4 border-b"></div>
 
         <div class="p-5 flex-1 overflow-auto">
             <h2 class="text-2xl font-semibold mb-4">Solicita un envío</h2>
@@ -167,7 +284,7 @@
                     <label class="text-sm text-gray-600 font-medium">📍 Punto de partida</label>
                     <div class="mt-1 bg-gray-100 border border-gray-300 rounded-2xl p-4 flex items-center gap-3">
                         <i class="fas fa-circle text-[#FF6200] text-lg"></i>
-                        <input type="text" id="origen" class="bg-transparent flex-1 outline-none text-lg" placeholder="Arrastra el marcador naranja">
+                        <input type="text" id="origen" class="bg-transparent flex-1 outline-none text-base" placeholder="Arrastra el marcador naranja">
                     </div>
                 </div>
 
@@ -175,13 +292,13 @@
                     <label class="text-sm text-gray-600 font-medium">🏁 Destino</label>
                     <div class="mt-1 bg-gray-100 border border-gray-300 rounded-2xl p-4 flex items-center gap-3">
                         <i class="fas fa-square text-blue-600 text-lg"></i>
-                        <input type="text" id="destino" class="bg-transparent flex-1 outline-none text-lg" placeholder="Arrastra el marcador azul">
+                        <input type="text" id="destino" class="bg-transparent flex-1 outline-none text-base" placeholder="Arrastra el marcador azul">
                     </div>
                 </div>
 
                 <div id="tarifaContainer" class="hidden p-4 rounded-2xl text-center" style="background: linear-gradient(135deg, #FF6200, #FF8C00); color: white;">
                     <i class="fas fa-tag mr-2"></i>
-                    Tarifa: <span id="tarifaValue">$0</span>
+                    Tarifa: <span id="tarifaValue" class="font-bold">$0</span>
                     <button onclick="mostrarResumenRuta()" class="ml-3 text-xs bg-white/20 rounded-full px-2 py-1 hover:bg-white/30 transition-all">
                         <i class="fas fa-info-circle"></i> Detalles
                     </button>
@@ -189,35 +306,116 @@
 
                 <div>
                     <label class="text-sm text-gray-600 font-medium">📦 ¿Qué vas a enviar?</label>
-                    <select id="tipoEnvio" class="w-full mt-1 bg-gray-100 border border-gray-300 rounded-2xl p-4 text-lg outline-none">
+                    <select id="tipoEnvio" class="w-full mt-1 bg-gray-100 border border-gray-300 rounded-2xl p-4 text-base outline-none">
                         <option value="">Seleccionar</option>
-                        <option value="comida">Comida / Restaurante</option>
-                        <option value="paquete">Paquete / Documentos</option>
-                        <option value="mercancia">Mercancía / Productos</option>
-                        <option value="farmacia">Farmacia / Medicamentos</option>
+                        <option value="comida">🍔 Comida / Restaurante</option>
+                        <option value="paquete">📦 Paquete / Documentos</option>
+                        <option value="mercancia">📦 Mercancía / Productos</option>
+                        <option value="farmacia">💊 Farmacia / Medicamentos</option>
                     </select>
                 </div>
 
                 <button onclick="solicitarEnvio()" 
-                        class="w-full bg-black hover:bg-gray-900 text-white font-bold py-5 rounded-2xl text-xl mt-4 transition-all">
-                    SOLICITAR ENVÍO
+                        class="w-full bg-black hover:bg-gray-800 text-white font-bold py-5 rounded-2xl text-lg mt-4 transition-all flex items-center justify-center gap-2">
+                    <i class="fas fa-paper-plane"></i> SOLICITAR ENVÍO
                 </button>
             </div>
         </div>
 
-        <div class="border-t p-4 text-center text-sm text-gray-500">
-            <button onclick="verHistorial()" class="hover:text-orange-600"><i class="fas fa-history"></i> Mis envíos</button>
-            <button onclick="cerrarSesion()" class="ml-4 hover:text-orange-600"><i class="fas fa-sign-out-alt"></i> Salir</button>
+        <div class="border-t p-4 text-center text-sm text-gray-500 bg-white">
+            <button onclick="verHistorial()" class="hover:text-[#FF6200] transition-colors px-3 py-1">
+                <i class="fas fa-history mr-1"></i> Mis envíos
+            </button>
+            <button onclick="cerrarSesion()" class="ml-4 hover:text-[#FF6200] transition-colors px-3 py-1">
+                <i class="fas fa-sign-out-alt mr-1"></i> Salir
+            </button>
         </div>
     </div>
 
-    <div class="flex-1 relative hidden lg:block">
-        <div id="map"></div>
-           <div class="select-mode-badge" style="left: 50%; transform: translateX(-50%);">
-            <div id="btnOrigen" class="mode-btn active" onclick="setSelectMode('origen')"><i class="fas fa-circle text-[#FF6200] text-xs"></i> Origen</div>
-            <div id="btnDestino" class="mode-btn inactive" onclick="setSelectMode('destino')"><i class="fas fa-square text-blue-600 text-xs"></i> Destino</div>
+    <!-- SIDEBAR MOBILE (flotante, visible solo en mobile) -->
+    <div id="mobileSidebar" class="fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-2xl z-50 transition-transform duration-300 transform translate-y-0 lg:hidden" style="max-height: 65vh; overflow-y: auto;">
+        <div class="bg-[#FF6200] text-white p-4 rounded-t-3xl flex items-center justify-between sticky top-0 z-20">
+            <div class="flex items-center gap-2">
+                <i class="fas fa-box text-xl"></i>
+                <div>
+                    <h1 class="font-bold">MandaYa</h1>
+                    <p class="text-xs opacity-90">Solicita tu envío</p>
+                </div>
+            </div>
+            <button onclick="toggleMobileSidebar()" class="text-white">
+                <i class="fas fa-chevron-down text-xl"></i>
+            </button>
         </div>
         
+        <div id="userInfoMobile" class="bg-gray-50 p-3 border-b text-sm"></div>
+
+        <div class="p-4">
+            <h2 class="text-lg font-semibold mb-3">Solicita un envío</h2>
+
+            <div class="space-y-3">
+                <div>
+                    <label class="text-xs text-gray-600 font-medium">📍 Punto de partida</label>
+                    <div class="mt-1 bg-gray-100 border border-gray-300 rounded-xl p-3 flex items-center gap-2">
+                        <i class="fas fa-circle text-[#FF6200] text-sm"></i>
+                        <input type="text" id="origenMobile" class="bg-transparent flex-1 outline-none text-sm" placeholder="Origen" readonly>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="text-xs text-gray-600 font-medium">🏁 Destino</label>
+                    <div class="mt-1 bg-gray-100 border border-gray-300 rounded-xl p-3 flex items-center gap-2">
+                        <i class="fas fa-square text-blue-600 text-sm"></i>
+                        <input type="text" id="destinoMobile" class="bg-transparent flex-1 outline-none text-sm" placeholder="Destino" readonly>
+                    </div>
+                </div>
+
+                <div id="tarifaContainerMobile" class="hidden tarifa-mobile text-center text-white">
+                    <i class="fas fa-tag mr-1"></i>
+                    Tarifa: <span id="tarifaValueMobile" class="font-bold">$0</span>
+                    <button onclick="mostrarResumenRuta()" class="ml-2 text-xs bg-white/20 rounded-full px-2 py-0.5">
+                        <i class="fas fa-info-circle"></i>
+                    </button>
+                </div>
+
+                <div>
+                    <label class="text-xs text-gray-600 font-medium">📦 Tipo de envío</label>
+                    <select id="tipoEnvioMobile" class="w-full mt-1 bg-gray-100 border border-gray-300 rounded-xl p-3 text-sm outline-none">
+                        <option value="">Seleccionar</option>
+                        <option value="comida">🍔 Comida</option>
+                        <option value="paquete">📦 Paquete</option>
+                        <option value="mercancia">📦 Mercancía</option>
+                        <option value="farmacia">💊 Farmacia</option>
+                    </select>
+                </div>
+
+                <button onclick="solicitarEnvioMobile()" 
+                        class="w-full bg-black hover:bg-gray-800 text-white font-bold py-3 rounded-xl text-sm transition-all flex items-center justify-center gap-2">
+                    <i class="fas fa-paper-plane"></i> SOLICITAR ENVÍO
+                </button>
+            </div>
+        </div>
+
+        <div class="border-t p-3 text-center text-xs text-gray-500 flex justify-center gap-6">
+            <button onclick="verHistorial()" class="hover:text-[#FF6200]"><i class="fas fa-history mr-1"></i> Mis envíos</button>
+            <button onclick="cerrarSesion()" class="hover:text-[#FF6200]"><i class="fas fa-sign-out-alt mr-1"></i> Salir</button>
+        </div>
+    </div>
+
+    <!-- MAPA -->
+    <div class="flex-1 relative h-full w-full">
+        <div id="map" class="h-full w-full"></div>
+        
+        <!-- Selector Origen/Destino centrado -->
+        <div class="select-mode-badge">
+            <div id="btnOrigen" class="mode-btn active" onclick="setSelectMode('origen')">
+                <i class="fas fa-circle text-[#FF6200] text-xs"></i> Origen
+            </div>
+            <div id="btnDestino" class="mode-btn inactive" onclick="setSelectMode('destino')">
+                <i class="fas fa-square text-blue-600 text-xs"></i> Destino
+            </div>
+        </div>
+        
+        <!-- Información del delivery -->
         <div id="deliveryInfo" class="delivery-info hidden">
             <i class="fas fa-motorcycle text-[#FF6200] text-xl"></i>
             <div>
@@ -226,9 +424,105 @@
             </div>
             <div class="delivery-online"></div>
         </div>
+        
+        <!-- Botón centrar mapa -->
+        <button onclick="centrarMapa()" class="absolute bottom-20 right-4 bg-white p-3 rounded-full shadow-lg z-[1000] hover:bg-gray-100 transition-all">
+            <i class="fas fa-location-dot text-[#FF6200] text-lg"></i>
+        </button>
+        
+        <!-- Botón toggle sidebar mobile -->
+        <button onclick="toggleMobileSidebar()" class="fixed bottom-20 left-4 bg-[#FF6200] text-white p-3 rounded-full shadow-lg z-[1000] lg:hidden">
+            <i class="fas fa-plus text-lg"></i>
+        </button>
     </div>
 
     <script src="js/config.js"></script>
     <script src="js/cliente.js"></script>
+    
+    <script>
+        // Función para toggle del sidebar mobile
+        let mobileSidebarOpen = true;
+        
+        function toggleMobileSidebar() {
+            const sidebar = document.getElementById('mobileSidebar');
+            if (mobileSidebarOpen) {
+                sidebar.style.transform = 'translateY(100%)';
+                mobileSidebarOpen = false;
+            } else {
+                sidebar.style.transform = 'translateY(0)';
+                mobileSidebarOpen = true;
+            }
+        }
+        
+        // Sincronizar inputs mobile con desktop
+        function sincronizarInputsMobile() {
+            const origenDesktop = document.getElementById("origen");
+            const destinoDesktop = document.getElementById("destino");
+            const origenMobile = document.getElementById("origenMobile");
+            const destinoMobile = document.getElementById("destinoMobile");
+            const tarifaContainer = document.getElementById("tarifaContainer");
+            const tarifaContainerMobile = document.getElementById("tarifaContainerMobile");
+            const tarifaValue = document.getElementById("tarifaValue");
+            const tarifaValueMobile = document.getElementById("tarifaValueMobile");
+            const tipoEnvio = document.getElementById("tipoEnvio");
+            const tipoEnvioMobile = document.getElementById("tipoEnvioMobile");
+            
+            if (origenDesktop && origenMobile) origenMobile.value = origenDesktop.value;
+            if (destinoDesktop && destinoMobile) destinoMobile.value = destinoDesktop.value;
+            
+            if (tarifaContainer && tarifaContainerMobile) {
+                if (!tarifaContainer.classList.contains("hidden")) {
+                    tarifaContainerMobile.classList.remove("hidden");
+                    if (tarifaValue && tarifaValueMobile) {
+                        tarifaValueMobile.innerHTML = tarifaValue.innerHTML;
+                    }
+                } else {
+                    tarifaContainerMobile.classList.add("hidden");
+                }
+            }
+            
+            if (tipoEnvio && tipoEnvioMobile) tipoEnvioMobile.value = tipoEnvio.value;
+        }
+        
+        // Función para solicitar envío desde mobile
+        function solicitarEnvioMobile() {
+            const origenMobile = document.getElementById("origenMobile").value;
+            const destinoMobile = document.getElementById("destinoMobile").value;
+            const tipoMobile = document.getElementById("tipoEnvioMobile").value;
+            
+            if (origenMobile && destinoMobile && tipoMobile) {
+                if (document.getElementById("origen")) document.getElementById("origen").value = origenMobile;
+                if (document.getElementById("destino")) document.getElementById("destino").value = destinoMobile;
+                if (document.getElementById("tipoEnvio")) document.getElementById("tipoEnvio").value = tipoMobile;
+            }
+            
+            solicitarEnvio();
+        }
+        
+        function centrarMapa() {
+            if (map) map.setView([18.6456, -91.8249], 13);
+            mostrarToast("📍 Mapa centrado en Ciudad del Carmen");
+        }
+        
+        // Sincronizar cada segundo
+        setInterval(() => {
+            sincronizarInputsMobile();
+            
+            // Sincronizar userInfo mobile
+            const userInfo = document.getElementById("userInfo");
+            const userInfoMobile = document.getElementById("userInfoMobile");
+            if (userInfo && userInfoMobile && userInfo.innerHTML !== userInfoMobile.innerHTML) {
+                userInfoMobile.innerHTML = userInfo.innerHTML;
+            }
+        }, 500);
+        
+        // Override de mostrarToast para mobile
+        const originalMostrarToast = window.mostrarToast;
+        window.mostrarToast = function(msg, err) {
+            if (originalMostrarToast) originalMostrarToast(msg, err);
+            // También mostrar en consola para debug
+            console.log(msg);
+        };
+    </script>
 </body>
 </html>

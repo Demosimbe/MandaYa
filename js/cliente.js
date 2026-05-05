@@ -109,6 +109,11 @@ function loadUser() {
     document.getElementById("userInfo").innerHTML = `<div class="flex items-center gap-2"><i class="fas fa-user-circle text-[#FF6200] text-xl"></i><span class="font-medium">${currentUser.nombre}</span><span class="text-gray-400 text-xs">(Cliente)</span></div>`;
 }
 
+function centrarMapa() {
+    if(map) map.setView([18.6456, -91.8249], 13);
+    mostrarToast("📍 Mapa centrado en Ciudad del Carmen");
+}
+
 function setSelectMode(mode) {
     selectMode = mode;
     document.getElementById('btnOrigen').className = mode === 'origen' ? 'mode-btn active' : 'mode-btn inactive';
