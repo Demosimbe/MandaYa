@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MandaYa - Solicita un envío</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <!-- Leaflet Routing Machine -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+    <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+    
+    <style>
+        body { background-color: #f8fafc; }
+        .sidebar { box-shadow: 4px 0 15px rgba(0, 0, 0, 0.1); }
+        #map { height: 100vh; width: 100%; z-index: 1; }
+        
+        .toast-message {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%) translateY(20px);
+            background: #1f2937;
+            color: white;
+            padding: 14px 28px;
+            border-radius: 50px;
+            font-size: 14px;
+            font-weight: 500;
+            z-index: 10000;
+            box-shadow: 0 10px 25px -5px rgba(0,0,0,0.2);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            opacity: 0;
+            transition: all 0.3s ease;
+        }
+        
+        .select-mode-badge {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: white;
+            padding: 8px 16px;
+            border-radius: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            z-index: 1000;
+            font-size: 14px;
+            font-weight: 500;
+            display: flex;
+            gap: 10px;
+        }
+        .mode-btn {
+            padding: 5px 12px;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .mode-btn.active { background: #FF6200; color: white; }
+        .mode-btn.inactive { background: #e5e7eb; color: #4b5563; }
+        .delivery-info {
+            position: absolute;
+            bottom: 80px;
+            right: 20px;
+            background: white;
+            padding: 12px 20px;
+            border-radius: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            z-index: 1000;
+            font-size: 14px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .delivery-online {
+            background: #10b981;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.2); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+        .loading-spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .custom-marker {
+            cursor: grab;
+        }
+        .custom-marker:active {
+            cursor: grabbing;
+        }
+        .moto-marker {
+            background: transparent;
+            border: none;
+        }
+        .modal-uber {
+            animation: slideUp 0.3s ease-out;
+            position: relative;
+            z-index: 10001;
+        }
+        @keyframes slideUp {
+            from { transform: translateY(30px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .overflow-y-auto::-webkit-scrollbar {
+            width: 6px;
+        }
+        .overflow-y-auto::-webkit-scrollbar-track {
+            background: #374151;
+            border-radius: 10px;
+        }
+        .overflow-y-auto::-webkit-scrollbar-thumb {
+            background: #FF6200;
+            border-radius: 10px;
+        }
+        
+        /* MODALES POR ENCIMA DEL MAPA */
+        .fixed.inset-0 {
+            z-index: 9999 !important;
+        }
+        
+        #modalHistorial, #modalConfirmacion {
+            z-index: 10000 !important;
+        }
+        
+        .leaflet-control-container {
+            z-index: 10;
+        }
+    </style>
+</head>
+<body class="flex h-screen overflow-hidden">
+
+    <div class="w-full lg:w-96 bg-white sidebar flex flex-col h-full overflow-auto z-10 relative">
+        <div class="bg-[#FF6200] text-white p-4 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <img src="img/logo.png" alt="MandaYa" class="w-10 h-10 object-contain" onerror="this.src='https://placehold.co/40x40/FF6200/white?text=M'">
+                <div><h1 class="font-bold text-xl">MandaYa</h1><p class="text-xs">Envío seguro • Rápido</p></div>
+            </div>
+            <button onclick="verPerfil()" class="text-white"><i class="fas fa-user-circle text-3xl"></i></button>
+        </div>
+
+        <div id="userInfo" class="bg-gray-50 p-3 border-b text-sm"></div>
+
+        <div class="p-5 flex-1 overflow-auto">
+            <h2 class="text-2xl font-semibold mb-4">Solicita un envío</h2>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="text-sm text-gray-600 font-medium">📍 Punto de partida</label>
+                    <div class="mt-1 bg-gray-100 border border-gray-300 rounded-2xl p-4 flex items-center gap-3">
+                        <i class="fas fa-circle text-[#FF6200] text-lg"></i>
+                        <input type="text" id="origen" class="bg-transparent flex-1 outline-none text-lg" placeholder="Arrastra el marcador naranja">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="text-sm text-gray-600 font-medium">🏁 Destino</label>
+                    <div class="mt-1 bg-gray-100 border border-gray-300 rounded-2xl p-4 flex items-center gap-3">
+                        <i class="fas fa-square text-blue-600 text-lg"></i>
+                        <input type="text" id="destino" class="bg-transparent flex-1 outline-none text-lg" placeholder="Arrastra el marcador azul">
+                    </div>
+                </div>
+
+                <div id="tarifaContainer" class="hidden p-4 rounded-2xl text-center" style="background: linear-gradient(135deg, #FF6200, #FF8C00); color: white;">
+                    <i class="fas fa-tag mr-2"></i>
+                    Tarifa: <span id="tarifaValue">$0</span>
+                    <button onclick="mostrarResumenRuta()" class="ml-3 text-xs bg-white/20 rounded-full px-2 py-1 hover:bg-white/30 transition-all">
+                        <i class="fas fa-info-circle"></i> Detalles
+                    </button>
+                </div>
+
+                <div>
+                    <label class="text-sm text-gray-600 font-medium">📦 ¿Qué vas a enviar?</label>
+                    <select id="tipoEnvio" class="w-full mt-1 bg-gray-100 border border-gray-300 rounded-2xl p-4 text-lg outline-none">
+                        <option value="">Seleccionar</option>
+                        <option value="comida">Comida / Restaurante</option>
+                        <option value="paquete">Paquete / Documentos</option>
+                        <option value="mercancia">Mercancía / Productos</option>
+                        <option value="farmacia">Farmacia / Medicamentos</option>
+                    </select>
+                </div>
+
+                <button onclick="solicitarEnvio()" 
+                        class="w-full bg-black hover:bg-gray-900 text-white font-bold py-5 rounded-2xl text-xl mt-4 transition-all">
+                    SOLICITAR ENVÍO
+                </button>
+            </div>
+        </div>
+
+        <div class="border-t p-4 text-center text-sm text-gray-500">
+            <button onclick="verHistorial()" class="hover:text-orange-600"><i class="fas fa-history"></i> Mis envíos</button>
+            <button onclick="cerrarSesion()" class="ml-4 hover:text-orange-600"><i class="fas fa-sign-out-alt"></i> Salir</button>
+        </div>
+    </div>
+
+    <div class="flex-1 relative hidden lg:block">
+        <div id="map"></div>
+           <div class="select-mode-badge" style="left: 50%; transform: translateX(-50%);">
+            <div id="btnOrigen" class="mode-btn active" onclick="setSelectMode('origen')"><i class="fas fa-circle text-[#FF6200] text-xs"></i> Origen</div>
+            <div id="btnDestino" class="mode-btn inactive" onclick="setSelectMode('destino')"><i class="fas fa-square text-blue-600 text-xs"></i> Destino</div>
+        </div>
+        
+        <div id="deliveryInfo" class="delivery-info hidden">
+            <i class="fas fa-motorcycle text-[#FF6200] text-xl"></i>
+            <div>
+                <div id="deliveryNombre" class="font-bold text-sm">Delivery</div>
+                <div id="deliveryEstado" class="text-xs text-gray-500">Esperando asignación...</div>
+            </div>
+            <div class="delivery-online"></div>
+        </div>
+    </div>
+
+    <script src="js/config.js"></script>
+    <script src="js/cliente.js"></script>
+</body>
+</html>

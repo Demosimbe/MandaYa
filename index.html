@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MandaYa - Iniciar Sesión</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+
+    <style>
+        body {
+            background: #0a0a0a;
+        }
+        .card {
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        .logo-float {
+            animation: floatLogo 4s ease-in-out infinite;
+        }
+        @keyframes floatLogo {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+        .toast-message {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1f2937;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 50px;
+            font-size: 14px;
+            z-index: 100;
+            animation: fadeInOut 3s ease-in-out forwards;
+        }
+        @keyframes fadeInOut {
+            0% { opacity: 0; transform: translateX(-50%) translateY(20px); }
+            15% { opacity: 1; transform: translateX(-50%) translateY(0); }
+            85% { opacity: 1; transform: translateX(-50%) translateY(0); }
+            100% { opacity: 0; transform: translateX(-50%) translateY(20px); visibility: hidden; }
+        }
+        
+        .modal-uber {
+            animation: slideUp 0.3s ease-out;
+        }
+        
+        @keyframes slideUp {
+            from {
+                transform: translateY(50px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+        
+        .input-uber {
+            transition: all 0.3s ease;
+        }
+        
+        .input-uber:focus {
+            transform: scale(1.02);
+        }
+        
+        .btn-uber {
+            transition: all 0.3s ease;
+        }
+        
+        .btn-uber:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+        }
+
+        .left-side {
+            background-image: url('img/slider.png');
+            background-size: contain;
+            background-position: center;
+            background-repeat: no-repeat;
+        }
+
+        @keyframes speedLines {
+            0% {
+                transform: translateX(0);
+                opacity: 1;
+            }
+            100% {
+                transform: translateX(-200px);
+                opacity: 0;
+            }
+        }
+        
+        .speed-line {
+            position: absolute;
+            width: 50px;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, #FF6B00, transparent);
+            animation: speedLines 1s linear infinite;
+        }
+        
+        .speed-line:nth-child(1) { top: 30%; left: 100%; animation-delay: 0s; width: 80px; }
+        .speed-line:nth-child(2) { top: 50%; left: 100%; animation-delay: 0.3s; width: 60px; }
+        .speed-line:nth-child(3) { top: 70%; left: 100%; animation-delay: 0.6s; width: 100px; }
+        .speed-line:nth-child(4) { top: 40%; left: 100%; animation-delay: 0.2s; width: 40px; }
+        .speed-line:nth-child(5) { top: 80%; left: 100%; animation-delay: 0.5s; width: 70px; }
+        
+        .neon-text {
+            text-shadow: 0 0 10px rgba(255,107,0,0.5), 0 0 20px rgba(255,107,0,0.3);
+            animation: neonPulse 2s ease-in-out infinite;
+        }
+        
+        @keyframes neonPulse {
+            0%, 100% {
+                text-shadow: 0 0 10px rgba(255,107,0,0.5), 0 0 20px rgba(255,107,0,0.3);
+            }
+            50% {
+                text-shadow: 0 0 20px rgba(255,107,0,0.8), 0 0 30px rgba(255,107,0,0.5);
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div class="min-h-screen flex">
+
+    <!-- LADO IZQUIERDO -->
+    <div class="hidden md:flex w-1/2 left-side text-white flex-col justify-between p-8 relative">
+         
+        <div class="speed-line"></div>
+        <div class="speed-line"></div>
+        <div class="speed-line"></div>
+        <div class="speed-line"></div>
+        <div class="speed-line"></div>
+        
+        <div class="relative z-10 flex justify-between items-start">
+            <div class="float-badge bg-orange-500/20 backdrop-blur-sm px-3 py-1 rounded-full text-xs border border-orange-500/50">
+                <i class="fas fa-bolt text-orange-500 mr-1"></i>
+                Más rápido que nunca
+            </div>
+        </div>
+        
+        <div class="relative z-10 text-center pb-6">
+            <div class="flex justify-center gap-1 text-yellow-400 text-sm mb-2">
+                <i class="fas fa-star"></i>
+                <i class="fas fa-star"></i>
+                <i class="fas fa-star"></i>
+                <i class="fas fa-star"></i>
+                <i class="fas fa-star"></i>
+            </div>
+            <p class="text-xs text-gray-400">"¡La mejor app de envíos en Cd del Carmen!"</p>
+        </div>
+    </div>
+
+    <!-- LADO DERECHO (FORMULARIO) -->
+    <div class="w-full md:w-1/2 flex items-center justify-center p-4 bg-gray-900">
+        <div class="bg-gray-800 rounded-2xl card w-full max-w-sm p-6">
+            
+            <div class="text-center mb-4 md:hidden">
+                <img src="img/logo.png" class="w-12 mx-auto mb-2" onerror="this.src='https://placehold.co/48x48/FF6B00/white?text=M'">
+                <h2 class="text-xl font-semibold text-white">Iniciar Sesión</h2>
+            </div>
+
+            <div class="relative z-10 logo-float">
+                <img src="img/logo.png" class="w-20 mb-4 mx-auto" onerror="this.src='https://placehold.co/160x160/FF6B00/white?text=M'">
+            </div>
+
+            <h2 class="text-xl font-semibold text-white text-center mb-4 hidden md:block">Iniciar Sesión</h2>
+
+            <form id="loginForm">
+                <div class="mb-3">
+                    <label class="block text-gray-300 text-xs font-medium mb-1">Correo Electrónico</label>
+                    <input type="email" id="email"
+                        class="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 text-white placeholder-gray-400 text-sm"
+                        placeholder="correo@ejemplo.com" required>
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-gray-300 text-xs font-medium mb-1">Contraseña</label>
+                    <div class="relative">
+                        <input type="password" id="password"
+                            class="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 text-white placeholder-gray-400 text-sm"
+                            placeholder="••••••••" required>
+                        <button type="button" onclick="togglePassword()"
+                            class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-300">
+                            <i class="fas fa-eye" id="eyeIcon"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <button type="submit"
+                    class="w-full bg-[#FF6B00] hover:bg-[#E65C00] text-white font-semibold py-2.5 rounded-xl text-sm transition-all shadow-lg">
+                    INGRESAR
+                </button>
+            </form>
+
+            <div class="text-center mt-3">
+                <a href="#" class="text-orange-500 hover:underline text-xs">¿Olvidaste tu contraseña?</a>
+            </div>
+
+            <div class="relative my-4">
+                <div class="absolute inset-0 flex items-center">
+                    <div class="w-full border-t border-gray-700"></div>
+                </div>
+            </div>
+
+            <div class="mt-4 pt-3 border-t border-gray-700">
+                <p class="text-center text-gray-400 text-xs mb-2">¿No tienes cuenta?</p>
+                <button onclick="mostrarOpcionesRegistro()"
+                    class="w-full bg-gray-700 hover:bg-gray-600 text-white font-medium py-2.5 rounded-xl text-sm transition-all">
+                    REGÍSTRATE GRATIS
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL REGISTRO -->
+<div id="modalRegistro" class="hidden fixed inset-0 bg-black bg-opacity-95 flex items-center justify-center z-50 p-4">
+    <div class="bg-gray-800 rounded-3xl max-w-md w-full modal-uber overflow-y-auto max-h-[90vh]">
+        
+        <div class="text-center pt-8 pb-4 border-b border-gray-700">
+            <img src="img/logo.png" class="w-20 mx-auto mb-3" onerror="this.src='https://placehold.co/80x80/FF6B00/white?text=M'">
+            <h2 class="text-2xl font-bold text-white">MandaYa</h2>
+            <p class="text-gray-400 text-sm mt-1">¿Qué deseas hacer?</p>
+        </div>
+
+        <div class="p-6 space-y-4">
+            <button onclick="abrirFormularioRegistro('cliente')"
+                class="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold py-4 rounded-2xl text-lg transition-all btn-uber flex items-center justify-center gap-3">
+                <i class="fas fa-user text-2xl"></i>
+                <div class="text-left">
+                    <div class="font-bold">Registrarme como Cliente</div>
+                    <div class="text-sm text-orange-100">Para enviar paquetes</div>
+                </div>
+            </button>
+
+            <button onclick="abrirFormularioRegistro('delivery')"
+                class="w-full bg-gray-700 hover:bg-gray-600 text-white font-semibold py-4 rounded-2xl text-lg transition-all btn-uber flex items-center justify-center gap-3">
+                <i class="fas fa-motorcycle text-2xl"></i>
+                <div class="text-left">
+                    <div class="font-bold">Registrarme como Delivery</div>
+                    <div class="text-sm text-gray-300">Para ganar dinero entregando</div>
+                </div>
+            </button>
+        </div>
+
+        <div class="px-6 pb-6">
+            <p class="text-xs text-gray-500 text-center">
+                Al continuar, aceptas los <a href="#" class="text-orange-500">Términos y Condiciones</a> 
+                y la <a href="#" class="text-orange-500">Política de Privacidad</a> de MandaYa.
+            </p>
+        </div>
+
+        <button onclick="cerrarModal()" 
+            class="w-full border-t border-gray-700 py-3 text-gray-400 hover:text-gray-300 transition-all font-medium">
+            Cancelar
+        </button>
+    </div>
+</div>
+
+<!-- MODAL FORMULARIO REGISTRO -->
+<div id="modalFormRegistro" class="hidden fixed inset-0 bg-black bg-opacity-95 flex items-center justify-center z-50 p-4">
+    <div class="bg-gray-800 rounded-3xl max-w-md w-full modal-uber overflow-y-auto max-h-[90vh]">
+        
+        <div class="text-center pt-8 pb-4 border-b border-gray-700">
+            <img src="img/logo.png" class="w-14 mx-auto mb-2" onerror="this.src='https://placehold.co/56x56/FF6B00/white?text=M'">
+            <h3 id="registroTitle" class="text-xl font-bold text-white">
+                Crear cuenta Cliente
+            </h3>
+            <p id="registroSubtitle" class="text-gray-400 text-xs mt-1">
+                Completa tus datos para continuar
+            </p>
+        </div>
+
+        <form id="registroForm" class="p-6 space-y-3">
+            <div>
+                <label class="block text-gray-300 text-xs font-medium mb-1">
+                    <i class="fas fa-user mr-1 text-orange-500 text-xs"></i>Nombre completo
+                </label>
+                <input type="text" id="regNombre" required
+                    class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 text-white text-sm"
+                    placeholder="Ej: Juan Pérez">
+            </div>
+
+            <div>
+                <label class="block text-gray-300 text-xs font-medium mb-1">
+                    <i class="fas fa-envelope mr-1 text-orange-500 text-xs"></i>Correo electrónico
+                </label>
+                <input type="email" id="regEmail" required
+                    class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 text-white text-sm"
+                    placeholder="correo@ejemplo.com">
+            </div>
+
+            <div>
+                <label class="block text-gray-300 text-xs font-medium mb-1">
+                    <i class="fas fa-phone mr-1 text-orange-500 text-xs"></i>Teléfono
+                </label>
+                <input type="tel" id="regTelefono" required
+                    class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 text-white text-sm"
+                    placeholder="+52 961 123 4567">
+            </div>
+
+            <div>
+                <label class="block text-gray-300 text-xs font-medium mb-1">
+                    <i class="fas fa-lock mr-1 text-orange-500 text-xs"></i>Contraseña
+                </label>
+                <input type="password" id="regPassword" required
+                    class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 text-white text-sm"
+                    placeholder="Mínimo 4 caracteres">
+            </div>
+
+            <div>
+                <label class="block text-gray-300 text-xs font-medium mb-1">
+                    <i class="fas fa-check-circle mr-1 text-orange-500 text-xs"></i>Confirmar contraseña
+                </label>
+                <input type="password" id="regConfirmPassword" required
+                    class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 text-white text-sm"
+                    placeholder="Repite tu contraseña">
+            </div>
+
+            <button type="submit"
+                class="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold py-2 rounded-lg transition-all btn-uber mt-3">
+                <i class="fas fa-user-plus mr-1"></i>
+                Registrarse
+            </button>
+
+            <button type="button" onclick="cerrarModalRegistroForm()"
+                class="w-full text-gray-400 hover:text-gray-300 py-1 text-sm transition-all">
+                Cancelar
+            </button>
+        </form>
+    </div>
+</div>
+
+<script src="js/app.js"></script>
+</body>
+</html>

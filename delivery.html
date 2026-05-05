@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MandaYa - Panel Delivery</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <!-- Leaflet Routing Machine -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+    <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+    
+    <style>
+        body { background-color: #f8fafc; }
+        .sidebar { box-shadow: -4px 0 15px rgba(0, 0, 0, 0.1); }
+        #map { height: 100vh; width: 100%; }
+        .toast-message {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1f2937;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 50px;
+            font-size: 14px;
+            z-index: 1000;
+            animation: fadeInOut 3s ease-in-out forwards;
+        }
+        @keyframes fadeInOut {
+            0% { opacity: 0; transform: translateX(-50%) translateY(20px); }
+            15% { opacity: 1; transform: translateX(-50%) translateY(0); }
+            85% { opacity: 1; transform: translateX(-50%) translateY(0); }
+            100% { opacity: 0; transform: translateX(-50%) translateY(20px); visibility: hidden; }
+        }
+        .pedido-card {
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        .pedido-card:hover { transform: translateX(-5px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .online-dot { animation: pulse 2s infinite; }
+        @keyframes pulse {
+            0% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.1); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+        .pedido-seleccionado { border: 2px solid #FF6200; background: #fff7ed; }
+        .moto-marker {
+            background: transparent;
+            border: none;
+        }
+    </style>
+</head>
+<body class="flex h-screen overflow-hidden flex-row-reverse">
+
+    <div class="w-full lg:w-96 bg-white sidebar flex flex-col h-full overflow-auto z-10 relative">
+        <div class="bg-[#FF6200] text-white p-4 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <img src="img/logo.png" class="w-10 h-10 object-contain" onerror="this.src='https://placehold.co/40x40/FF6200/white?text=M'">
+                <div><h1 class="font-bold text-xl">MandaYa</h1><p class="text-xs">Delivery • Gana con cada envío</p></div>
+            </div>
+            <button onclick="verPerfil()" class="text-white"><i class="fas fa-user-circle text-3xl"></i></button>
+        </div>
+
+        <div id="userInfo" class="bg-gray-50 p-3 border-b"></div>
+
+        <div class="p-4 border-b">
+            <button id="onlineToggle" onclick="toggleOnline()" class="w-full py-3 rounded-xl font-bold text-white transition-all bg-gray-500">
+                <i class="fas fa-circle online-dot"></i> <span id="onlineStatusText">Conectarse</span>
+            </button>
+        </div>
+
+        <div class="p-4 flex-1 overflow-auto">
+            <h2 class="text-xl font-semibold mb-3 flex items-center gap-2">
+                <i class="fas fa-list text-[#FF6200]"></i> Pedidos disponibles
+            </h2>
+            <div id="pedidosDisponibles" class="space-y-3">
+                <div class="text-center text-gray-400 py-8"><i class="fas fa-box-open text-4xl mb-2 block"></i>No hay pedidos</div>
+            </div>
+
+            <h2 class="text-xl font-semibold mt-6 mb-3 flex items-center gap-2">
+                <i class="fas fa-motorcycle text-[#FF6200]"></i> Mis pedidos activos
+            </h2>
+            <div id="pedidosActivos" class="space-y-3">
+                <div class="text-center text-gray-400 py-4"><i class="fas fa-check-circle text-2xl mb-1 block"></i>Ninguno</div>
+            </div>
+        </div>
+
+        <div class="border-t p-4 text-center text-sm text-gray-500">
+            <button onclick="verHistorial()" class="hover:text-orange-600"><i class="fas fa-history"></i> Historial</button>
+            <button onclick="cerrarSesion()" class="ml-4 hover:text-orange-600"><i class="fas fa-sign-out-alt"></i> Salir</button>
+        </div>
+    </div>
+
+    <div class="flex-1 relative hidden lg:block">
+        <div id="map"></div>
+        <div class="absolute top-4 left-1/2 transform -translate-x-1/2 bg-white px-4 py-2 rounded-xl shadow-lg text-sm font-medium z-[1000] whitespace-nowrap">
+            <i class="fas fa-motorcycle text-[#FF6200] mr-1"></i> Tu ubicación (se comparte con el cliente)
+        </div>
+    </div>
+
+    <script src="js/config.js"></script>
+    <script src="js/delivery.js"></script>
+</body>
+</html>
