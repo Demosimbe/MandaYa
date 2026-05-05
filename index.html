@@ -2,26 +2,169 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MandaYa - Iniciar Sesión</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>MandaYa - Envíos rápidos</title>
 
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
         body {
             background: #0a0a0a;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            overflow-x: hidden;
         }
+
+        /* Pantalla de bienvenida con moto SOLO PARA CELULAR */
+        .splash-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #FF6200, #FF8C00, #FFB347);
+            z-index: 10000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+            overflow: hidden;
+        }
+
+        .splash-hidden {
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+        }
+
+        /* Contenedor de la carretera */
+        .road-container {
+            position: relative;
+            width: 100%;
+            max-width: 350px;
+            margin-bottom: 60px;
+            overflow: hidden;
+        }
+
+        /* Carretera */
+        .road {
+            width: 100%;
+            height: 100px;
+            background: #2d2d2d;
+            position: relative;
+            border-radius: 10px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+
+        /* Líneas de la carretera (animación) */
+        .road-line {
+            position: absolute;
+            width: 40px;
+            height: 3px;
+            background: #FFD700;
+            top: 50%;
+            transform: translateY(-50%);
+            border-radius: 2px;
+            animation: moveLine 0.5s linear infinite;
+        }
+
+        @keyframes moveLine {
+            from { left: 100%; }
+            to { left: -40px; }
+        }
+
+        /* Moto animada */
+        .moto-anim {
+            position: absolute;
+            bottom: 12px;
+            left: -80px;
+            font-size: 50px;
+            animation: rideMoto 1.2s ease-out forwards;
+            filter: drop-shadow(0 4px 8px rgba(0,0,0,0.3));
+        }
+
+        @keyframes rideMoto {
+            0% { left: -80px; transform: rotate(-5deg); }
+            60% { left: 45%; transform: rotate(2deg); }
+            100% { left: 55%; transform: rotate(0deg); }
+        }
+
+        /* Efecto de nitro */
+        .nitro {
+            position: absolute;
+            bottom: 20px;
+            right: -20px;
+            font-size: 20px;
+            color: #FF6600;
+            opacity: 0;
+            animation: nitroEffect 0.8s ease-out 0.6s forwards;
+        }
+
+        @keyframes nitroEffect {
+            0% { opacity: 0; right: -20px; }
+            50% { opacity: 1; right: 0px; }
+            100% { opacity: 0; right: 20px; }
+        }
+
+        /* Partículas (polvo) */
+        .dust {
+            position: absolute;
+            bottom: 15px;
+            left: -30px;
+            width: 20px;
+            height: 20px;
+            background: rgba(255,255,255,0.4);
+            border-radius: 50%;
+            animation: dustEffect 1s ease-out forwards;
+        }
+
+        @keyframes dustEffect {
+            0% { opacity: 0.8; transform: scale(0.5); left: -30px; }
+            100% { opacity: 0; transform: scale(1.5); left: 20px; }
+        }
+
+        /* Texto animado */
+        .brand-text {
+            animation: fadeInUp 0.8s ease-out 0.8s forwards;
+            opacity: 0;
+            transform: translateY(20px);
+        }
+
+        @keyframes fadeInUp {
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .sub-text {
+            animation: fadeInUp 0.8s ease-out 1s forwards;
+            opacity: 0;
+            transform: translateY(20px);
+        }
+
+        /* Card de login */
         .card {
             box-shadow: 0 10px 30px rgba(0,0,0,0.3);
         }
+
         .logo-float {
             animation: floatLogo 4s ease-in-out infinite;
         }
+
         @keyframes floatLogo {
             0%, 100% { transform: translateY(0); }
             50% { transform: translateY(-10px); }
         }
+
         .toast-message {
             position: fixed;
             bottom: 20px;
@@ -35,6 +178,7 @@
             z-index: 100;
             animation: fadeInOut 3s ease-in-out forwards;
         }
+
         @keyframes fadeInOut {
             0% { opacity: 0; transform: translateX(-50%) translateY(20px); }
             15% { opacity: 1; transform: translateX(-50%) translateY(0); }
@@ -47,14 +191,8 @@
         }
         
         @keyframes slideUp {
-            from {
-                transform: translateY(50px);
-                opacity: 0;
-            }
-            to {
-                transform: translateY(0);
-                opacity: 1;
-            }
+            from { transform: translateY(50px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
         }
         
         .input-uber {
@@ -82,14 +220,8 @@
         }
 
         @keyframes speedLines {
-            0% {
-                transform: translateX(0);
-                opacity: 1;
-            }
-            100% {
-                transform: translateX(-200px);
-                opacity: 0;
-            }
+            0% { transform: translateX(0); opacity: 1; }
+            100% { transform: translateX(-200px); opacity: 0; }
         }
         
         .speed-line {
@@ -110,22 +242,70 @@
             text-shadow: 0 0 10px rgba(255,107,0,0.5), 0 0 20px rgba(255,107,0,0.3);
             animation: neonPulse 2s ease-in-out infinite;
         }
+
+        /* Ocultar splash en desktop */
+        @media (min-width: 768px) {
+            .splash-screen {
+                display: none !important;
+            }
+        }
         
         @keyframes neonPulse {
-            0%, 100% {
-                text-shadow: 0 0 10px rgba(255,107,0,0.5), 0 0 20px rgba(255,107,0,0.3);
-            }
-            50% {
-                text-shadow: 0 0 20px rgba(255,107,0,0.8), 0 0 30px rgba(255,107,0,0.5);
-            }
+            0%, 100% { text-shadow: 0 0 10px rgba(255,107,0,0.5), 0 0 20px rgba(255,107,0,0.3); }
+            50% { text-shadow: 0 0 20px rgba(255,107,0,0.8), 0 0 30px rgba(255,107,0,0.5); }
         }
     </style>
 </head>
 <body>
 
-<div class="min-h-screen flex">
+<!-- SPLASH SCREEN SOLO PARA CELULAR -->
+<div id="splashScreen" class="splash-screen">
+    <div class="road-container">
+        <div class="road">
+            <!-- Líneas de la carretera -->
+            <div class="road-line" style="top: 30%;"></div>
+            <div class="road-line" style="top: 50%; animation-delay: 0.2s;"></div>
+            <div class="road-line" style="top: 70%; animation-delay: 0.4s;"></div>
+            
+            <!-- Moto animada -->
+            <div class="moto-anim">
+                🏍️💨
+            </div>
+            
+            <!-- Efecto nitro -->
+            <div class="nitro">
+                ⚡💨
+            </div>
+            
+            <!-- Polvo -->
+            <div class="dust"></div>
+            <div class="dust" style="animation-delay: 0.2s;"></div>
+            <div class="dust" style="animation-delay: 0.4s;"></div>
+        </div>
+    </div>
+    
+    <div class="brand-text text-center">
+        <h1 class="text-4xl font-bold text-white mb-2">MandaYa</h1>
+        <div class="flex justify-center gap-1 text-yellow-400 text-sm mb-2">
+            <i class="fas fa-star"></i>
+            <i class="fas fa-star"></i>
+            <i class="fas fa-star"></i>
+            <i class="fas fa-star"></i>
+            <i class="fas fa-star"></i>
+        </div>
+    </div>
+    
+    <div class="sub-text text-center mt-4">
+        <p class="text-white/80 text-sm">Envíos rápidos y seguros</p>
+        <p class="text-white/60 text-xs mt-1">Ciudad del Carmen</p>
+        <div class="mt-4 w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin mx-auto"></div>
+    </div>
+</div>
 
-    <!-- LADO IZQUIERDO -->
+<!-- CONTENIDO PRINCIPAL (LOGIN) - visible en PC y después del splash en móvil -->
+<div id="mainContent" class="min-h-screen flex" style="display: flex;">
+
+    <!-- LADO IZQUIERDO (solo PC) -->
     <div class="hidden md:flex w-1/2 left-side text-white flex-col justify-between p-8 relative">
          
         <div class="speed-line"></div>
@@ -157,14 +337,16 @@
     <div class="w-full md:w-1/2 flex items-center justify-center p-4 bg-gray-900">
         <div class="bg-gray-800 rounded-2xl card w-full max-w-sm p-6">
             
-            <div class="text-center mb-4 md:hidden">
-                <img src="img/logo.png" class="w-12 mx-auto mb-2" onerror="this.src='https://placehold.co/48x48/FF6B00/white?text=M'">
-                <h2 class="text-xl font-semibold text-white">Iniciar Sesión</h2>
-            </div>
+            <!-- En PC -->
+        <div class="relative z-10 logo-float hidden md:block">
+             <img src="img/logo.png" class="w-20 mb-4 mx-auto" onerror="this.src='https://placehold.co/160x160/FF6B00/white?text=M'">
+        </div>
 
-            <div class="relative z-10 logo-float">
-                <img src="img/logo.png" class="w-20 mb-4 mx-auto" onerror="this.src='https://placehold.co/160x160/FF6B00/white?text=M'">
-            </div>
+         <!-- En móvil -->
+        <div class="text-center mb-4 md:hidden">
+              <img src="img/logo.png" class="w-12 mx-auto mb-2" onerror="this.src='https://placehold.co/48x48/FF6B00/white?text=M'">
+              <h2 class="text-xl font-semibold text-white">Iniciar Sesión</h2>
+        </div>
 
             <h2 class="text-xl font-semibold text-white text-center mb-4 hidden md:block">Iniciar Sesión</h2>
 
@@ -221,7 +403,9 @@
     <div class="bg-gray-800 rounded-3xl max-w-md w-full modal-uber overflow-y-auto max-h-[90vh]">
         
         <div class="text-center pt-8 pb-4 border-b border-gray-700">
-            <img src="img/logo.png" class="w-20 mx-auto mb-3" onerror="this.src='https://placehold.co/80x80/FF6B00/white?text=M'">
+            <div class="w-16 h-16 bg-orange-500 rounded-full flex items-center justify-center mx-auto mb-3">
+                <i class="fas fa-motorcycle text-white text-2xl"></i>
+            </div>
             <h2 class="text-2xl font-bold text-white">MandaYa</h2>
             <p class="text-gray-400 text-sm mt-1">¿Qué deseas hacer?</p>
         </div>
@@ -265,7 +449,9 @@
     <div class="bg-gray-800 rounded-3xl max-w-md w-full modal-uber overflow-y-auto max-h-[90vh]">
         
         <div class="text-center pt-8 pb-4 border-b border-gray-700">
-            <img src="img/logo.png" class="w-14 mx-auto mb-2" onerror="this.src='https://placehold.co/56x56/FF6B00/white?text=M'">
+            <div class="w-14 h-14 bg-orange-500 rounded-full flex items-center justify-center mx-auto mb-2">
+                <i class="fas fa-user-plus text-white text-xl"></i>
+            </div>
             <h3 id="registroTitle" class="text-xl font-bold text-white">
                 Crear cuenta Cliente
             </h3>
@@ -335,5 +521,40 @@
 </div>
 
 <script src="js/app.js"></script>
+
+<script>
+    // Lógica del splash screen SOLO para celular
+    (function() {
+        const splash = document.getElementById('splashScreen');
+        const mainContent = document.getElementById('mainContent');
+        
+        // Detectar si es móvil (ancho < 768px)
+        function isMobile() {
+            return window.innerWidth < 768;
+        }
+        
+        // Si es PC, ocultar splash inmediatamente
+        if (!isMobile()) {
+            if (splash) splash.style.display = 'none';
+            if (mainContent) mainContent.style.display = 'flex';
+            return;
+        }
+        
+        // En móvil: mostrar splash por 2.5 segundos
+        if (splash && mainContent) {
+            // Ocultar main content inicialmente
+            mainContent.style.display = 'none';
+            
+            // Después de 2.5 segundos, ocultar splash y mostrar login
+            setTimeout(() => {
+                splash.classList.add('splash-hidden');
+                setTimeout(() => {
+                    splash.style.display = 'none';
+                    mainContent.style.display = 'flex';
+                }, 800);
+            }, 2500);
+        }
+    })();
+</script>
 </body>
 </html>
