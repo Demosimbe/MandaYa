@@ -88,13 +88,45 @@ function centrarMapa() {
     mostrarToast("📍 Mapa centrado en Ciudad del Carmen");
 }
 
-function cargarPedidos() {
-    const todosPedidos = JSON.parse(localStorage.getItem('pedidos_pendientes')) || [];
-    pedidosDisponibles = todosPedidos.filter(p => p.estado === 'pendiente');
-    misPedidosActivos = todosPedidos.filter(p => p.deliveryId === currentUser?.id && p.estado !== 'completado');
+async function cargarPedidos() {
+    // ✅ Cargar desde Supabase en lugar de localStorage
+    const supabase = supabaseClient;
+    if (!supabase) {
+        console.error('Supabase no disponible');
+        return;
+    }
     
-    actualizarListaPedidos();
-    dibujarRutaSeleccionada();
+    try {
+        // Obtener pedidos PENDIENTES de Supabase
+        const { data: pedidosPendientes, error: errorPendientes } = await supabase
+            .from('pedidos')
+            .select('*')
+            .eq('estado', 'pendiente')
+            .order('fecha', { ascending: true });
+        
+        if (errorPendientes) throw errorPendientes;
+        
+        // Obtener pedidos ASIGNADOS a este delivery
+        const { data: pedidosAsignados, error: errorAsignados } = await supabase
+            .from('pedidos')
+            .select('*')
+            .eq('delivery_id', currentUser?.id)
+            .in('estado', ['asignado']);
+        
+        if (errorAsignados) throw errorAsignados;
+        
+        // Convertir formato de Supabase al que usa la interfaz
+        pedidosDisponibles = (pedidosPendientes || []).map(p => convertirPedidoDeSupabase(p));
+        misPedidosActivos = (pedidosAsignados || []).map(p => convertirPedidoDeSupabase(p));
+        
+        actualizarListaPedidos();
+        dibujarRutaSeleccionada();
+        
+        console.log(`📦 ${pedidosDisponibles.length} pedidos disponibles, ${misPedidosActivos.length} activos`);
+        
+    } catch(e) {
+        console.error('Error cargando pedidos:', e);
+    }
 }
 
 function actualizarListaPedidos() {
@@ -190,44 +222,68 @@ function dibujarRutaSeleccionada() {
 }
 
 async function agarrarPedido(pedidoId) {
-    const todosPedidos = JSON.parse(localStorage.getItem('pedidos_pendientes')) || [];
-    const pedidoIndex = todosPedidos.findIndex(p => p.id === pedidoId);
+    const supabase = supabaseClient;
+    if (!supabase) {
+        mostrarToast("❌ Error de conexión", true);
+        return;
+    }
     
-    if(pedidoIndex !== -1 && todosPedidos[pedidoIndex].estado === 'pendiente') {
-        todosPedidos[pedidoIndex].estado = 'asignado';
-        todosPedidos[pedidoIndex].deliveryId = currentUser.id;
-        todosPedidos[pedidoIndex].deliveryNombre = currentUser.nombre;
-        localStorage.setItem('pedidos_pendientes', JSON.stringify(todosPedidos));
+    try {
+        // ✅ Actualizar en Supabase
+        const { error } = await supabase
+            .from('pedidos')
+            .update({
+                estado: 'asignado',
+                delivery_id: currentUser.id,
+                delivery_nombre: currentUser.nombre
+            })
+            .eq('id', pedidoId)
+            .eq('estado', 'pendiente');
         
-        // Guardar también en Supabase
-        if (typeof agarrarPedidoEnSupabase !== 'undefined') {
-            await agarrarPedidoEnSupabase(pedidoId, currentUser.id, currentUser.nombre);
-            console.log('✅ Pedido agarrado también en Supabase');
-        }
+        if (error) throw error;
         
-        mostrarToast(`✅ Pedido #${pedidoId} AGARRADO! Dirígete al origen. El cliente verá tu ubicación en tiempo real.`);
+        mostrarToast(`✅ Pedido #${pedidoId} AGARRADO! Dirígete al origen.`);
         pedidoSeleccionado = null;
-        cargarPedidos();
+        cargarPedidos(); // Recargar desde Supabase
+        
+    } catch(e) {
+        console.error('Error agarrando pedido:', e);
+        mostrarToast("❌ Error al agarrar el pedido", true);
     }
 }
 
 async function completarPedido(pedidoId) {
-    const todosPedidos = JSON.parse(localStorage.getItem('pedidos_pendientes')) || [];
-    const pedidoIndex = todosPedidos.findIndex(p => p.id === pedidoId);
+    const supabase = supabaseClient;
+    if (!supabase) {
+        mostrarToast("❌ Error de conexión", true);
+        return;
+    }
     
-    if(pedidoIndex !== -1) {
-        todosPedidos[pedidoIndex].estado = 'completado';
-        todosPedidos[pedidoIndex].fechaCompletado = new Date().toISOString();
-        localStorage.setItem('pedidos_pendientes', JSON.stringify(todosPedidos));
+    try {
+        // ✅ Actualizar en Supabase
+        const { error } = await supabase
+            .from('pedidos')
+            .update({
+                estado: 'completado',
+                fecha_completado: new Date().toISOString()
+            })
+            .eq('id', pedidoId);
         
-        // Guardar también en Supabase
-        if (typeof completarPedidoEnSupabase !== 'undefined') {
-            await completarPedidoEnSupabase(pedidoId);
-            console.log('✅ Pedido completado también en Supabase');
-        }
+        if (error) throw error;
         
-        mostrarToast(`✅ Pedido #${pedidoId} COMPLETADO! Ganaste $${todosPedidos[pedidoIndex].tarifa} MXN`);
-        cargarPedidos();
+        // Obtener tarifa para mostrar
+        const { data: pedido } = await supabase
+            .from('pedidos')
+            .select('tarifa')
+            .eq('id', pedidoId)
+            .single();
+        
+        mostrarToast(`✅ Pedido #${pedidoId} COMPLETADO! Ganaste $${pedido?.tarifa || 0} MXN`);
+        cargarPedidos(); // Recargar desde Supabase
+        
+    } catch(e) {
+        console.error('Error completando pedido:', e);
+        mostrarToast("❌ Error al completar el pedido", true);
     }
 }
 
@@ -285,16 +341,37 @@ async function toggleOnline() {
     }
 }
 
-function verHistorial() {
-    const todosPedidos = JSON.parse(localStorage.getItem('pedidos_pendientes')) || [];
-    const completados = todosPedidos.filter(p => p.deliveryId === currentUser?.id && p.estado === 'completado');
-    if(completados.length === 0) mostrarToast("No tienes entregas completadas");
-    else {
-        let total = 0;
-        let msg = "✅ Entregas completadas:\n";
-        completados.forEach(p => { total += p.tarifa; msg += `• #${p.id}: ${p.distanciaReal}km - $${p.tarifa}\n`; });
-        msg += `\n💰 Total ganado: $${total} MXN`;
-        alert(msg);
+async function verHistorial() {
+    const supabase = supabaseClient;
+    if (!supabase) {
+        mostrarToast("Error de conexión", true);
+        return;
+    }
+    
+    try {
+        const { data: completados, error } = await supabase
+            .from('pedidos')
+            .select('*')
+            .eq('delivery_id', currentUser?.id)
+            .eq('estado', 'completado');
+        
+        if (error) throw error;
+        
+        if(!completados || completados.length === 0) {
+            mostrarToast("No tienes entregas completadas");
+        } else {
+            let total = 0;
+            let msg = "✅ Entregas completadas:\n";
+            completados.forEach(p => { 
+                total += p.tarifa; 
+                msg += `• #${p.id}: ${p.distancia_real}km - $${p.tarifa}\n`;
+            });
+            msg += `\n💰 Total ganado: $${total} MXN`;
+            alert(msg);
+        }
+    } catch(e) {
+        console.error('Error:', e);
+        mostrarToast("Error al cargar historial", true);
     }
 }
 

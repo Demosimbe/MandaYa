@@ -190,7 +190,7 @@ function reverseGeocode(latlng, callback) {
         .catch(() => callback(`${latlng.lat.toFixed(4)}, ${latlng.lng.toFixed(4)}`));
 }
 
-function solicitarEnvio() {
+async function solicitarEnvio() {
     const origen = document.getElementById("origen").value;
     const destino = document.getElementById("destino").value;
     const tipo = document.getElementById("tipoEnvio").value;
@@ -208,93 +208,122 @@ function solicitarEnvio() {
     const rate = calculateShippingRate(distancia, tipo);
     const tarifa = rate.total;
     
-    pedidoActual = {
+    const nuevoPedido = {
         id: Date.now(),
-        clienteId: currentUser.id,
-        clienteNombre: currentUser.nombre,
+        cliente_id: currentUser.id,
+        cliente_nombre: currentUser.nombre,
         origen: origen,
         destino: destino,
-        origenCoords: originCoords,
-        destinoCoords: destCoords,
+        origen_lat: originCoords.lat,
+        origen_lng: originCoords.lng,
+        destino_lat: destCoords.lat,
+        destino_lng: destCoords.lng,
         tipo: tipo,
-        distanciaReal: distancia.toFixed(2),
+        distancia_real: distancia.toFixed(2),
         tarifa: tarifa,
         estado: 'pendiente',
         fecha: new Date().toISOString()
     };
     
-    let pedidosPendientes = JSON.parse(localStorage.getItem('pedidos_pendientes')) || [];
-    pedidosPendientes.push(pedidoActual);
-    localStorage.setItem('pedidos_pendientes', JSON.stringify(pedidosPendientes));
-    
-    // Guardar también en Supabase si está disponible
-    if (typeof crearPedidoEnSupabase !== 'undefined') {
-        crearPedidoEnSupabase(pedidoActual);
+    const supabase = supabaseClient;
+    if (!supabase) {
+        mostrarToast("❌ Error de conexión", true);
+        return;
     }
     
-    mostrarToast(`✅ ¡Envío solicitado! Tarifa: $${tarifa} MXN (${distancia.toFixed(2)} km)`);
-    iniciarSeguimientoDelivery();
+    try {
+        // ✅ Guardar SOLO en Supabase
+        const { error } = await supabase
+            .from('pedidos')
+            .insert([nuevoPedido]);
+        
+        if (error) throw error;
+        
+        mostrarToast(`✅ ¡Envío solicitado! Tarifa: $${tarifa} MXN (${distancia.toFixed(2)} km)`);
+        iniciarSeguimientoDelivery();
+        
+    } catch(e) {
+        console.error('Error creando pedido:', e);
+        mostrarToast("❌ Error al crear el pedido", true);
+    }
 }
 
 function iniciarSeguimientoDelivery() {
     mostrarToast("🟢 Buscando delivery disponible...");
     
-    seguimientoInterval = setInterval(() => {
-        const pedidos = JSON.parse(localStorage.getItem('pedidos_pendientes')) || [];
-        const pedidoActualizado = pedidos.find(p => p.id === pedidoActual?.id);
+    seguimientoInterval = setInterval(async () => {
+        const supabase = supabaseClient;
+        if (!supabase) return;
         
-        if (pedidoActualizado && pedidoActualizado.estado === 'asignado' && pedidoActualizado.deliveryId) {
-            clearInterval(seguimientoInterval);
-            pedidoActual = pedidoActualizado;
-            mostrarToast(`✅ Delivery asignado: ${pedidoActualizado.deliveryNombre}`);
-            mostrarDeliveryEnMapa(pedidoActualizado.deliveryId);
-            seguirUbicacionDelivery(pedidoActualizado.deliveryId);
-        } else if (pedidoActualizado && pedidoActualizado.estado === 'completado') {
-            clearInterval(seguimientoInterval);
-            mostrarToast(`🎉 ¡Envío completado! Gracias por usar MandaYa`);
-            ocultarDeliveryInfo();
+        try {
+            // ✅ Buscar el pedido en Supabase
+            const { data: pedidoActualizado, error } = await supabase
+                .from('pedidos')
+                .select('*')
+                .eq('id', pedidoActual?.id)
+                .single();
+            
+            if (error) throw error;
+            
+            if (pedidoActualizado && pedidoActualizado.estado === 'asignado' && pedidoActualizado.delivery_id) {
+                clearInterval(seguimientoInterval);
+                pedidoActual = pedidoActualizado;
+                mostrarToast(`✅ Delivery asignado: ${pedidoActualizado.delivery_nombre}`);
+                mostrarDeliveryEnMapa(pedidoActualizado.delivery_id);
+                seguirUbicacionDelivery(pedidoActualizado.delivery_id);
+            } else if (pedidoActualizado && pedidoActualizado.estado === 'completado') {
+                clearInterval(seguimientoInterval);
+                mostrarToast(`🎉 ¡Envío completado! Gracias por usar MandaYa`);
+                ocultarDeliveryInfo();
+            }
+        } catch(e) {
+            console.error('Error en seguimiento:', e);
         }
     }, 3000);
 }
 
-function mostrarDeliveryEnMapa(deliveryId) {
-    const usuarios = JSON.parse(localStorage.getItem('usuarios')) || [];
-    const delivery = usuarios.find(u => u.id === deliveryId);
+async function mostrarDeliveryEnMapa(deliveryId) {
+    const supabase = supabaseClient;
+    if (!supabase) return;
     
-    if (delivery) {
-        document.getElementById("deliveryInfo").classList.remove("hidden");
-        document.getElementById("deliveryNombre").innerHTML = `<i class="fas fa-motorcycle"></i> ${delivery.nombre}`;
-        document.getElementById("deliveryEstado").innerHTML = "🟢 En camino a recoger tu paquete";
+    try {
+        // ✅ Buscar delivery en Supabase
+        const { data: delivery, error } = await supabase
+            .from('usuarios')
+            .select('nombre')
+            .eq('id', deliveryId)
+            .single();
         
-        // Cambiar el marcador del delivery a AZUL cuando agarra pedido
-        if (deliveryMarker) {
-            const azulIcon = L.divIcon({
-                html: '<div style="background:#2563EB; width:32px; height:32px; border-radius:50%; border:2px solid white; display:flex; align-items:center; justify-content:center;"><i class="fas fa-motorcycle" style="color:white; font-size:16px;"></i></div>',
-                iconSize: [32, 32],
-                className: 'moto-marker'
-            });
-            deliveryMarker.setIcon(azulIcon);
+        if (error) throw error;
+        
+        if (delivery) {
+            document.getElementById("deliveryInfo").classList.remove("hidden");
+            document.getElementById("deliveryNombre").innerHTML = `<i class="fas fa-motorcycle"></i> ${delivery.nombre}`;
+            document.getElementById("deliveryEstado").innerHTML = "🟢 En camino a recoger tu paquete";
+            
+            if (deliveryMarker) {
+                const azulIcon = L.divIcon({
+                    html: '<div style="background:#2563EB; width:32px; height:32px; border-radius:50%; border:2px solid white; display:flex; align-items:center; justify-content:center;"><i class="fas fa-motorcycle" style="color:white; font-size:16px;"></i></div>',
+                    iconSize: [32, 32],
+                    className: 'moto-marker'
+                });
+                deliveryMarker.setIcon(azulIcon);
+            }
         }
+    } catch(e) {
+        console.error('Error mostrando delivery:', e);
     }
 }
 
 function seguirUbicacionDelivery(deliveryId) {
     ubicacionInterval = setInterval(async () => {
-        // Primero intentar desde Supabase
         let ubicacion = null;
         
+        // ✅ Primero intentar desde Supabase
         if (typeof obtenerUbicacionDeSupabase !== 'undefined') {
             const supabaseUbicacion = await obtenerUbicacionDeSupabase(deliveryId);
             if (supabaseUbicacion) {
                 ubicacion = { lat: supabaseUbicacion.lat, lng: supabaseUbicacion.lng };
-            }
-        }
-        
-        // Fallback a localStorage
-        if (!ubicacion) {
-            const ubicacionGuardada = localStorage.getItem(`ubicacion_${deliveryId}`);
-            if (ubicacionGuardada) {
-                ubicacion = JSON.parse(ubicacionGuardada);
             }
         }
         
@@ -319,12 +348,20 @@ function seguirUbicacionDelivery(deliveryId) {
             }
         }
         
-        const pedidos = JSON.parse(localStorage.getItem('pedidos_pendientes')) || [];
-        const pedidoActualizado = pedidos.find(p => p.id === pedidoActual?.id);
-        if (pedidoActualizado?.estado === 'completado') {
-            clearInterval(ubicacionInterval);
-            mostrarToast("🎉 ¡Envío completado! Gracias por usar MandaYa");
-            setTimeout(() => ocultarDeliveryInfo(), 5000);
+        // ✅ Verificar estado en Supabase
+        const supabase = supabaseClient;
+        if (supabase && pedidoActual) {
+            const { data: pedidoActualizado } = await supabase
+                .from('pedidos')
+                .select('estado')
+                .eq('id', pedidoActual.id)
+                .single();
+            
+            if (pedidoActualizado?.estado === 'completado') {
+                clearInterval(ubicacionInterval);
+                mostrarToast("🎉 ¡Envío completado! Gracias por usar MandaYa");
+                setTimeout(() => ocultarDeliveryInfo(), 5000);
+            }
         }
     }, 2000);
 }
@@ -344,77 +381,94 @@ function ocultarDeliveryInfo() {
     if (deliveryMarker) map.removeLayer(deliveryMarker);
 }
 
-function mostrarHistorialCompleto() {
-    const pedidos = JSON.parse(localStorage.getItem('pedidos_pendientes')) || [];
-    const misPedidos = pedidos.filter(p => p.clienteId === currentUser?.id).sort((a,b) => new Date(b.fecha) - new Date(a.fecha));
-    
-    if (misPedidos.length === 0) {
-        mostrarToast("📭 No tienes envíos anteriores");
+async function mostrarHistorialCompleto() {
+    const supabase = supabaseClient;
+    if (!supabase) {
+        mostrarToast("Error de conexión", true);
         return;
     }
     
-    let modalExistente = document.getElementById("modalHistorial");
-    if (modalExistente) modalExistente.remove();
-    
-    const modal = document.createElement('div');
-    modal.id = "modalHistorial";
-    modal.className = "fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[10000] p-4";
-    modal.innerHTML = `
-        <div class="bg-gray-800 rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-hidden modal-uber">
-            <div class="flex justify-between items-center pt-6 pb-3 px-6 border-b border-gray-700">
-                <div>
-                    <i class="fas fa-history text-3xl text-orange-500 mb-1 block"></i>
-                    <h3 class="text-xl font-bold text-white">Mis Envíos</h3>
-                    <p class="text-gray-400 text-xs">Historial completo de tus envíos</p>
-                </div>
-                <button onclick="cerrarModalHistorial()" class="text-gray-400 hover:text-white text-2xl transition-all">
-                    <i class="fas fa-times-circle"></i>
-                </button>
-            </div>
-            
-            <div class="overflow-y-auto max-h-[60vh] p-4 space-y-3">
-                ${misPedidos.map(p => `
-                    <div class="bg-gray-700 rounded-xl p-4 ${p.estado === 'completado' ? 'border-l-4 border-green-500' : p.estado === 'pendiente' ? 'border-l-4 border-yellow-500' : 'border-l-4 border-blue-500'}">
-                        <div class="flex justify-between items-start mb-2">
-                            <div>
-                                <span class="font-bold text-orange-400">#${p.id}</span>
-                                <span class="text-xs ml-2 px-2 py-0.5 rounded-full ${p.estado === 'completado' ? 'bg-green-500/20 text-green-400' : p.estado === 'pendiente' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-blue-500/20 text-blue-400'}">
-                                    ${p.estado === 'completado' ? '✅ Completado' : p.estado === 'pendiente' ? '⏳ Pendiente' : '🚚 En camino'}
-                                </span>
-                            </div>
-                            <span class="text-xs text-gray-400">${new Date(p.fecha).toLocaleDateString()}</span>
-                        </div>
-                        <p class="text-sm text-gray-300">
-                            <i class="fas fa-circle text-orange-500 text-xs mr-1"></i> ${p.origen}
-                        </p>
-                        <p class="text-sm text-gray-300 mt-1">
-                            <i class="fas fa-square text-blue-500 text-xs mr-1"></i> ${p.destino}
-                        </p>
-                        <div class="flex justify-between items-center mt-3 pt-2 border-t border-gray-600">
-                            <div class="text-sm">
-                                <span class="text-gray-400">📏 ${p.distanciaReal} km</span>
-                                <span class="text-gray-400 ml-3">💰 $${p.tarifa}</span>
-                            </div>
-                            <button onclick="eliminarEnvio(${p.id})" class="bg-red-500/20 hover:bg-red-500 text-red-400 hover:text-white px-3 py-1 rounded-lg text-sm transition-all">
-                                <i class="fas fa-trash-alt mr-1"></i> Eliminar
-                            </button>
-                        </div>
+    try {
+        // ✅ Cargar historial desde Supabase
+        const { data: misPedidos, error } = await supabase
+            .from('pedidos')
+            .select('*')
+            .eq('cliente_id', currentUser?.id)
+            .order('fecha', { ascending: false });
+        
+        if (error) throw error;
+        
+        if (!misPedidos || misPedidos.length === 0) {
+            mostrarToast("📭 No tienes envíos anteriores");
+            return;
+        }
+        
+        let modalExistente = document.getElementById("modalHistorial");
+        if (modalExistente) modalExistente.remove();
+        
+        const modal = document.createElement('div');
+        modal.id = "modalHistorial";
+        modal.className = "fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[10000] p-4";
+        modal.innerHTML = `
+            <div class="bg-gray-800 rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-hidden modal-uber">
+                <div class="flex justify-between items-center pt-6 pb-3 px-6 border-b border-gray-700">
+                    <div>
+                        <i class="fas fa-history text-3xl text-orange-500 mb-1 block"></i>
+                        <h3 class="text-xl font-bold text-white">Mis Envíos</h3>
+                        <p class="text-gray-400 text-xs">Historial completo de tus envíos</p>
                     </div>
-                `).join('')}
-            </div>
-            
-            <div class="border-t border-gray-700 p-4">
-                <div class="flex justify-between text-sm text-gray-400">
-                    <span>Total: ${misPedidos.length}</span>
-                    <span>✅ Completados: ${misPedidos.filter(p => p.estado === 'completado').length}</span>
-                    <span>⏳ Pendientes: ${misPedidos.filter(p => p.estado === 'pendiente').length}</span>
-                    <span>🚚 En camino: ${misPedidos.filter(p => p.estado === 'asignado').length}</span>
+                    <button onclick="cerrarModalHistorial()" class="text-gray-400 hover:text-white text-2xl transition-all">
+                        <i class="fas fa-times-circle"></i>
+                    </button>
+                </div>
+                
+                <div class="overflow-y-auto max-h-[60vh] p-4 space-y-3">
+                    ${misPedidos.map(p => `
+                        <div class="bg-gray-700 rounded-xl p-4 ${p.estado === 'completado' ? 'border-l-4 border-green-500' : p.estado === 'pendiente' ? 'border-l-4 border-yellow-500' : 'border-l-4 border-blue-500'}">
+                            <div class="flex justify-between items-start mb-2">
+                                <div>
+                                    <span class="font-bold text-orange-400">#${p.id}</span>
+                                    <span class="text-xs ml-2 px-2 py-0.5 rounded-full ${p.estado === 'completado' ? 'bg-green-500/20 text-green-400' : p.estado === 'pendiente' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-blue-500/20 text-blue-400'}">
+                                        ${p.estado === 'completado' ? '✅ Completado' : p.estado === 'pendiente' ? '⏳ Pendiente' : '🚚 En camino'}
+                                    </span>
+                                </div>
+                                <span class="text-xs text-gray-400">${new Date(p.fecha).toLocaleDateString()}</span>
+                            </div>
+                            <p class="text-sm text-gray-300">
+                                <i class="fas fa-circle text-orange-500 text-xs mr-1"></i> ${p.origen}
+                            </p>
+                            <p class="text-sm text-gray-300 mt-1">
+                                <i class="fas fa-square text-blue-500 text-xs mr-1"></i> ${p.destino}
+                            </p>
+                            <div class="flex justify-between items-center mt-3 pt-2 border-t border-gray-600">
+                                <div class="text-sm">
+                                    <span class="text-gray-400">📏 ${p.distancia_real} km</span>
+                                    <span class="text-gray-400 ml-3">💰 $${p.tarifa}</span>
+                                </div>
+                                <button onclick="eliminarEnvio(${p.id})" class="bg-red-500/20 hover:bg-red-500 text-red-400 hover:text-white px-3 py-1 rounded-lg text-sm transition-all">
+                                    <i class="fas fa-trash-alt mr-1"></i> Eliminar
+                                </button>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+                
+                <div class="border-t border-gray-700 p-4">
+                    <div class="flex justify-between text-sm text-gray-400">
+                        <span>Total: ${misPedidos.length}</span>
+                        <span>✅ Completados: ${misPedidos.filter(p => p.estado === 'completado').length}</span>
+                        <span>⏳ Pendientes: ${misPedidos.filter(p => p.estado === 'pendiente').length}</span>
+                        <span>🚚 En camino: ${misPedidos.filter(p => p.estado === 'asignado').length}</span>
+                    </div>
                 </div>
             </div>
-        </div>
-    `;
-    
-    document.body.appendChild(modal);
+        `;
+        
+        document.body.appendChild(modal);
+    } catch(e) {
+        console.error('Error cargando historial:', e);
+        mostrarToast("Error al cargar historial", true);
+    }
 }
 
 function cerrarModalHistorial() {
@@ -422,43 +476,56 @@ function cerrarModalHistorial() {
     if (modal) modal.remove();
 }
 
-function eliminarEnvio(pedidoId) {
+async function eliminarEnvio(pedidoId) {
+    const supabase = supabaseClient;
+    if (!supabase) {
+        mostrarToast("Error de conexión", true);
+        return;
+    }
+    
+    // Primero obtener el pedido para ver su estado
+    const { data: pedido } = await supabase
+        .from('pedidos')
+        .select('*')
+        .eq('id', pedidoId)
+        .single();
+    
+    if (!pedido) {
+        mostrarToast("Envío no encontrado", true);
+        return;
+    }
+    
     let mensaje = "";
-    let accion = "";
-    
-    const pedidos = JSON.parse(localStorage.getItem('pedidos_pendientes')) || [];
-    const pedido = pedidos.find(p => p.id === pedidoId);
-    
-    if (pedido) {
-        if (pedido.estado === 'completado') {
-            mensaje = "Este envío ya está completado. ¿Seguro que quieres eliminarlo del historial?";
-            accion = "Eliminar del historial";
-        } else if (pedido.estado === 'asignado') {
-            mensaje = "⚠️ Este envío está en camino. Si lo eliminas, el delivery ya no lo verá. ¿Estás seguro?";
-            accion = "Eliminar de todas formas";
-        } else {
-            mensaje = "¿Estás seguro de que quieres eliminar este envío? Esta acción no se puede deshacer.";
-            accion = "Eliminar";
-        }
+    if (pedido.estado === 'completado') {
+        mensaje = "Este envío ya está completado. ¿Seguro que quieres eliminarlo del historial?";
+    } else if (pedido.estado === 'asignado') {
+        mensaje = "⚠️ Este envío está en camino. Si lo eliminas, el delivery ya no lo verá. ¿Estás seguro?";
+    } else {
+        mensaje = "¿Estás seguro de que quieres eliminar este envío? Esta acción no se puede deshacer.";
     }
     
     mostrarModalConfirmacion(
         "Eliminar envío",
-        mensaje || "¿Estás seguro de que quieres eliminar este envío?",
-        () => {
-            const pedidosActualizados = JSON.parse(localStorage.getItem('pedidos_pendientes')) || [];
-            const pedidoIndex = pedidosActualizados.findIndex(p => p.id === pedidoId);
-            
-            if (pedidoIndex !== -1) {
-                pedidosActualizados.splice(pedidoIndex, 1);
-                localStorage.setItem('pedidos_pendientes', JSON.stringify(pedidosActualizados));
+        mensaje,
+        async () => {
+            try {
+                // ✅ Eliminar de Supabase
+                const { error } = await supabase
+                    .from('pedidos')
+                    .delete()
+                    .eq('id', pedidoId);
+                
+                if (error) throw error;
+                
                 mostrarToast(`🗑️ Envío #${pedidoId} eliminado correctamente`);
                 
+                // Recargar historial si está abierto
                 if (document.getElementById("modalHistorial")) {
                     mostrarHistorialCompleto();
                 }
-            } else {
-                mostrarToast("❌ Envío no encontrado", true);
+            } catch(e) {
+                console.error('Error eliminando:', e);
+                mostrarToast("Error al eliminar el envío", true);
             }
         }
     );
