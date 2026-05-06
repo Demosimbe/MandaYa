@@ -435,62 +435,68 @@ function cerrarSesion() {
 async function actualizarColorMarcador() {
     if (!userMarker || !currentUser) return;
     
-    // Verificar si el delivery tiene pedido activo
     const tienePedido = await tienePedidoActivo(currentUser.id);
     
     let color;
     let estadoTexto;
     
     if (tienePedido) {
-        color = '#FF6200';  // Naranja - Ocupado
+        color = '#FF6200';
         estadoTexto = '🟠 En una entrega';
     } else {
-        color = '#10B981';  // Verde - Disponible
+        color = '#10B981';
         estadoTexto = '🟢 Disponible';
     }
     
-    // ✅ Crear nuevo icono con el nombre
+    // ✅ Obtener solo el primer nombre
+    const nombreMostrar = obtenerPrimerNombre(currentUser.nombre);
+    
     const nuevoIcono = L.divIcon({
         html: `
             <div style="text-align: center;">
+                <!-- ✅ NOMBRE ARRIBA con mejor fondo -->
+                <div style="
+                    background: rgba(0, 0, 0, 0.85);
+                    color: white;
+                    font-size: 11px;
+                    font-weight: bold;
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                    padding: 3px 8px;
+                    border-radius: 14px;
+                    margin-bottom: 4px;
+                    white-space: nowrap;
+                    display: inline-block;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+                    border: 0.5px solid rgba(255,255,255,0.2);
+                ">
+                    ${nombreMostrar}
+                </div>
+                <!-- ✅ MOTO DEBAJO -->
                 <div style="
                     background: ${color};
-                    width: 32px;
-                    height: 32px;
+                    width: 34px;
+                    height: 34px;
                     border-radius: 50%;
-                    border: 2px solid white;
-                    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+                    border: 2.5px solid white;
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
                     display: flex;
                     align-items: center;
                     justify-content: center;
                     margin: 0 auto;
                 ">
-                    <i class="fas fa-motorcycle" style="color:white; font-size:16px;"></i>
-                </div>
-                <div style="
-                    background: rgba(0,0,0,0.75);
-                    color: white;
-                    font-size: 10px;
-                    font-weight: bold;
-                    padding: 2px 6px;
-                    border-radius: 12px;
-                    margin-top: 2px;
-                    white-space: nowrap;
-                    font-family: sans-serif;
-                ">
-                    ${currentUser.nombre}
+                    <i class="fas fa-motorcycle" style="color:white; font-size:18px;"></i>
                 </div>
             </div>
         `,
-        iconSize: [32, 50],
+        iconSize: [50, 60],
         className: 'moto-marker',
-        popupAnchor: [0, -20]
+        popupAnchor: [0, -25]
     });
     
     userMarker.setIcon(nuevoIcono);
     userMarker.setPopupContent(`🏍️ <b>${currentUser.nombre}</b><br>${estadoTexto}`);
     
-    console.log(`🎨 Marcador actualizado: ${tienePedido ? 'NARANJA (ocupado)' : 'VERDE (disponible)'} - ${currentUser.nombre}`);
+    console.log(`🎨 Marcador actualizado: ${tienePedido ? 'NARANJA' : 'VERDE'} - ${nombreMostrar}`);
 }
 
 // Llamar a esta función cuando cambie el estado (al agarrar o completar pedido)

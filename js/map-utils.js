@@ -83,6 +83,13 @@ function calculateShippingRate(distanceKm, tipo) {
     return { total: total, base: baseRate, porKm: ratePerKm };
 }
 
+// ==================== EXTRAER SOLO EL PRIMER NOMBRE ====================
+function obtenerPrimerNombre(nombreCompleto) {
+    if (!nombreCompleto) return 'Delivery';
+    const primerNombre = nombreCompleto.trim().split(' ')[0];
+    return primerNombre.length > 12 ? primerNombre.substring(0, 10) + '..' : primerNombre;
+}
+
 function formatDuration(minutes) {
     if (minutes < 60) return `${Math.round(minutes)} min`;
     const hours = Math.floor(minutes / 60);
@@ -92,7 +99,6 @@ function formatDuration(minutes) {
 
 // ==================== MARCADOR CON NOMBRE PARA DELIVERY ====================
 function crearMarcadorDelivery(lat, lng, nombre, color, tienePedido = null) {
-    // Determinar el color si no se especifica
     let colorFinal = color;
     let estadoTexto = '';
     
@@ -101,43 +107,49 @@ function crearMarcadorDelivery(lat, lng, nombre, color, tienePedido = null) {
         estadoTexto = tienePedido ? '🟠 En entrega' : '🟢 Disponible';
     }
     
-    // Crear el icono con el nombre arriba
+    // ✅ Obtener solo el primer nombre
+    const nombreMostrar = obtenerPrimerNombre(nombre);
+    
     const iconoConNombre = L.divIcon({
         html: `
             <div style="text-align: center;">
+                <!-- ✅ NOMBRE ARRIBA con mejor fondo -->
+                <div style="
+                    background: rgba(0, 0, 0, 0.85);
+                    color: white;
+                    font-size: 11px;
+                    font-weight: bold;
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                    padding: 3px 8px;
+                    border-radius: 14px;
+                    margin-bottom: 4px;
+                    white-space: nowrap;
+                    display: inline-block;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+                    border: 0.5px solid rgba(255,255,255,0.2);
+                ">
+                    ${nombreMostrar}
+                </div>
+                <!-- ✅ MOTO DEBAJO -->
                 <div style="
                     background: ${colorFinal};
-                    width: 32px;
-                    height: 32px;
+                    width: 34px;
+                    height: 34px;
                     border-radius: 50%;
-                    border: 2px solid white;
-                    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+                    border: 2.5px solid white;
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
                     display: flex;
                     align-items: center;
                     justify-content: center;
                     margin: 0 auto;
                 ">
-                    <i class="fas fa-motorcycle" style="color:white; font-size:16px;"></i>
-                </div>
-                <div style="
-                    background: rgba(0,0,0,0.75);
-                    color: white;
-                    font-size: 10px;
-                    font-weight: bold;
-                    padding: 2px 6px;
-                    border-radius: 12px;
-                    margin-top: 2px;
-                    white-space: nowrap;
-                    font-family: sans-serif;
-                    text-shadow: 0 0 2px black;
-                ">
-                    ${nombre}
+                    <i class="fas fa-motorcycle" style="color:white; font-size:18px;"></i>
                 </div>
             </div>
         `,
-        iconSize: [32, 50],  // Más alto para incluir el nombre
+        iconSize: [50, 60],
         className: 'delivery-marker',
-        popupAnchor: [0, -20]  // El popup aparece arriba del nombre
+        popupAnchor: [0, -25]
     });
     
     const marker = L.marker([lat, lng], { icon: iconoConNombre });
