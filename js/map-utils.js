@@ -62,25 +62,24 @@ async function getRealDistanceAndTime(origin, dest) {
 }
 
 function calculateShippingRate(distanceKm, tipo) {
-    let baseRate = 35;
-    let ratePerKm = 8;
+    const km = Math.round(distanceKm);
     
-    if (tipo === 'comida') {
-        baseRate = 30;
-        ratePerKm = 7;
-    } else if (tipo === 'farmacia') {
-        baseRate = 40;
-        ratePerKm = 9;
-    } else if (tipo === 'mercancia') {
-        baseRate = 50;
-        ratePerKm = 10;
-    }
+    // Tarifa base por kilómetro
+    let baseRate = 0;
+    if (km <= 1) baseRate = 30;
+    else if (km <= 2) baseRate = 35;
+    else if (km <= 3) baseRate = 40;
+    else if (km <= 4) baseRate = 45;
+    else if (km <= 5) baseRate = 50;
+    else if (km <= 6) baseRate = 60;
+    else if (km <= 7) baseRate = 70;
+    else baseRate = 70 + ((km - 7) * 10); // Más de 7 km: +$10 por km
     
-    let total = baseRate + (distanceKm * ratePerKm);
-    total = Math.max(total, 35);
-    total = Math.round(total);
-    
-    return { total: total, base: baseRate, porKm: ratePerKm };
+    return { 
+        total: baseRate, 
+        base: baseRate, 
+        porKm: null 
+    };
 }
 
 // ==================== EXTRAER SOLO EL PRIMER NOMBRE ====================
