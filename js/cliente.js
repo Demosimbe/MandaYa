@@ -560,6 +560,68 @@ function mostrarResumenRuta() {
     });
 }
 
+// ==================== FUNCIONES SUPABASE PARA CLIENTE ====================
+
+// Suscribirse a ubicación de delivery en tiempo real
+function suscribirUbicacionDeliveryReal(deliveryId) {
+    if (typeof suscribirUbicacionEnTiempoReal !== 'undefined') {
+        const subscription = suscribirUbicacionEnTiempoReal(deliveryId, (ubicacion) => {
+            if (ubicacion && deliveryMarker) {
+                // Actualizar marcador en tiempo real
+                deliveryMarker.setLatLng([ubicacion.lat, ubicacion.lng]);
+                console.log('📍 Ubicación actualizada en tiempo real:', ubicacion.lat, ubicacion.lng);
+                
+                // Actualizar estado
+                if (destCoords && ubicacion) {
+                    const distanciaADestino = calcularDistanciaEntrePuntos(
+                        { lat: ubicacion.lat, lng: ubicacion.lng },
+                        destCoords
+                    );
+                    if (distanciaADestino < 0.5) {
+                        document.getElementById("deliveryEstado").innerHTML = "🟢 Muy cerca de tu destino 🎯";
+                    } else if (distanciaADestino < 1) {
+                        document.getElementById("deliveryEstado").innerHTML = "🟡 Cerca de tu destino";
+                    } else {
+                        document.getElementById("deliveryEstado").innerHTML = `🔴 A ${distanciaADestino.toFixed(1)} km de tu destino`;
+                    }
+                }
+            }
+        });
+        return subscription;
+    }
+    return null;
+}
+
+// Modificar seguirUbicacionDelivery para usar también Supabase
+// Esta función ya existe, solo agregamos la suscripción en tiempo real
+function seguirUbicacionDeliveryDual(deliveryId) {
+    // Función original (localStorage)
+    const intervaloOriginal = setInterval(() => {
+        const ubicacionGuardada = localStorage.getItem(`ubicacion_${deliveryId}`);
+        if (ubicacionGuardada) {
+            const ubicacion = JSON.parse(ubicacionGuardada);
+            if (deliveryMarker) map.removeLayer(deliveryMarker);
+            const motoIcon = getMotoIcon();
+            deliveryMarker = L.marker([ubicacion.lat, ubicacion.lng], { icon: motoIcon })
+                .addTo(map)
+                .bindPopup('<b>🏍️ Delivery en camino</b><br>Tu pedido está siendo entregado');
+        }
+    }, 2000);
+    
+    // También suscribir a Supabase si está disponible
+    if (typeof suscribirUbicacionEnTiempoReal !== 'undefined') {
+        const subscription = suscribirUbicacionEnTiempoReal(deliveryId, (ubicacion) => {
+            if (ubicacion && deliveryMarker) {
+                deliveryMarker.setLatLng([ubicacion.lat, ubicacion.lng]);
+                console.log('📍 Actualización en tiempo real desde Supabase');
+            }
+        });
+        return { intervaloOriginal, subscription };
+    }
+    
+    return { intervaloOriginal, subscription: null };
+}
+
 window.onload = () => { 
     loadUser(); 
     initMap(); 

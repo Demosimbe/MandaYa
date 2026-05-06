@@ -43,6 +43,121 @@ function loadUser() {
     cargarPedidos();
 }
 
+// ==================== FUNCIONES SUPABASE (AGREGADAS SIN ROMPER NADA) ====================
+
+// Guardar ubicación también en Supabase (además de localStorage)
+async function guardarUbicacionDual(coords) {
+    if (currentUser && isOnline) {
+        // Guardar en localStorage (funcionamiento actual)
+        localStorage.setItem(`ubicacion_${currentUser.id}`, JSON.stringify(coords));
+        
+        // También guardar en Supabase si está disponible
+        if (typeof guardarUbicacionEnSupabase !== 'undefined') {
+            await guardarUbicacionEnSupabase(
+                currentUser.id,
+                currentUser.nombre,
+                coords.lat,
+                coords.lng,
+                true
+            );
+            console.log('✅ Ubicación guardada en Supabase');
+        }
+    }
+}
+
+// Modificar el intervalo de ubicación para usar Supabase
+// Busca la función toggleOnline() y dentro del intervalo, reemplaza la línea de guardado
+// O agrega esta función para ser llamada desde el intervalo existente
+function actualizarUbicacionEnNube() {
+    if(userMarker && currentUser && isOnline) {
+        const coords = userMarker.getLatLng();
+        // Guardar en localStorage (actual)
+        localStorage.setItem(`ubicacion_${currentUser.id}`, JSON.stringify({ lat: coords.lat, lng: coords.lng }));
+        
+        // Guardar en Supabase (nuevo)
+        if (typeof guardarUbicacionEnSupabase !== 'undefined') {
+            guardarUbicacionEnSupabase(
+                currentUser.id,
+                currentUser.nombre,
+                coords.lat,
+                coords.lng,
+                true
+            );
+        }
+    }
+}
+
+// Cargar pedidos desde Supabase (además de localStorage)
+async function cargarPedidosDual() {
+    // Cargar desde localStorage (funcionamiento actual)
+    const todosPedidos = JSON.parse(localStorage.getItem('pedidos_pendientes')) || [];
+    pedidosDisponibles = todosPedidos.filter(p => p.estado === 'pendiente');
+    misPedidosActivos = todosPedidos.filter(p => p.deliveryId === currentUser?.id && p.estado !== 'completado');
+    
+    actualizarListaPedidos();
+    dibujarRutaSeleccionada();
+    
+    // También cargar desde Supabase si está disponible (solo para sincronizar)
+    if (typeof obtenerPedidosPendientesDeSupabase !== 'undefined' && currentUser) {
+        try {
+            const supabasePedidos = await obtenerPedidosPendientesDeSupabase();
+            const supabaseActivos = await obtenerPedidosActivosDeSupabase(currentUser.id);
+            console.log('📡 Pedidos desde Supabase:', supabasePedidos.length, 'pendientes,', supabaseActivos.length, 'activos');
+        } catch(e) {
+            console.log('Supabase no disponible, usando solo localStorage');
+        }
+    }
+}
+
+// Agarrar pedido también en Supabase
+async function agarrarPedidoDual(pedidoId) {
+    // Primero en localStorage
+    const todosPedidos = JSON.parse(localStorage.getItem('pedidos_pendientes')) || [];
+    const pedidoIndex = todosPedidos.findIndex(p => p.id === pedidoId);
+    
+    if(pedidoIndex !== -1 && todosPedidos[pedidoIndex].estado === 'pendiente') {
+        todosPedidos[pedidoIndex].estado = 'asignado';
+        todosPedidos[pedidoIndex].deliveryId = currentUser.id;
+        todosPedidos[pedidoIndex].deliveryNombre = currentUser.nombre;
+        localStorage.setItem('pedidos_pendientes', JSON.stringify(todosPedidos));
+        
+        // También en Supabase
+        if (typeof agarrarPedidoEnSupabase !== 'undefined') {
+            await agarrarPedidoEnSupabase(pedidoId, currentUser.id, currentUser.nombre);
+            console.log('✅ Pedido agarrado también en Supabase');
+        }
+        
+        mostrarToast(`✅ Pedido #${pedidoId} AGARRADO!`);
+        pedidoSeleccionado = null;
+        cargarPedidos();
+        return true;
+    }
+    return false;
+}
+
+// Completar pedido también en Supabase
+async function completarPedidoDual(pedidoId) {
+    const todosPedidos = JSON.parse(localStorage.getItem('pedidos_pendientes')) || [];
+    const pedidoIndex = todosPedidos.findIndex(p => p.id === pedidoId);
+    
+    if(pedidoIndex !== -1) {
+        todosPedidos[pedidoIndex].estado = 'completado';
+        todosPedidos[pedidoIndex].fechaCompletado = new Date().toISOString();
+        localStorage.setItem('pedidos_pendientes', JSON.stringify(todosPedidos));
+        
+        // También en Supabase
+        if (typeof completarPedidoEnSupabase !== 'undefined') {
+            await completarPedidoEnSupabase(pedidoId);
+            console.log('✅ Pedido completado también en Supabase');
+        }
+        
+        mostrarToast(`✅ Pedido #${pedidoId} COMPLETADO!`);
+        cargarPedidos();
+        return true;
+    }
+    return false;
+}
+
 function centrarMapa() {
     map.setView([18.6456, -91.8249], 13);
     mostrarToast("📍 Mapa centrado en Ciudad del Carmen");

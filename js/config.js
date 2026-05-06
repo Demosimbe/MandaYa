@@ -1,148 +1,237 @@
-// Configuración de rutas usando OSRM (sin CORS)
-// NOTA: Las variables de routing se manejan con window._currentRoutingControl
+// Configuración de Supabase
+const SUPABASE_URL = 'https://ewjljddexyajxuzzzssp.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3amxqZGRleHlhanh1enp6c3NwIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3ODAyMDExOSwiZXhwIjoyMDkzNTk2MTE5fQ.Xcb3vGH7a7Q0RA9-RlnZ1wUrWNXAV7YxEWiTPGsOMPU';
 
-async function getRealDistanceAndTime(startCoords, endCoords) {
-    if (!startCoords || !endCoords) return null;
+let supabaseClient = null;
+let supabaseInicializado = false;
+
+function initSupabase() {
+    if (typeof supabase !== 'undefined' && !supabaseClient) {
+        try {
+            supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+            supabaseInicializado = true;
+            console.log('✅ Supabase inicializado');
+        } catch(e) {
+            console.error('❌ Error inicializando Supabase:', e);
+            supabaseInicializado = false;
+        }
+    }
+    return supabaseClient;
+}
+
+// Guardar ubicación del delivery en Supabase
+async function guardarUbicacionEnSupabase(deliveryId, deliveryNombre, lat, lng, online) {
+    if (!supabaseInicializado) initSupabase();
+    if (!supabaseClient) return null;
     
     try {
-        const url = `https://router.project-osrm.org/route/v1/driving/${startCoords.lng},${startCoords.lat};${endCoords.lng},${endCoords.lat}?overview=full&geometries=polyline`;
-        
-        const response = await fetch(url);
-        const data = await response.json();
-        
-        if (data.routes && data.routes[0]) {
-            const route = data.routes[0];
-            const distance = route.distance / 1000;
-            const duration = route.duration;
-            const geometry = route.geometry;
-            
-            return {
-                distance: distance,
-                distanceKm: distance.toFixed(2),
-                duration: duration,
-                durationMin: Math.round(duration / 60),
-                durationText: formatDuration(duration),
-                geometry: geometry,
-                rawData: data
-            };
-        }
-        return null;
-    } catch (error) {
-        console.error('Error al obtener ruta:', error);
-        return null;
-    }
-}
-
-async function drawRealRoute(map, startCoords, endCoords, color = '#FF6200', weight = 5) {
-    // Limpiar routing control existente si lo hay
-    if (window._currentRoutingControl) {
-        try {
-            map.removeControl(window._currentRoutingControl);
-        } catch(e) {}
-        window._currentRoutingControl = null;
-    }
-    
-    const routingControl = L.Routing.control({
-        waypoints: [
-            L.latLng(startCoords.lat, startCoords.lng),
-            L.latLng(endCoords.lat, endCoords.lng)
-        ],
-        routeWhileDragging: false,
-        showAlternatives: false,
-        lineOptions: {
-            styles: [{ color: color, weight: weight, opacity: 0.8 }],
-            extendToWaypoints: true,
-            missingRouteTolerance: 0
-        },
-        router: L.Routing.osrmv1({
-            serviceUrl: 'https://router.project-osrm.org/route/v1'
-        }),
-        show: false,
-        addWaypoints: false,
-        draggableWaypoints: false,
-        fitSelectedRoutes: false
-    });
-    
-    window._currentRoutingControl = routingControl;
-    
-    return new Promise((resolve) => {
-        let resolved = false;
-        
-        const onRoutesFound = function(e) {
-            if (resolved) return;
-            resolved = true;
-            const route = e.routes[0];
-            const distance = route.summary.totalDistance / 1000;
-            const duration = route.summary.totalTime;
-            
-            resolve({
-                line: routingControl,
-                routeData: {
-                    distance: distance,
-                    distanceKm: distance.toFixed(2),
-                    duration: duration,
-                    durationText: formatDuration(duration),
-                    geometry: null
-                }
+        const { data, error } = await supabaseClient
+            .from('ubicaciones')
+            .upsert({
+                delivery_id: deliveryId,
+                delivery_nombre: deliveryNombre,
+                lat: lat,
+                lng: lng,
+                online: online,
+                updated_at: new Date()
+            }, {
+                onConflict: 'delivery_id'
             });
-        };
         
-        routingControl.on('routesfound', onRoutesFound);
-        routingControl.addTo(map);
+        if (error) console.error('Error guardando ubicación:', error);
+        return { data, error };
+    } catch(e) {
+        console.error('Error en guardarUbicacionEnSupabase:', e);
+        return null;
+    }
+}
+
+// Obtener ubicación de un delivery
+async function obtenerUbicacionDeSupabase(deliveryId) {
+    if (!supabaseInicializado) initSupabase();
+    if (!supabaseClient) return null;
+    
+    try {
+        const { data, error } = await supabaseClient
+            .from('ubicaciones')
+            .select('*')
+            .eq('delivery_id', deliveryId)
+            .maybeSingle();
         
-        setTimeout(() => {
-            if (!resolved) {
-                resolved = true;
-                resolve({ line: null, routeData: null });
-            }
-        }, 5000);
-    });
-}
-
-function formatDuration(seconds) {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    
-    if (hours > 0) {
-        return `${hours}h ${minutes}min`;
+        if (error) console.error('Error obteniendo ubicación:', error);
+        return data;
+    } catch(e) {
+        console.error('Error en obtenerUbicacionDeSupabase:', e);
+        return null;
     }
-    return `${minutes} min`;
 }
 
-function calculateShippingRate(distanceKm, tipoEnvio) {
-    let baseRate = 35;
-    let perKmRate = 8;
+// Suscribirse a cambios en tiempo real
+function suscribirUbicacionEnTiempoReal(deliveryId, callback) {
+    if (!supabaseInicializado) initSupabase();
+    if (!supabaseClient) return null;
     
-    if (distanceKm <= 2) {
-        perKmRate = 6;
-    } else if (distanceKm > 10) {
-        perKmRate = 10;
+    try {
+        const subscription = supabaseClient
+            .channel(`ubicaciones_${deliveryId}`)
+            .on('postgres_changes', {
+                event: 'UPDATE',
+                schema: 'public',
+                table: 'ubicaciones',
+                filter: `delivery_id=eq.${deliveryId}`
+            }, (payload) => {
+                if (payload.new && callback) {
+                    callback(payload.new);
+                }
+            })
+            .subscribe();
+        
+        return subscription;
+    } catch(e) {
+        console.error('Error en suscripción:', e);
+        return null;
     }
-    
-    const typeMultipliers = {
-        'comida': 1,
-        'paquete': 1.1,
-        'mercancia': 1.3,
-        'farmacia': 1
-    };
-    
-    const total = (baseRate + (distanceKm * perKmRate)) * (typeMultipliers[tipoEnvio] || 1);
-    
-    return {
-        base: baseRate,
-        perKm: perKmRate,
-        total: Math.round(total),
-        totalWithDecimal: total.toFixed(2)
-    };
 }
 
-function getMotoIcon() {
-    return L.divIcon({
-        html: `<div style="background:#FF6200; width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center; border:3px solid white; box-shadow:0 4px 10px rgba(0,0,0,0.3); background: linear-gradient(135deg, #FF6200, #FF8C00);">
-                    <i class="fas fa-motorcycle" style="color:white; font-size:22px;"></i>
-               </div>
-               <div style="position:absolute; bottom:-8px; left:50%; transform:translateX(-50%); background:#10b981; width:10px; height:10px; border-radius:50%; border:2px solid white; animation:pulse 2s infinite;"></div>`,
-        iconSize: [40, 40],
-        className: 'moto-marker'
-    });
+// Crear pedido en Supabase
+async function crearPedidoEnSupabase(pedido) {
+    if (!supabaseInicializado) initSupabase();
+    if (!supabaseClient) return null;
+    
+    try {
+        const { data, error } = await supabaseClient
+            .from('pedidos')
+            .insert([{
+                id: pedido.id,
+                cliente_id: pedido.clienteId,
+                cliente_nombre: pedido.clienteNombre,
+                origen: pedido.origen,
+                destino: pedido.destino,
+                origen_lat: pedido.origenCoords?.lat,
+                origen_lng: pedido.origenCoords?.lng,
+                destino_lat: pedido.destinoCoords?.lat,
+                destino_lng: pedido.destinoCoords?.lng,
+                tipo: pedido.tipo,
+                distancia_real: pedido.distanciaReal,
+                tarifa: pedido.tarifa,
+                estado: pedido.estado,
+                fecha: pedido.fecha
+            }]);
+        
+        if (error) console.error('Error creando pedido:', error);
+        return { data, error };
+    } catch(e) {
+        console.error('Error en crearPedidoEnSupabase:', e);
+        return null;
+    }
 }
+
+// Obtener pedidos pendientes
+async function obtenerPedidosPendientesDeSupabase() {
+    if (!supabaseInicializado) initSupabase();
+    if (!supabaseClient) return [];
+    
+    try {
+        const { data, error } = await supabaseClient
+            .from('pedidos')
+            .select('*')
+            .eq('estado', 'pendiente')
+            .order('fecha', { ascending: true });
+        
+        if (error) console.error('Error obteniendo pedidos:', error);
+        return data || [];
+    } catch(e) {
+        console.error('Error en obtenerPedidosPendientesDeSupabase:', e);
+        return [];
+    }
+}
+
+// Agarrar pedido
+async function agarrarPedidoEnSupabase(pedidoId, deliveryId, deliveryNombre) {
+    if (!supabaseInicializado) initSupabase();
+    if (!supabaseClient) return null;
+    
+    try {
+        const { data, error } = await supabaseClient
+            .from('pedidos')
+            .update({
+                estado: 'asignado',
+                delivery_id: deliveryId,
+                delivery_nombre: deliveryNombre
+            })
+            .eq('id', pedidoId)
+            .eq('estado', 'pendiente');
+        
+        if (error) console.error('Error agarrando pedido:', error);
+        return { data, error };
+    } catch(e) {
+        console.error('Error en agarrarPedidoEnSupabase:', e);
+        return null;
+    }
+}
+
+// Completar pedido
+async function completarPedidoEnSupabase(pedidoId) {
+    if (!supabaseInicializado) initSupabase();
+    if (!supabaseClient) return null;
+    
+    try {
+        const { data, error } = await supabaseClient
+            .from('pedidos')
+            .update({
+                estado: 'completado',
+                fecha_completado: new Date()
+            })
+            .eq('id', pedidoId);
+        
+        if (error) console.error('Error completando pedido:', error);
+        return { data, error };
+    } catch(e) {
+        console.error('Error en completarPedidoEnSupabase:', e);
+        return null;
+    }
+}
+
+// Obtener pedidos activos de un delivery
+async function obtenerPedidosActivosDeSupabase(deliveryId) {
+    if (!supabaseInicializado) initSupabase();
+    if (!supabaseClient) return [];
+    
+    try {
+        const { data, error } = await supabaseClient
+            .from('pedidos')
+            .select('*')
+            .eq('delivery_id', deliveryId)
+            .in('estado', ['asignado'])
+            .order('fecha', { ascending: true });
+        
+        if (error) console.error('Error obteniendo pedidos activos:', error);
+        return data || [];
+    } catch(e) {
+        console.error('Error en obtenerPedidosActivosDeSupabase:', e);
+        return [];
+    }
+}
+
+// Obtener pedidos de un cliente
+async function obtenerPedidosClienteDeSupabase(clienteId) {
+    if (!supabaseInicializado) initSupabase();
+    if (!supabaseClient) return [];
+    
+    try {
+        const { data, error } = await supabaseClient
+            .from('pedidos')
+            .select('*')
+            .eq('cliente_id', clienteId)
+            .order('fecha', { ascending: false });
+        
+        if (error) console.error('Error obteniendo pedidos del cliente:', error);
+        return data || [];
+    } catch(e) {
+        console.error('Error en obtenerPedidosClienteDeSupabase:', e);
+        return [];
+    }
+}
+
+// Inicializar
+initSupabase();
