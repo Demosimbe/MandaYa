@@ -231,7 +231,7 @@ async function completarPedido(pedidoId) {
     }
 }
 
-function toggleOnline() {
+async function toggleOnline() {
     isOnline = !isOnline;
     const btn = document.getElementById("onlineToggle");
     const span = document.getElementById("onlineStatusText");
@@ -241,17 +241,17 @@ function toggleOnline() {
         btn.classList.add("bg-green-500", "hover:bg-green-600");
         span.innerHTML = '<i class="fas fa-circle online-dot mr-1"></i> En línea';
         mostrarToast("✅ Estás en línea - Los clientes verán que estás disponible");
+        
         if(currentUser) {
             currentUser.online = true;
             localStorage.setItem('sesion_activa', JSON.stringify(currentUser));
-            const usuarios = JSON.parse(localStorage.getItem('usuarios')) || [];
-            const idx = usuarios.findIndex(u => u.id === currentUser.id);
-            if(idx !== -1) { usuarios[idx].online = true; localStorage.setItem('usuarios', JSON.stringify(usuarios)); }
             
-            // Guardar estado online en Supabase
-            if (userMarker && typeof guardarUbicacionEnSupabase !== 'undefined') {
+            // ✅ Guardar en Supabase
+            await setDeliveryOnlineSupabase(currentUser.id, true);
+            
+            if (userMarker) {
                 const coords = userMarker.getLatLng();
-                guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, coords.lat, coords.lng, true);
+                await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, coords.lat, coords.lng, true);
             }
         }
         cargarPedidos();
@@ -260,11 +260,7 @@ function toggleOnline() {
         ubicacionInterval = setInterval(async () => {
             if(userMarker && currentUser && isOnline) {
                 const coords = userMarker.getLatLng();
-                localStorage.setItem(`ubicacion_${currentUser.id}`, JSON.stringify({ lat: coords.lat, lng: coords.lng }));
-                
-                if (typeof guardarUbicacionEnSupabase !== 'undefined') {
-                    await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, coords.lat, coords.lng, true);
-                }
+                await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, coords.lat, coords.lng, true);
             }
         }, 3000);
     } else {
@@ -272,17 +268,17 @@ function toggleOnline() {
         btn.classList.add("bg-gray-500");
         span.innerHTML = 'Conectarse';
         mostrarToast("📴 Estás offline - No recibirás pedidos");
+        
         if(currentUser) {
             currentUser.online = false;
             localStorage.setItem('sesion_activa', JSON.stringify(currentUser));
-            const usuarios = JSON.parse(localStorage.getItem('usuarios')) || [];
-            const idx = usuarios.findIndex(u => u.id === currentUser.id);
-            if(idx !== -1) { usuarios[idx].online = false; localStorage.setItem('usuarios', JSON.stringify(usuarios)); }
             
-            // Guardar estado offline en Supabase
-            if (userMarker && typeof guardarUbicacionEnSupabase !== 'undefined') {
+            // ✅ Guardar en Supabase
+            await setDeliveryOnlineSupabase(currentUser.id, false);
+            
+            if (userMarker) {
                 const coords = userMarker.getLatLng();
-                guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, coords.lat, coords.lng, false);
+                await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, coords.lat, coords.lng, false);
             }
         }
         if(ubicacionInterval) clearInterval(ubicacionInterval);
