@@ -367,11 +367,48 @@
             }
         }
         
-        // Sincronizar cada segundo
-        setInterval(() => {
-            actualizarListaPedidosMobile();
-            actualizarUserInfoMobile();
-        }, 1000);
+       // ==================== CONTROL DE INTERVALOS ====================
+// Guardamos el intervalo en una variable para poder limpiarlo después
+let syncInterval = null;
+
+// Función que ejecuta la sincronización
+function ejecutarSincronizacion() {
+    actualizarListaPedidosMobile();
+    actualizarUserInfoMobile();
+}
+
+// Iniciar el intervalo solo si no existe
+function iniciarSincronizacion() {
+    if (syncInterval) return; // Ya está corriendo
+    syncInterval = setInterval(ejecutarSincronizacion, 500);
+    console.log("✅ Sincronización mobile iniciada");
+}
+
+// Detener el intervalo
+function detenerSincronizacion() {
+    if (syncInterval) {
+        clearInterval(syncInterval);
+        syncInterval = null;
+        console.log("🛑 Sincronización mobile detenida");
+    }
+}
+
+// Iniciar la sincronización automáticamente
+iniciarSincronizacion();
+
+// ✅ IMPORTANTE: Detener la sincronización cuando la página se cierra o cambia
+window.addEventListener('beforeunload', function() {
+    detenerSincronizacion();
+});
+
+// ✅ También limpiar cuando el usuario cierra sesión
+const originalCerrarSesion = window.cerrarSesion;
+window.cerrarSesion = function() {
+    detenerSincronizacion();
+    if (originalCerrarSesion) {
+        originalCerrarSesion();
+    }
+};
         
         function centrarMapa() {
             if (map) map.setView([18.6456, -91.8249], 13);

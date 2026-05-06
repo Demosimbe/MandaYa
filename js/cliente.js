@@ -9,6 +9,7 @@ let seguimientoInterval = null;
 let ubicacionInterval = null;
 let currentRouteData = null;
 let deliverysMarkers = []; // Para los marcadores de deliverys en línea
+let deliverysInterval = null;  // Para el intervalo de deliverys en línea
 
 // ==================== INICIALIZACIÓN ====================
 function initMap() {
@@ -238,7 +239,7 @@ async function solicitarEnvio() {
             .insert([nuevoPedido]);
         
         if (error) throw error;
-        
+        pedidoActual = nuevoPedido;
         mostrarToast(`✅ ¡Envío solicitado! Tarifa: $${tarifa} MXN (${distancia.toFixed(2)} km)`);
         iniciarSeguimientoDelivery();
         
@@ -248,31 +249,51 @@ async function solicitarEnvio() {
     }
 }
 
+// En cliente.js - reemplaza la función iniciarSeguimientoDelivery()
 function iniciarSeguimientoDelivery() {
-    mostrarToast("🟢 Buscando delivery disponible...");
+    if (!pedidoActual || !pedidoActual.id) {
+        console.error("No hay pedido actual para seguir");
+        return;
+    }
+
+     if (seguimientoInterval) {
+        clearInterval(seguimientoInterval);
+        seguimientoInterval = null;
+    }
     
+    mostrarToast("🟢 Buscando delivery disponible...");
+
     seguimientoInterval = setInterval(async () => {
         const supabase = supabaseClient;
         if (!supabase) return;
         
         try {
-            // ✅ Buscar el pedido en Supabase
+            // ✅ Obtener el pedido ACTUALIZADO desde Supabase
             const { data: pedidoActualizado, error } = await supabase
                 .from('pedidos')
                 .select('*')
-                .eq('id', pedidoActual?.id)
+                .eq('id', pedidoActual.id)
                 .single();
             
             if (error) throw error;
             
+            // ✅ ACTUALIZAR la variable global con los datos más recientes
+            if (pedidoActualizado) {
+                pedidoActual = pedidoActualizado;
+            }
+            
+            // Estado: asignado - delivery en camino
             if (pedidoActualizado && pedidoActualizado.estado === 'asignado' && pedidoActualizado.delivery_id) {
                 clearInterval(seguimientoInterval);
-                pedidoActual = pedidoActualizado;
+                seguimientoInterval = null;
                 mostrarToast(`✅ Delivery asignado: ${pedidoActualizado.delivery_nombre}`);
                 mostrarDeliveryEnMapa(pedidoActualizado.delivery_id);
                 seguirUbicacionDelivery(pedidoActualizado.delivery_id);
-            } else if (pedidoActualizado && pedidoActualizado.estado === 'completado') {
+            } 
+            // Estado: completado
+            else if (pedidoActualizado && pedidoActualizado.estado === 'completado') {
                 clearInterval(seguimientoInterval);
+                seguimientoInterval = null;
                 mostrarToast(`🎉 ¡Envío completado! Gracias por usar MandaYa`);
                 ocultarDeliveryInfo();
             }
@@ -316,6 +337,13 @@ async function mostrarDeliveryEnMapa(deliveryId) {
 }
 
 function seguirUbicacionDelivery(deliveryId) {
+
+// ✅ Limpiar intervalo anterior si existe
+    if (ubicacionInterval) {
+        clearInterval(ubicacionInterval);
+        ubicacionInterval = null;
+    }
+
     ubicacionInterval = setInterval(async () => {
         let ubicacion = null;
         
@@ -577,12 +605,16 @@ function verPerfil() {
     alert(`👤 ${currentUser?.nombre}\n📧 ${currentUser?.email}\n💰 Cliente`); 
 }
 
+// En cliente.js - función cerrarSesion()
 function cerrarSesion() { 
     if(confirm("¿Cerrar sesión?")){
-        if(seguimientoInterval) clearInterval(seguimientoInterval);
-        if(ubicacionInterval) clearInterval(ubicacionInterval);
+        // ✅ LIMPIAR TODOS LOS INTERVALOS
+        if(seguimientoInterval) { clearInterval(seguimientoInterval); seguimientoInterval = null;}
+        if(ubicacionInterval) { clearInterval(ubicacionInterval); ubicacionInterval = null;}
+        if(deliverysInterval) { clearInterval(deliverysInterval); deliverysInterval = null; }
+        
         localStorage.removeItem('sesion_activa'); 
-        window.location.href="index.html"; 
+        window.location.href = "index.html"; 
     } 
 }
 
@@ -693,8 +725,12 @@ window.onload = () => {
     initMap();
     if (currentUser && currentUser.rol === 'cliente') {
         setTimeout(() => cargarDeliverysEnLinea(), 2000);
-        // Actualizar deliverys cada 5 segundos
-        setInterval(() => {
+        
+        // ✅ Limpiar intervalo anterior si existe
+        if (deliverysInterval) clearInterval(deliverysInterval);
+        
+        // ✅ Guardar referencia del intervalo
+        deliverysInterval = setInterval(() => {
             if (currentUser && currentUser.rol === 'cliente') {
                 cargarDeliverysEnLinea();
             }

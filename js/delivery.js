@@ -7,6 +7,7 @@ let pedidosDisponibles = [], misPedidosActivos = [];
 let pedidoSeleccionado = null;
 let watchId = null;
 let ubicacionInterval = null;
+let cargaPedidosInterval = null;
 
 // ==================== INICIALIZACIÓN ====================
 function initMap() {
@@ -24,7 +25,14 @@ function initMap() {
     
     startLocationTracking();
     cargarPedidos();
-    setInterval(() => { if(isOnline) cargarPedidos(); }, 5000);
+    
+    // ✅ Limpiar intervalo anterior si existe (por si se llama initMap varias veces)
+    if(cargaPedidosInterval) clearInterval(cargaPedidosInterval);
+    
+    // ✅ Crear nuevo intervalo para recargar pedidos cada 5 segundos
+    cargaPedidosInterval = setInterval(() => { 
+        if(isOnline) cargarPedidos(); 
+    }, 5000);
 }
 
 function loadUser() {
@@ -311,6 +319,12 @@ async function toggleOnline() {
             }
         }
         cargarPedidos();
+
+        // ✅ Asegurar que el intervalo de carga esté activo
+        if(cargaPedidosInterval) clearInterval(cargaPedidosInterval);
+        cargaPedidosInterval = setInterval(() => { 
+        if(isOnline) cargarPedidos(); 
+        }, 5000);
         
         if(ubicacionInterval) clearInterval(ubicacionInterval);
         ubicacionInterval = setInterval(async () => {
@@ -379,11 +393,22 @@ function verPerfil() {
     alert(`👤 ${currentUser?.nombre}\n📧 ${currentUser?.email}\n🏍️ Delivery`); 
 }
 
+// En delivery.js - función cerrarSesion()
 function cerrarSesion() { 
     if(watchId) navigator.geolocation.clearWatch(watchId);
-    if(ubicacionInterval) clearInterval(ubicacionInterval);
     
-    // Marcar como offline antes de cerrar sesión
+    // ✅ LIMPIAR EL INTERVALO DE UBICACIÓN
+    if(ubicacionInterval) {
+        clearInterval(ubicacionInterval);
+        ubicacionInterval = null;
+    }
+
+    if(cargaPedidosInterval) {
+    clearInterval(cargaPedidosInterval);
+    cargaPedidosInterval = null;
+   }
+    
+    // Marcar como offline
     if(currentUser && typeof guardarUbicacionEnSupabase !== 'undefined' && userMarker) {
         const coords = userMarker.getLatLng();
         guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, coords.lat, coords.lng, false);
@@ -391,7 +416,7 @@ function cerrarSesion() {
     
     if(confirm("¿Cerrar sesión?")){ 
         localStorage.removeItem('sesion_activa'); 
-        window.location.href="index.html"; 
+        window.location.href = "index.html"; 
     } 
 }
 

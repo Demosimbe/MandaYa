@@ -486,35 +486,46 @@
             }
         }
         
-        // Sincronizar inputs mobile con desktop
-        function sincronizarInputsMobile() {
-            const origenDesktop = document.getElementById("origen");
-            const destinoDesktop = document.getElementById("destino");
-            const origenMobile = document.getElementById("origenMobile");
-            const destinoMobile = document.getElementById("destinoMobile");
-            const tarifaContainer = document.getElementById("tarifaContainer");
-            const tarifaContainerMobile = document.getElementById("tarifaContainerMobile");
-            const tarifaValue = document.getElementById("tarifaValue");
-            const tarifaValueMobile = document.getElementById("tarifaValueMobile");
-            const tipoEnvio = document.getElementById("tipoEnvio");
-            const tipoEnvioMobile = document.getElementById("tipoEnvioMobile");
-            
-            if (origenDesktop && origenMobile) origenMobile.value = origenDesktop.value;
-            if (destinoDesktop && destinoMobile) destinoMobile.value = destinoDesktop.value;
-            
-            if (tarifaContainer && tarifaContainerMobile) {
-                if (!tarifaContainer.classList.contains("hidden")) {
-                    tarifaContainerMobile.classList.remove("hidden");
-                    if (tarifaValue && tarifaValueMobile) {
-                        tarifaValueMobile.innerHTML = tarifaValue.innerHTML;
-                    }
-                } else {
-                    tarifaContainerMobile.classList.add("hidden");
-                }
-            }
-            
-            if (tipoEnvio && tipoEnvioMobile) tipoEnvioMobile.value = tipoEnvio.value;
-        }
+   // En cliente.html - agrega esto dentro de sincronizarInputsMobile()
+   function sincronizarInputsMobile() {
+       const origenDesktop = document.getElementById("origen");
+       const destinoDesktop = document.getElementById("destino");
+       const origenMobile = document.getElementById("origenMobile");
+       const destinoMobile = document.getElementById("destinoMobile");
+       const tarifaContainer = document.getElementById("tarifaContainer");
+       const tarifaContainerMobile = document.getElementById("tarifaContainerMobile");
+       const tarifaValue = document.getElementById("tarifaValue");
+       const tarifaValueMobile = document.getElementById("tarifaValueMobile");
+       const tipoEnvio = document.getElementById("tipoEnvio");
+       const tipoEnvioMobile = document.getElementById("tipoEnvioMobile");
+       
+       if (origenDesktop && origenMobile) origenMobile.value = origenDesktop.value;
+       if (destinoDesktop && destinoMobile) destinoMobile.value = destinoDesktop.value;
+       
+       // ✅ Sincronizar tipo de envío (bidireccional)
+       if (tipoEnvio && tipoEnvioMobile) {
+           // Si el valor mobile es diferente al desktop, actualizar desktop
+           if (tipoEnvioMobile.value && tipoEnvioMobile.value !== tipoEnvio.value) {
+               tipoEnvio.value = tipoEnvioMobile.value;
+           }
+           // Si el valor desktop es diferente al mobile, actualizar mobile
+           else if (tipoEnvio.value && tipoEnvio.value !== tipoEnvioMobile.value) {
+               tipoEnvioMobile.value = tipoEnvio.value;
+           }
+       }
+       
+       if (tarifaContainer && tarifaContainerMobile) {
+           if (!tarifaContainer.classList.contains("hidden")) {
+               tarifaContainerMobile.classList.remove("hidden");
+               if (tarifaValue && tarifaValueMobile) {
+                   tarifaValueMobile.innerHTML = tarifaValue.innerHTML;
+               }
+           } else {
+               tarifaContainerMobile.classList.add("hidden");
+           }
+       }
+   }
+         
         
         // Función para solicitar envío desde mobile
         function solicitarEnvioMobile() {
@@ -538,47 +549,98 @@
             solicitarEnvio();
         }
         
-        function seleccionarTipoMobile(valor, texto) {
-            document.getElementById('tipoEnvioMobile').value = valor;
-            
-            const mensajeDiv = document.getElementById('tipoSeleccionadoMobile');
-            mensajeDiv.classList.remove('hidden');
-            mensajeDiv.innerHTML = `✅ ${texto} seleccionado`;
-            
-            const tipoDesktop = document.getElementById('tipoEnvio');
-            if (tipoDesktop) tipoDesktop.value = valor;
-            
-            document.querySelectorAll('.tipo-mobile-btn').forEach(btn => {
-                btn.classList.remove('bg-orange-500', 'text-white');
-                btn.classList.add('bg-gray-100');
-            });
-            event.target.classList.remove('bg-gray-100');
-            event.target.classList.add('bg-orange-500', 'text-white');
-            
-            setTimeout(() => {
-                mensajeDiv.style.opacity = '0';
-                setTimeout(() => {
-                    mensajeDiv.classList.add('hidden');
-                    mensajeDiv.style.opacity = '1';
-                }, 500);
-            }, 2000);
-        }
+       // En cliente.html - reemplaza la función seleccionarTipoMobile()
+function seleccionarTipoMobile(valor, texto) {
+    // ✅ Guardar en el input hidden
+    document.getElementById('tipoEnvioMobile').value = valor;
+    
+    // ✅ También guardar en el select desktop
+    const tipoDesktop = document.getElementById('tipoEnvio');
+    if (tipoDesktop) tipoDesktop.value = valor;
+    
+    // Mostrar confirmación
+    const mensajeDiv = document.getElementById('tipoSeleccionadoMobile');
+    mensajeDiv.classList.remove('hidden');
+    mensajeDiv.innerHTML = `✅ ${texto} seleccionado`;
+    
+    // ✅ Limpiar clases de todos los botones
+    document.querySelectorAll('.tipo-mobile-btn').forEach(btn => {
+        btn.classList.remove('bg-orange-500', 'text-white');
+        btn.classList.add('bg-gray-100', 'text-gray-800');
+    });
+    
+    // ✅ Marcar el botón activo
+    const btnActivo = event?.target?.closest?.('.tipo-mobile-btn') || event?.target;
+    if (btnActivo && btnActivo.classList) {
+        btnActivo.classList.remove('bg-gray-100', 'text-gray-800');
+        btnActivo.classList.add('bg-orange-500', 'text-white');
+    }
+    
+    // Ocultar mensaje después de 2 segundos
+    setTimeout(() => {
+        mensajeDiv.style.opacity = '0';
+        setTimeout(() => {
+            mensajeDiv.classList.add('hidden');
+            mensajeDiv.style.opacity = '1';
+        }, 500);
+    }, 2000);
+}
         
         function centrarMapa() {
             if (map) map.setView([18.6456, -91.8249], 13);
             mostrarToast("📍 Mapa centrado en Ciudad del Carmen");
         }
         
-        // Sincronizar cada segundo
-        setInterval(() => {
-            sincronizarInputsMobile();
-            
-            const userInfo = document.getElementById("userInfo");
-            const userInfoMobile = document.getElementById("userInfoMobile");
-            if (userInfo && userInfoMobile && userInfo.innerHTML !== userInfoMobile.innerHTML) {
-                userInfoMobile.innerHTML = userInfo.innerHTML;
-            }
-        }, 500);
+       // ==================== CONTROL DE INTERVALOS ====================
+// Guardamos el intervalo en una variable para poder limpiarlo después
+let syncInterval = null;
+
+// Función que ejecuta la sincronización
+function ejecutarSincronizacion() {
+    sincronizarInputsMobile();
+    
+    const userInfo = document.getElementById("userInfo");
+    const userInfoMobile = document.getElementById("userInfoMobile");
+    if (userInfo && userInfoMobile && userInfo.innerHTML !== userInfoMobile.innerHTML) {
+        userInfoMobile.innerHTML = userInfo.innerHTML;
+    }
+}
+
+// Iniciar el intervalo solo si no existe
+function iniciarSincronizacion() {
+    if (syncInterval) return; // Ya está corriendo
+    syncInterval = setInterval(ejecutarSincronizacion, 500);
+    console.log("✅ Sincronización mobile iniciada");
+}
+
+// Detener el intervalo
+function detenerSincronizacion() {
+    if (syncInterval) {
+        clearInterval(syncInterval);
+        syncInterval = null;
+        console.log("🛑 Sincronización mobile detenida");
+    }
+}
+
+// Iniciar la sincronización automáticamente
+iniciarSincronizacion();
+
+// ✅ IMPORTANTE: Detener la sincronización cuando la página se cierra o cambia
+window.addEventListener('beforeunload', function() {
+    detenerSincronizacion();
+});
+
+// ✅ También limpiar cuando el usuario cierra sesión (sobrescribimos la función original)
+// Guardamos la función original de cerrarSesion
+const originalCerrarSesion = window.cerrarSesion;
+
+// Creamos una nueva versión que también limpia el intervalo
+window.cerrarSesion = function() {
+    detenerSincronizacion();  // Limpiamos el intervalo
+    if (originalCerrarSesion) {
+        originalCerrarSesion();  // Ejecutamos la función original
+    }
+};
         
         // Override de mostrarToast para mobile
         const originalMostrarToast = window.mostrarToast;
