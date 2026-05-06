@@ -2,20 +2,21 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MandaYa - Solicita un envío</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>MandaYa - Panel Delivery</title>
     
-    <!-- CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
     
-    <!-- Librerías JS externas -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <!-- Leaflet Routing Machine -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
     <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
+    <!-- Supabase JS -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     
     <style>
         * {
@@ -107,22 +108,12 @@
         
         /* Responsive ajustes */
         @media (max-width: 1024px) {
-            .sidebar-mobile-hidden {
-                display: none;
-            }
-            
-            .sidebar-mobile-visible {
-                display: flex;
-            }
-        }
-        
-        @media (min-width: 1024px) {
-            .sidebar-mobile-visible {
-                display: none;
-            }
-            
-            .sidebar-mobile-hidden {
-                display: flex;
+            .delivery-info {
+                bottom: 80px;
+                right: 16px;
+                left: auto;
+                padding: 10px 16px;
+                font-size: 12px;
             }
         }
         
@@ -151,12 +142,73 @@
             transform: scale(1.05);
             background: #E65C00;
         }
+        
+        /* Badge superior */
+        .badge-top {
+            position: absolute;
+            top: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255,255,255,0.95);
+            backdrop-filter: blur(4px);
+            padding: 8px 16px;
+            border-radius: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            z-index: 1000;
+            font-size: 14px;
+            font-weight: 500;
+            white-space: nowrap;
+        }
+        
+        @media (max-width: 640px) {
+            .badge-top span.desktop-text {
+                display: none;
+            }
+            .badge-top span.mobile-text {
+                display: inline;
+            }
+            .badge-top {
+                font-size: 12px;
+                padding: 6px 12px;
+            }
+        }
+        
+        @media (min-width: 641px) {
+            .badge-top span.desktop-text {
+                display: inline;
+            }
+            .badge-top span.mobile-text {
+                display: none;
+            }
+        }
     </style>
 </head>
-<body class="h-screen overflow-hidden relative">
+<body class="h-screen overflow-hidden flex flex-row">
 
-    <!-- SIDEBAR DESKTOP (visible en lg) -->
-    <div class="hidden lg:flex w-96 bg-white sidebar flex-col h-full overflow-auto z-10 relative shadow-xl">
+    <!-- MAPA (IZQUIERDA en PC) -->
+    <div class="flex-1 relative h-full w-full order-first lg:order-first">
+        <div id="map" class="h-full w-full"></div>
+        
+        <!-- Badge centrado superior -->
+        <div class="badge-top">
+            <i class="fas fa-motorcycle text-[#FF6200] mr-1"></i>
+            <span class="desktop-text">Tu ubicación se comparte con el cliente</span>
+            <span class="mobile-text">📍 Ubicación activa</span>
+        </div>
+        
+        <!-- Botón centrar mapa -->
+        <button onclick="centrarMapa()" class="absolute bottom-20 right-4 bg-white p-3 rounded-full shadow-lg z-[1000] hover:bg-gray-100 transition-all">
+            <i class="fas fa-location-dot text-[#FF6200] text-lg"></i>
+        </button>
+        
+        <!-- Botón toggle sidebar mobile (solo se ve en móvil) -->
+        <button onclick="toggleMobileSidebar()" class="fixed bottom-20 left-4 bg-[#FF6200] text-white p-3 rounded-full shadow-lg z-[1000] lg:hidden">
+            <i class="fas fa-list text-lg"></i>
+        </button>
+    </div>
+
+    <!-- SIDEBAR DESKTOP (DERECHA en PC) -->
+    <div class="hidden lg:flex w-96 bg-white sidebar flex-col h-full overflow-auto z-10 relative shadow-xl order-last lg:order-last">
         <div class="bg-[#FF6200] text-white p-5 flex items-center justify-between sticky top-0 z-20">
             <div class="flex items-center gap-3">
                 <div class="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
@@ -213,7 +265,7 @@
         </div>
     </div>
 
-    <!-- SIDEBAR MOBILE (flotante, visible solo en mobile) -->
+    <!-- SIDEBAR MOBILE (flotante abajo, solo visible en móvil) -->
     <div id="mobileSidebar" class="fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-2xl z-50 transition-transform duration-300 transform translate-y-0 lg:hidden" style="max-height: 70vh; overflow-y: auto;">
         <div class="bg-[#FF6200] text-white p-4 rounded-t-3xl flex items-center justify-between sticky top-0 z-20">
             <div class="flex items-center gap-2">
@@ -263,28 +315,6 @@
             <button onclick="verHistorial()" class="hover:text-[#FF6200]"><i class="fas fa-history mr-1"></i> Historial</button>
             <button onclick="cerrarSesion()" class="hover:text-[#FF6200]"><i class="fas fa-sign-out-alt mr-1"></i> Salir</button>
         </div>
-    </div>
-
-    <!-- MAPA -->
-    <div class="flex-1 relative h-full w-full">
-        <div id="map" class="h-full w-full"></div>
-        
-        <!-- Badge centrado superior -->
-        <div class="absolute top-4 left-1/2 transform -translate-x-1/2 bg-white/95 backdrop-blur-sm px-4 py-2 rounded-full shadow-lg text-sm font-medium z-[1000] whitespace-nowrap">
-            <i class="fas fa-motorcycle text-[#FF6200] mr-1"></i> 
-            <span class="hidden sm:inline">Tu ubicación se comparte con el cliente</span>
-            <span class="sm:hidden">📍 Ubicación activa</span>
-        </div>
-        
-        <!-- Botón centrar mapa -->
-        <button onclick="centrarMapa()" class="absolute bottom-20 right-4 bg-white p-3 rounded-full shadow-lg z-[1000] hover:bg-gray-100 transition-all">
-            <i class="fas fa-location-dot text-[#FF6200] text-lg"></i>
-        </button>
-        
-        <!-- Botón toggle sidebar mobile -->
-        <button onclick="toggleMobileSidebar()" class="fixed bottom-20 left-4 bg-[#FF6200] text-white p-3 rounded-full shadow-lg z-[1000] lg:hidden">
-            <i class="fas fa-list text-lg"></i>
-        </button>
     </div>
 
     <script src="js/map-utils.js"></script>
