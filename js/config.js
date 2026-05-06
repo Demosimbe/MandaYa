@@ -22,7 +22,7 @@ async function registrarUsuarioSupabase(nombre, email, telefono, password, rol) 
     
     try {
         // Verificar si el email ya existe
-        const { data: existe, error: errorExiste } = await supabase
+        const { data: existe } = await supabase
             .from('usuarios')
             .select('email')
             .eq('email', email)
@@ -161,7 +161,7 @@ async function eliminarUsuarioSupabase(userId) {
     }
 }
 
-// ========== FUNCIONES PARA PEDIDOS (actualizadas) ==========
+// ========== FUNCIONES PARA UBICACIONES ==========
 
 async function guardarUbicacionEnSupabase(deliveryId, deliveryNombre, lat, lng, online) {
     const supabase = initSupabase();
@@ -205,6 +205,8 @@ async function obtenerUbicacionDeSupabase(deliveryId) {
         return null;
     }
 }
+
+// ========== FUNCIONES PARA PEDIDOS ==========
 
 async function crearPedidoEnSupabase(pedido) {
     const supabase = initSupabase();

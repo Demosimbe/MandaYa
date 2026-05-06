@@ -109,6 +109,7 @@ const registroForm = document.getElementById("registroForm");
 if (registroForm) {
     registroForm.addEventListener("submit", async function(e) {
         e.preventDefault();
+        
         const nombre = document.getElementById("regNombre").value.trim();
         const email = document.getElementById("regEmail").value.trim();
         const telefono = document.getElementById("regTelefono").value.trim();
@@ -135,19 +136,13 @@ if (registroForm) {
         if (resultado.error) {
             mostrarToast(`❌ ${resultado.error}`, true);
         } else {
-            mostrarToast(`✅ ¡Registro exitoso! Bienvenido ${nombre}`);
+            mostrarToast(`✅ ¡Registro exitoso! Ahora inicia sesión con ${email}`);
             cerrarModalRegistroForm();
             
-            // Iniciar sesión automáticamente
-            localStorage.setItem('sesion_activa', JSON.stringify(resultado.data));
-            
+            // ✅ REDIRIGIR AL INDEX PARA QUE INICIE SESIÓN
             setTimeout(() => {
-                if (rolSeleccionado === 'cliente') {
-                    window.location.href = "cliente.html";
-                } else {
-                    window.location.href = "delivery.html";
-                }
-            }, 1500);
+                window.location.href = "index.html";
+            }, 2000);
         }
     });
 }
