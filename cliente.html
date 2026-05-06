@@ -256,10 +256,10 @@
         }
     </style>
 </head>
-<body class="h-screen overflow-hidden relative">
+<body class="h-screen overflow-hidden flex">
 
-    <!-- SIDEBAR DESKTOP (visible en lg) -->
-    <div class="hidden lg:flex w-96 bg-white sidebar flex-col h-full overflow-auto z-10 relative shadow-xl">
+    <!-- SIDEBAR IZQUIERDO (siempre visible en PC) -->
+    <div class="w-96 bg-white sidebar flex-col h-full overflow-auto shadow-xl hidden md:flex">
         <div class="bg-[#FF6200] text-white p-5 flex items-center justify-between sticky top-0 z-20">
             <div class="flex items-center gap-3">
                 <div class="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
@@ -333,76 +333,7 @@
         </div>
     </div>
 
-    <!-- SIDEBAR MOBILE (flotante, visible solo en mobile) -->
-    <div id="mobileSidebar" class="fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-2xl z-50 transition-transform duration-300 transform translate-y-0 lg:hidden" style="max-height: 65vh; overflow-y: auto;">
-        <div class="bg-[#FF6200] text-white p-4 rounded-t-3xl flex items-center justify-between sticky top-0 z-20">
-            <div class="flex items-center gap-2">
-                <i class="fas fa-box text-xl"></i>
-                <div>
-                    <h1 class="font-bold">MandaYa</h1>
-                    <p class="text-xs opacity-90">Solicita tu envío</p>
-                </div>
-            </div>
-            <button onclick="toggleMobileSidebar()" class="text-white">
-                <i class="fas fa-chevron-down text-xl"></i>
-            </button>
-        </div>
-        
-        <div id="userInfoMobile" class="bg-gray-50 p-3 border-b text-sm"></div>
-
-        <div class="p-4">
-            <h2 class="text-lg font-semibold mb-3">Solicita un envío</h2>
-
-            <div class="space-y-3">
-                <div>
-                    <label class="text-xs text-gray-600 font-medium">📍 Punto de partida</label>
-                    <div class="mt-1 bg-gray-100 border border-gray-300 rounded-xl p-3 flex items-center gap-2">
-                        <i class="fas fa-circle text-[#FF6200] text-sm"></i>
-                        <input type="text" id="origenMobile" class="bg-transparent flex-1 outline-none text-sm" placeholder="Origen" readonly>
-                    </div>
-                </div>
-
-                <div>
-                    <label class="text-xs text-gray-600 font-medium">🏁 Destino</label>
-                    <div class="mt-1 bg-gray-100 border border-gray-300 rounded-xl p-3 flex items-center gap-2">
-                        <i class="fas fa-square text-blue-600 text-sm"></i>
-                        <input type="text" id="destinoMobile" class="bg-transparent flex-1 outline-none text-sm" placeholder="Destino" readonly>
-                    </div>
-                </div>
-
-                <div id="tarifaContainerMobile" class="hidden tarifa-mobile text-center text-white">
-                    <i class="fas fa-tag mr-1"></i>
-                    Tarifa: <span id="tarifaValueMobile" class="font-bold">$0</span>
-                    <button onclick="mostrarResumenRuta()" class="ml-2 text-xs bg-white/20 rounded-full px-2 py-0.5">
-                        <i class="fas fa-info-circle"></i>
-                    </button>
-                </div>
-
-                <div>
-                    <label class="text-xs text-gray-600 font-medium">📦 Tipo de envío</label>
-                    <select id="tipoEnvioMobile" class="w-full mt-1 bg-gray-100 border border-gray-300 rounded-xl p-3 text-sm outline-none">
-                        <option value="">Seleccionar</option>
-                        <option value="comida">🍔 Comida</option>
-                        <option value="paquete">📦 Paquete</option>
-                        <option value="mercancia">📦 Mercancía</option>
-                        <option value="farmacia">💊 Farmacia</option>
-                    </select>
-                </div>
-
-                <button onclick="solicitarEnvioMobile()" 
-                        class="w-full bg-black hover:bg-gray-800 text-white font-bold py-3 rounded-xl text-sm transition-all flex items-center justify-center gap-2">
-                    <i class="fas fa-paper-plane"></i> SOLICITAR ENVÍO
-                </button>
-            </div>
-        </div>
-
-        <div class="border-t p-3 text-center text-xs text-gray-500 flex justify-center gap-6">
-            <button onclick="verHistorial()" class="hover:text-[#FF6200]"><i class="fas fa-history mr-1"></i> Mis envíos</button>
-            <button onclick="cerrarSesion()" class="hover:text-[#FF6200]"><i class="fas fa-sign-out-alt mr-1"></i> Salir</button>
-        </div>
-    </div>
-
-    <!-- MAPA -->
+    <!-- MAPA (ocupa todo el espacio restante) -->
     <div class="flex-1 relative h-full w-full">
         <div id="map" class="h-full w-full"></div>
         
@@ -430,20 +361,92 @@
         <button onclick="centrarMapa()" class="absolute bottom-20 right-4 bg-white p-3 rounded-full shadow-lg z-[1000] hover:bg-gray-100 transition-all">
             <i class="fas fa-location-dot text-[#FF6200] text-lg"></i>
         </button>
-        
-        <!-- Botón toggle sidebar mobile -->
-        <button onclick="toggleMobileSidebar()" class="fixed bottom-20 left-4 bg-[#FF6200] text-white p-3 rounded-full shadow-lg z-[1000] lg:hidden">
-            <i class="fas fa-plus text-lg"></i>
-        </button>
     </div>
-    
+
+    <!-- SIDEBAR MÓVIL (solo visible en móvil) -->
+    <div id="mobileSidebar" class="fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-2xl z-50 transition-transform duration-300 transform translate-y-full md:hidden" style="max-height: 65vh; overflow-y: auto;">
+        <div class="bg-[#FF6200] text-white p-4 rounded-t-3xl flex items-center justify-between sticky top-0 z-20">
+            <div class="flex items-center gap-2">
+                <i class="fas fa-box text-xl"></i>
+                <div>
+                    <h1 class="font-bold">MandaYa</h1>
+                    <p class="text-xs opacity-90">Solicita tu envío</p>
+                </div>
+            </div>
+            <button onclick="toggleMobileSidebar()" class="text-white">
+                <i class="fas fa-chevron-down text-xl"></i>
+            </button>
+        </div>
+        
+        <div id="userInfoMobile" class="bg-gray-50 p-3 border-b text-sm"></div>
+
+        <div class="p-4">
+            <h2 class="text-lg font-semibold mb-3">Solicita un envío</h2>
+
+        <div class="space-y-3">
+    <div>
+        <label class="text-xs text-gray-600 font-medium">📍 Punto de partida</label>
+        <div class="mt-1 bg-gray-100 border border-gray-300 rounded-xl p-3 flex items-center gap-2">
+            <i class="fas fa-circle text-[#FF6200] text-sm"></i>
+            <input type="text" id="origenMobile" class="bg-transparent flex-1 outline-none text-sm" placeholder="Origen" readonly>
+        </div>
+    </div>
+
+    <div>
+        <label class="text-xs text-gray-600 font-medium">🏁 Destino</label>
+        <div class="mt-1 bg-gray-100 border border-gray-300 rounded-xl p-3 flex items-center gap-2">
+            <i class="fas fa-square text-blue-600 text-sm"></i>
+            <input type="text" id="destinoMobile" class="bg-transparent flex-1 outline-none text-sm" placeholder="Destino" readonly>
+        </div>
+    </div>
+
+    <div id="tarifaContainerMobile" class="hidden tarifa-mobile text-center text-white">
+        <i class="fas fa-tag mr-1"></i>
+        Tarifa: <span id="tarifaValueMobile" class="font-bold">$0</span>
+    </div>
+
+    <!-- TIPO DE ENVÍO CON BOTONES (funciona en PC y celular) -->
+    <div>
+        <label class="text-xs text-gray-600 font-medium mb-2 block">📦 Tipo de envío</label>
+        <div class="grid grid-cols-2 gap-2">
+            <button type="button" onclick="seleccionarTipoMobile('comida', '🍔 Comida')" class="tipo-mobile-btn bg-gray-100 hover:bg-orange-100 p-3 rounded-xl text-sm transition-all">
+                🍔 Comida
+            </button>
+            <button type="button" onclick="seleccionarTipoMobile('paquete', '📦 Paquete')" class="tipo-mobile-btn bg-gray-100 hover:bg-orange-100 p-3 rounded-xl text-sm transition-all">
+                📦 Paquete
+            </button>
+            <button type="button" onclick="seleccionarTipoMobile('mercancia', '📦 Mercancía')" class="tipo-mobile-btn bg-gray-100 hover:bg-orange-100 p-3 rounded-xl text-sm transition-all">
+                📦 Mercancía
+            </button>
+            <button type="button" onclick="seleccionarTipoMobile('farmacia', '💊 Farmacia')" class="tipo-mobile-btn bg-gray-100 hover:bg-orange-100 p-3 rounded-xl text-sm transition-all">
+                💊 Farmacia
+            </button>
+        </div>
+        <input type="hidden" id="tipoEnvioMobile" value="">
+        <div id="tipoSeleccionadoMobile" class="text-xs text-green-600 mt-2 hidden">
+            ✅ Tipo seleccionado
+        </div>
+    </div>
+
+    <button onclick="solicitarEnvioMobile()" 
+            class="w-full bg-black hover:bg-gray-800 text-white font-bold py-3 rounded-xl text-sm transition-all flex items-center justify-center gap-2">
+        <i class="fas fa-paper-plane"></i> SOLICITAR ENVÍO
+    </button>
+</div>
+        </div>
+
+        <div class="border-t p-3 text-center text-xs text-gray-500 flex justify-center gap-6">
+            <button onclick="verHistorial()" class="hover:text-[#FF6200]"><i class="fas fa-history mr-1"></i> Mis envíos</button>
+            <button onclick="cerrarSesion()" class="hover:text-[#FF6200]"><i class="fas fa-sign-out-alt mr-1"></i> Salir</button>
+        </div>
+    </div>
+
     <script src="js/map-utils.js"></script>
     <script src="js/config.js"></script>
     <script src="js/cliente.js"></script>
     
     <script>
-        // Función para toggle del sidebar mobile
-        let mobileSidebarOpen = true;
+        let mobileSidebarOpen = false;
         
         function toggleMobileSidebar() {
             const sidebar = document.getElementById('mobileSidebar');
@@ -456,7 +459,6 @@
             }
         }
         
-        // Sincronizar inputs mobile con desktop
         function sincronizarInputsMobile() {
             const origenDesktop = document.getElementById("origen");
             const destinoDesktop = document.getElementById("destino");
@@ -486,45 +488,92 @@
             if (tipoEnvio && tipoEnvioMobile) tipoEnvioMobile.value = tipoEnvio.value;
         }
         
-        // Función para solicitar envío desde mobile
         function solicitarEnvioMobile() {
             const origenMobile = document.getElementById("origenMobile").value;
             const destinoMobile = document.getElementById("destinoMobile").value;
             const tipoMobile = document.getElementById("tipoEnvioMobile").value;
             
-            if (origenMobile && destinoMobile && tipoMobile) {
-                if (document.getElementById("origen")) document.getElementById("origen").value = origenMobile;
-                if (document.getElementById("destino")) document.getElementById("destino").value = destinoMobile;
-                if (document.getElementById("tipoEnvio")) document.getElementById("tipoEnvio").value = tipoMobile;
+            if (!origenMobile || !destinoMobile) {
+                mostrarToast("❌ Selecciona origen y destino", true);
+                return;
             }
+            if (!tipoMobile) {
+                mostrarToast("❌ Selecciona el tipo de envío", true);
+                return;
+            }
+            
+            if (document.getElementById("origen")) document.getElementById("origen").value = origenMobile;
+            if (document.getElementById("destino")) document.getElementById("destino").value = destinoMobile;
+            if (document.getElementById("tipoEnvio")) document.getElementById("tipoEnvio").value = tipoMobile;
             
             solicitarEnvio();
         }
+
+        function seleccionarTipoMobile(valor, texto) {
+    // Guardar el tipo seleccionado
+    document.getElementById('tipoEnvioMobile').value = valor;
+    
+    // Mostrar mensaje de confirmación
+    const mensajeDiv = document.getElementById('tipoSeleccionadoMobile');
+    mensajeDiv.classList.remove('hidden');
+    mensajeDiv.innerHTML = `✅ ${texto} seleccionado`;
+    
+    // Sincronizar con el selector de escritorio
+    const tipoDesktop = document.getElementById('tipoEnvio');
+    if (tipoDesktop) tipoDesktop.value = valor;
+    
+    // Cambiar estilo del botón seleccionado
+    document.querySelectorAll('.tipo-mobile-btn').forEach(btn => {
+        btn.classList.remove('bg-orange-500', 'text-white');
+        btn.classList.add('bg-gray-100');
+    });
+    event.target.classList.remove('bg-gray-100');
+    event.target.classList.add('bg-orange-500', 'text-white');
+    
+    // Ocultar mensaje después de 2 segundos
+    setTimeout(() => {
+        mensajeDiv.style.opacity = '0';
+        setTimeout(() => {
+            mensajeDiv.classList.add('hidden');
+            mensajeDiv.style.opacity = '1';
+        }, 500);
+    }, 2000);
+}
+
+// Modificar la función existente solicitarEnvioMobile
+if (typeof window.solicitarEnvioMobile === 'function') {
+    const originalSolicitarEnvioMobile = window.solicitarEnvioMobile;
+    window.solicitarEnvioMobile = function() {
+        const tipoMobile = document.getElementById('tipoEnvioMobile').value;
+        const origenMobile = document.getElementById('origenMobile').value;
+        const destinoMobile = document.getElementById('destinoMobile').value;
         
-        function centrarMapa() {
-            if (map) map.setView([18.6456, -91.8249], 13);
-            mostrarToast("📍 Mapa centrado en Ciudad del Carmen");
+        if (!origenMobile || !destinoMobile) {
+            mostrarToast("❌ Selecciona origen y destino", true);
+            return;
+        }
+        if (!tipoMobile || tipoMobile === '') {
+            mostrarToast("❌ Toca un botón para seleccionar el tipo de envío", true);
+            return;
         }
         
-        // Sincronizar cada segundo
+        // Sincronizar con desktop
+        if (document.getElementById("origen")) document.getElementById("origen").value = origenMobile;
+        if (document.getElementById("destino")) document.getElementById("destino").value = destinoMobile;
+        if (document.getElementById("tipoEnvio")) document.getElementById("tipoEnvio").value = tipoMobile;
+        
+        solicitarEnvio();
+    };
+}
+        
         setInterval(() => {
             sincronizarInputsMobile();
-            
-            // Sincronizar userInfo mobile
             const userInfo = document.getElementById("userInfo");
             const userInfoMobile = document.getElementById("userInfoMobile");
             if (userInfo && userInfoMobile && userInfo.innerHTML !== userInfoMobile.innerHTML) {
                 userInfoMobile.innerHTML = userInfo.innerHTML;
             }
         }, 500);
-        
-        // Override de mostrarToast para mobile
-        const originalMostrarToast = window.mostrarToast;
-        window.mostrarToast = function(msg, err) {
-            if (originalMostrarToast) originalMostrarToast(msg, err);
-            // También mostrar en consola para debug
-            console.log(msg);
-        };
     </script>
 </body>
 </html>
