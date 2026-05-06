@@ -21,7 +21,6 @@ async function drawRealRoute(map, origin, dest, color, weight) {
                 style: { color: color, weight: weight, opacity: 0.8 }
             }).addTo(map);
             
-            // Ajustar vista para mostrar toda la ruta
             const bounds = L.latLngBounds([origin, dest]);
             map.fitBounds(bounds, { padding: [50, 50] });
             
@@ -91,7 +90,6 @@ function formatDuration(minutes) {
     return `${hours}h ${mins}min`;
 }
 
-// Función para convertir pedido de Supabase a formato local
 function convertirPedidoDeSupabase(pedidoSupabase) {
     return {
         id: pedidoSupabase.id,
