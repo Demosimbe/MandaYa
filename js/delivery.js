@@ -10,7 +10,6 @@ let ubicacionInterval = null;
 
 // ==================== INICIALIZACIÓN ====================
 function initMap() {
-    // Coordenadas exactas de Ciudad del Carmen
     const cdDelCarmen = { lat: 18.6456, lng: -91.8249 };
     
     map = L.map('map').setView([cdDelCarmen.lat, cdDelCarmen.lng], 13);
@@ -43,130 +42,10 @@ function loadUser() {
     cargarPedidos();
 }
 
-// ==================== FUNCIONES SUPABASE (AGREGADAS SIN ROMPER NADA) ====================
-
-// Guardar ubicación también en Supabase (además de localStorage)
-async function guardarUbicacionDual(coords) {
-    if (currentUser && isOnline) {
-        // Guardar en localStorage (funcionamiento actual)
-        localStorage.setItem(`ubicacion_${currentUser.id}`, JSON.stringify(coords));
-        
-        // También guardar en Supabase si está disponible
-        if (typeof guardarUbicacionEnSupabase !== 'undefined') {
-            await guardarUbicacionEnSupabase(
-                currentUser.id,
-                currentUser.nombre,
-                coords.lat,
-                coords.lng,
-                true
-            );
-            console.log('✅ Ubicación guardada en Supabase');
-        }
-    }
-}
-
-// Modificar el intervalo de ubicación para usar Supabase
-// Busca la función toggleOnline() y dentro del intervalo, reemplaza la línea de guardado
-// O agrega esta función para ser llamada desde el intervalo existente
-function actualizarUbicacionEnNube() {
-    if(userMarker && currentUser && isOnline) {
-        const coords = userMarker.getLatLng();
-        // Guardar en localStorage (actual)
-        localStorage.setItem(`ubicacion_${currentUser.id}`, JSON.stringify({ lat: coords.lat, lng: coords.lng }));
-        
-        // Guardar en Supabase (nuevo)
-        if (typeof guardarUbicacionEnSupabase !== 'undefined') {
-            guardarUbicacionEnSupabase(
-                currentUser.id,
-                currentUser.nombre,
-                coords.lat,
-                coords.lng,
-                true
-            );
-        }
-    }
-}
-
-// Cargar pedidos desde Supabase (además de localStorage)
-async function cargarPedidosDual() {
-    // Cargar desde localStorage (funcionamiento actual)
-    const todosPedidos = JSON.parse(localStorage.getItem('pedidos_pendientes')) || [];
-    pedidosDisponibles = todosPedidos.filter(p => p.estado === 'pendiente');
-    misPedidosActivos = todosPedidos.filter(p => p.deliveryId === currentUser?.id && p.estado !== 'completado');
-    
-    actualizarListaPedidos();
-    dibujarRutaSeleccionada();
-    
-    // También cargar desde Supabase si está disponible (solo para sincronizar)
-    if (typeof obtenerPedidosPendientesDeSupabase !== 'undefined' && currentUser) {
-        try {
-            const supabasePedidos = await obtenerPedidosPendientesDeSupabase();
-            const supabaseActivos = await obtenerPedidosActivosDeSupabase(currentUser.id);
-            console.log('📡 Pedidos desde Supabase:', supabasePedidos.length, 'pendientes,', supabaseActivos.length, 'activos');
-        } catch(e) {
-            console.log('Supabase no disponible, usando solo localStorage');
-        }
-    }
-}
-
-// Agarrar pedido también en Supabase
-async function agarrarPedidoDual(pedidoId) {
-    // Primero en localStorage
-    const todosPedidos = JSON.parse(localStorage.getItem('pedidos_pendientes')) || [];
-    const pedidoIndex = todosPedidos.findIndex(p => p.id === pedidoId);
-    
-    if(pedidoIndex !== -1 && todosPedidos[pedidoIndex].estado === 'pendiente') {
-        todosPedidos[pedidoIndex].estado = 'asignado';
-        todosPedidos[pedidoIndex].deliveryId = currentUser.id;
-        todosPedidos[pedidoIndex].deliveryNombre = currentUser.nombre;
-        localStorage.setItem('pedidos_pendientes', JSON.stringify(todosPedidos));
-        
-        // También en Supabase
-        if (typeof agarrarPedidoEnSupabase !== 'undefined') {
-            await agarrarPedidoEnSupabase(pedidoId, currentUser.id, currentUser.nombre);
-            console.log('✅ Pedido agarrado también en Supabase');
-        }
-        
-        mostrarToast(`✅ Pedido #${pedidoId} AGARRADO!`);
-        pedidoSeleccionado = null;
-        cargarPedidos();
-        return true;
-    }
-    return false;
-}
-
-// Completar pedido también en Supabase
-async function completarPedidoDual(pedidoId) {
-    const todosPedidos = JSON.parse(localStorage.getItem('pedidos_pendientes')) || [];
-    const pedidoIndex = todosPedidos.findIndex(p => p.id === pedidoId);
-    
-    if(pedidoIndex !== -1) {
-        todosPedidos[pedidoIndex].estado = 'completado';
-        todosPedidos[pedidoIndex].fechaCompletado = new Date().toISOString();
-        localStorage.setItem('pedidos_pendientes', JSON.stringify(todosPedidos));
-        
-        // También en Supabase
-        if (typeof completarPedidoEnSupabase !== 'undefined') {
-            await completarPedidoEnSupabase(pedidoId);
-            console.log('✅ Pedido completado también en Supabase');
-        }
-        
-        mostrarToast(`✅ Pedido #${pedidoId} COMPLETADO!`);
-        cargarPedidos();
-        return true;
-    }
-    return false;
-}
-
-function centrarMapa() {
-    map.setView([18.6456, -91.8249], 13);
-    mostrarToast("📍 Mapa centrado en Ciudad del Carmen");
-}
-
 function startLocationTracking() {
     if("geolocation" in navigator) {
         watchId = navigator.geolocation.watchPosition(
-            (pos) => {
+            async (pos) => {
                 const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
                 
                 if(userMarker) {
@@ -175,10 +54,22 @@ function startLocationTracking() {
                     const motoIcon = getMotoIcon();
                     userMarker = L.marker(coords, { icon: motoIcon }).addTo(map).bindPopup('🏍️ <b>Tu ubicación</b><br>Visible para los clientes');
                 }
-                // ELIMINADO: map.setView(coords, 14); - Ya no mueve el mapa
                 
                 if(currentUser && isOnline) {
+                    // Guardar en localStorage
                     localStorage.setItem(`ubicacion_${currentUser.id}`, JSON.stringify(coords));
+                    
+                    // Guardar en Supabase
+                    if (typeof guardarUbicacionEnSupabase !== 'undefined') {
+                        await guardarUbicacionEnSupabase(
+                            currentUser.id,
+                            currentUser.nombre,
+                            coords.lat,
+                            coords.lng,
+                            true
+                        );
+                        console.log('✅ Ubicación guardada en Supabase:', coords);
+                    }
                 }
             },
             (err) => {
@@ -190,6 +81,11 @@ function startLocationTracking() {
     } else {
         mostrarToast("⚠️ Tu navegador no soporta geolocalización", true);
     }
+}
+
+function centrarMapa() {
+    if(map) map.setView([18.6456, -91.8249], 13);
+    mostrarToast("📍 Mapa centrado en Ciudad del Carmen");
 }
 
 function cargarPedidos() {
@@ -293,7 +189,7 @@ function dibujarRutaSeleccionada() {
     }
 }
 
-function agarrarPedido(pedidoId) {
+async function agarrarPedido(pedidoId) {
     const todosPedidos = JSON.parse(localStorage.getItem('pedidos_pendientes')) || [];
     const pedidoIndex = todosPedidos.findIndex(p => p.id === pedidoId);
     
@@ -303,13 +199,19 @@ function agarrarPedido(pedidoId) {
         todosPedidos[pedidoIndex].deliveryNombre = currentUser.nombre;
         localStorage.setItem('pedidos_pendientes', JSON.stringify(todosPedidos));
         
+        // Guardar también en Supabase
+        if (typeof agarrarPedidoEnSupabase !== 'undefined') {
+            await agarrarPedidoEnSupabase(pedidoId, currentUser.id, currentUser.nombre);
+            console.log('✅ Pedido agarrado también en Supabase');
+        }
+        
         mostrarToast(`✅ Pedido #${pedidoId} AGARRADO! Dirígete al origen. El cliente verá tu ubicación en tiempo real.`);
         pedidoSeleccionado = null;
         cargarPedidos();
     }
 }
 
-function completarPedido(pedidoId) {
+async function completarPedido(pedidoId) {
     const todosPedidos = JSON.parse(localStorage.getItem('pedidos_pendientes')) || [];
     const pedidoIndex = todosPedidos.findIndex(p => p.id === pedidoId);
     
@@ -317,6 +219,12 @@ function completarPedido(pedidoId) {
         todosPedidos[pedidoIndex].estado = 'completado';
         todosPedidos[pedidoIndex].fechaCompletado = new Date().toISOString();
         localStorage.setItem('pedidos_pendientes', JSON.stringify(todosPedidos));
+        
+        // Guardar también en Supabase
+        if (typeof completarPedidoEnSupabase !== 'undefined') {
+            await completarPedidoEnSupabase(pedidoId);
+            console.log('✅ Pedido completado también en Supabase');
+        }
         
         mostrarToast(`✅ Pedido #${pedidoId} COMPLETADO! Ganaste $${todosPedidos[pedidoIndex].tarifa} MXN`);
         cargarPedidos();
@@ -339,16 +247,26 @@ function toggleOnline() {
             const usuarios = JSON.parse(localStorage.getItem('usuarios')) || [];
             const idx = usuarios.findIndex(u => u.id === currentUser.id);
             if(idx !== -1) { usuarios[idx].online = true; localStorage.setItem('usuarios', JSON.stringify(usuarios)); }
+            
+            // Guardar estado online en Supabase
+            if (userMarker && typeof guardarUbicacionEnSupabase !== 'undefined') {
+                const coords = userMarker.getLatLng();
+                guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, coords.lat, coords.lng, true);
+            }
         }
         cargarPedidos();
         
         if(ubicacionInterval) clearInterval(ubicacionInterval);
-        ubicacionInterval = setInterval(() => {
-            if(userMarker && currentUser) {
+        ubicacionInterval = setInterval(async () => {
+            if(userMarker && currentUser && isOnline) {
                 const coords = userMarker.getLatLng();
                 localStorage.setItem(`ubicacion_${currentUser.id}`, JSON.stringify({ lat: coords.lat, lng: coords.lng }));
+                
+                if (typeof guardarUbicacionEnSupabase !== 'undefined') {
+                    await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, coords.lat, coords.lng, true);
+                }
             }
-        }, 1000);
+        }, 3000);
     } else {
         btn.classList.remove("bg-green-500", "hover:bg-green-600");
         btn.classList.add("bg-gray-500");
@@ -360,6 +278,12 @@ function toggleOnline() {
             const usuarios = JSON.parse(localStorage.getItem('usuarios')) || [];
             const idx = usuarios.findIndex(u => u.id === currentUser.id);
             if(idx !== -1) { usuarios[idx].online = false; localStorage.setItem('usuarios', JSON.stringify(usuarios)); }
+            
+            // Guardar estado offline en Supabase
+            if (userMarker && typeof guardarUbicacionEnSupabase !== 'undefined') {
+                const coords = userMarker.getLatLng();
+                guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, coords.lat, coords.lng, false);
+            }
         }
         if(ubicacionInterval) clearInterval(ubicacionInterval);
     }
@@ -385,6 +309,13 @@ function verPerfil() {
 function cerrarSesion() { 
     if(watchId) navigator.geolocation.clearWatch(watchId);
     if(ubicacionInterval) clearInterval(ubicacionInterval);
+    
+    // Marcar como offline antes de cerrar sesión
+    if(currentUser && typeof guardarUbicacionEnSupabase !== 'undefined' && userMarker) {
+        const coords = userMarker.getLatLng();
+        guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, coords.lat, coords.lng, false);
+    }
+    
     if(confirm("¿Cerrar sesión?")){ 
         localStorage.removeItem('sesion_activa'); 
         window.location.href="index.html"; 

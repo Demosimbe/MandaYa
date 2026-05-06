@@ -8,6 +8,7 @@ let selectMode = 'origen';
 let seguimientoInterval = null;
 let ubicacionInterval = null;
 let currentRouteData = null;
+let deliverysMarkers = []; // Para los marcadores de deliverys en línea
 
 // ==================== INICIALIZACIÓN ====================
 function initMap() {
@@ -228,6 +229,11 @@ function solicitarEnvio() {
     pedidosPendientes.push(pedidoActual);
     localStorage.setItem('pedidos_pendientes', JSON.stringify(pedidosPendientes));
     
+    // Guardar también en Supabase si está disponible
+    if (typeof crearPedidoEnSupabase !== 'undefined') {
+        crearPedidoEnSupabase(pedidoActual);
+    }
+    
     mostrarToast(`✅ ¡Envío solicitado! Tarifa: $${tarifa} MXN (${distancia.toFixed(2)} km)`);
     iniciarSeguimientoDelivery();
 }
@@ -261,15 +267,40 @@ function mostrarDeliveryEnMapa(deliveryId) {
         document.getElementById("deliveryInfo").classList.remove("hidden");
         document.getElementById("deliveryNombre").innerHTML = `<i class="fas fa-motorcycle"></i> ${delivery.nombre}`;
         document.getElementById("deliveryEstado").innerHTML = "🟢 En camino a recoger tu paquete";
+        
+        // Cambiar el marcador del delivery a AZUL cuando agarra pedido
+        if (deliveryMarker) {
+            const azulIcon = L.divIcon({
+                html: '<div style="background:#2563EB; width:32px; height:32px; border-radius:50%; border:2px solid white; display:flex; align-items:center; justify-content:center;"><i class="fas fa-motorcycle" style="color:white; font-size:16px;"></i></div>',
+                iconSize: [32, 32],
+                className: 'moto-marker'
+            });
+            deliveryMarker.setIcon(azulIcon);
+        }
     }
 }
 
 function seguirUbicacionDelivery(deliveryId) {
-    ubicacionInterval = setInterval(() => {
-        const ubicacionGuardada = localStorage.getItem(`ubicacion_${deliveryId}`);
-        if (ubicacionGuardada) {
-            const ubicacion = JSON.parse(ubicacionGuardada);
-            
+    ubicacionInterval = setInterval(async () => {
+        // Primero intentar desde Supabase
+        let ubicacion = null;
+        
+        if (typeof obtenerUbicacionDeSupabase !== 'undefined') {
+            const supabaseUbicacion = await obtenerUbicacionDeSupabase(deliveryId);
+            if (supabaseUbicacion) {
+                ubicacion = { lat: supabaseUbicacion.lat, lng: supabaseUbicacion.lng };
+            }
+        }
+        
+        // Fallback a localStorage
+        if (!ubicacion) {
+            const ubicacionGuardada = localStorage.getItem(`ubicacion_${deliveryId}`);
+            if (ubicacionGuardada) {
+                ubicacion = JSON.parse(ubicacionGuardada);
+            }
+        }
+        
+        if (ubicacion) {
             if (deliveryMarker) map.removeLayer(deliveryMarker);
             
             const motoIcon = getMotoIcon();
@@ -287,10 +318,6 @@ function seguirUbicacionDelivery(deliveryId) {
                 } else {
                     document.getElementById("deliveryEstado").innerHTML = `🔴 A ${distanciaADestino.toFixed(1)} km de tu destino`;
                 }
-            }
-            
-            if (Math.random() < 0.2) {
-                map.setView([ubicacion.lat, ubicacion.lng], 14);
             }
         }
         
@@ -336,7 +363,6 @@ function mostrarHistorialCompleto() {
     modal.className = "fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[10000] p-4";
     modal.innerHTML = `
         <div class="bg-gray-800 rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-hidden modal-uber">
-            <!-- HEADER CON BOTÓN DE CERRAR ARRIBA -->
             <div class="flex justify-between items-center pt-6 pb-3 px-6 border-b border-gray-700">
                 <div>
                     <i class="fas fa-history text-3xl text-orange-500 mb-1 block"></i>
@@ -379,7 +405,6 @@ function mostrarHistorialCompleto() {
                 `).join('')}
             </div>
             
-            <!-- FOOTER CON ESTADÍSTICAS -->
             <div class="border-t border-gray-700 p-4">
                 <div class="flex justify-between text-sm text-gray-400">
                     <span>Total: ${misPedidos.length}</span>
@@ -403,7 +428,6 @@ function eliminarEnvio(pedidoId) {
     let mensaje = "";
     let accion = "";
     
-    // Verificar estado del pedido para mostrar mensaje personalizado
     const pedidos = JSON.parse(localStorage.getItem('pedidos_pendientes')) || [];
     const pedido = pedidos.find(p => p.id === pedidoId);
     
@@ -428,11 +452,10 @@ function eliminarEnvio(pedidoId) {
             const pedidoIndex = pedidosActualizados.findIndex(p => p.id === pedidoId);
             
             if (pedidoIndex !== -1) {
-                const eliminado = pedidosActualizados.splice(pedidoIndex, 1);
+                pedidosActualizados.splice(pedidoIndex, 1);
                 localStorage.setItem('pedidos_pendientes', JSON.stringify(pedidosActualizados));
                 mostrarToast(`🗑️ Envío #${pedidoId} eliminado correctamente`);
                 
-                // Recargar el modal si está abierto
                 if (document.getElementById("modalHistorial")) {
                     mostrarHistorialCompleto();
                 }
@@ -560,69 +583,56 @@ function mostrarResumenRuta() {
     });
 }
 
-// ==================== FUNCIONES SUPABASE PARA CLIENTE ====================
-
-// Suscribirse a ubicación de delivery en tiempo real
-function suscribirUbicacionDeliveryReal(deliveryId) {
-    if (typeof suscribirUbicacionEnTiempoReal !== 'undefined') {
-        const subscription = suscribirUbicacionEnTiempoReal(deliveryId, (ubicacion) => {
-            if (ubicacion && deliveryMarker) {
-                // Actualizar marcador en tiempo real
-                deliveryMarker.setLatLng([ubicacion.lat, ubicacion.lng]);
-                console.log('📍 Ubicación actualizada en tiempo real:', ubicacion.lat, ubicacion.lng);
-                
-                // Actualizar estado
-                if (destCoords && ubicacion) {
-                    const distanciaADestino = calcularDistanciaEntrePuntos(
-                        { lat: ubicacion.lat, lng: ubicacion.lng },
-                        destCoords
-                    );
-                    if (distanciaADestino < 0.5) {
-                        document.getElementById("deliveryEstado").innerHTML = "🟢 Muy cerca de tu destino 🎯";
-                    } else if (distanciaADestino < 1) {
-                        document.getElementById("deliveryEstado").innerHTML = "🟡 Cerca de tu destino";
-                    } else {
-                        document.getElementById("deliveryEstado").innerHTML = `🔴 A ${distanciaADestino.toFixed(1)} km de tu destino`;
-                    }
-                }
-            }
-        });
-        return subscription;
-    }
-    return null;
-}
-
-// Modificar seguirUbicacionDelivery para usar también Supabase
-// Esta función ya existe, solo agregamos la suscripción en tiempo real
-function seguirUbicacionDeliveryDual(deliveryId) {
-    // Función original (localStorage)
-    const intervaloOriginal = setInterval(() => {
-        const ubicacionGuardada = localStorage.getItem(`ubicacion_${deliveryId}`);
-        if (ubicacionGuardada) {
-            const ubicacion = JSON.parse(ubicacionGuardada);
-            if (deliveryMarker) map.removeLayer(deliveryMarker);
-            const motoIcon = getMotoIcon();
-            deliveryMarker = L.marker([ubicacion.lat, ubicacion.lng], { icon: motoIcon })
+// ==================== VER DELIVERYS EN LÍNEA ====================
+async function cargarDeliverysEnLinea() {
+    if (typeof supabaseClient === 'undefined' || !supabaseClient) return;
+    
+    try {
+        const { data, error } = await supabaseClient
+            .from('ubicaciones')
+            .select('*')
+            .eq('online', true)
+            .order('updated_at', { ascending: false });
+        
+        if (error) throw error;
+        
+        // Limpiar marcadores anteriores
+        deliverysMarkers.forEach(marker => map.removeLayer(marker));
+        deliverysMarkers = [];
+        
+        // Mostrar cada delivery en el mapa
+        data.forEach(delivery => {
+            const motoIcon = L.divIcon({
+                html: `<div style="background:#3B82F6; width:28px; height:28px; border-radius:50%; border:2px solid white; display:flex; align-items:center; justify-content:center;">
+                        <i class="fas fa-motorcycle" style="color:white; font-size:14px;"></i>
+                       </div>`,
+                iconSize: [28, 28],
+                className: 'delivery-marker'
+            });
+            
+            const marker = L.marker([delivery.lat, delivery.lng], { icon: motoIcon })
                 .addTo(map)
-                .bindPopup('<b>🏍️ Delivery en camino</b><br>Tu pedido está siendo entregado');
-        }
-    }, 2000);
-    
-    // También suscribir a Supabase si está disponible
-    if (typeof suscribirUbicacionEnTiempoReal !== 'undefined') {
-        const subscription = suscribirUbicacionEnTiempoReal(deliveryId, (ubicacion) => {
-            if (ubicacion && deliveryMarker) {
-                deliveryMarker.setLatLng([ubicacion.lat, ubicacion.lng]);
-                console.log('📍 Actualización en tiempo real desde Supabase');
-            }
+                .bindPopup(`<b>🏍️ ${delivery.delivery_nombre}</b><br>🟢 En línea`);
+            
+            deliverysMarkers.push(marker);
         });
-        return { intervaloOriginal, subscription };
+        
+        console.log(`✅ ${data.length} deliverys en línea mostrados`);
+    } catch(e) {
+        console.error('Error cargando deliverys:', e);
     }
-    
-    return { intervaloOriginal, subscription: null };
 }
 
 window.onload = () => { 
     loadUser(); 
-    initMap(); 
+    initMap();
+    if (currentUser && currentUser.rol === 'cliente') {
+        setTimeout(() => cargarDeliverysEnLinea(), 2000);
+        // Actualizar deliverys cada 5 segundos
+        setInterval(() => {
+            if (currentUser && currentUser.rol === 'cliente') {
+                cargarDeliverysEnLinea();
+            }
+        }, 5000);
+    }
 };
