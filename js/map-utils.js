@@ -90,6 +90,67 @@ function formatDuration(minutes) {
     return `${hours}h ${mins}min`;
 }
 
+// ==================== MARCADOR CON NOMBRE PARA DELIVERY ====================
+function crearMarcadorDelivery(lat, lng, nombre, color, tienePedido = null) {
+    // Determinar el color si no se especifica
+    let colorFinal = color;
+    let estadoTexto = '';
+    
+    if (tienePedido !== null) {
+        colorFinal = tienePedido ? '#FF6200' : '#10B981';
+        estadoTexto = tienePedido ? '🟠 En entrega' : '🟢 Disponible';
+    }
+    
+    // Crear el icono con el nombre arriba
+    const iconoConNombre = L.divIcon({
+        html: `
+            <div style="text-align: center;">
+                <div style="
+                    background: ${colorFinal};
+                    width: 32px;
+                    height: 32px;
+                    border-radius: 50%;
+                    border: 2px solid white;
+                    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    margin: 0 auto;
+                ">
+                    <i class="fas fa-motorcycle" style="color:white; font-size:16px;"></i>
+                </div>
+                <div style="
+                    background: rgba(0,0,0,0.75);
+                    color: white;
+                    font-size: 10px;
+                    font-weight: bold;
+                    padding: 2px 6px;
+                    border-radius: 12px;
+                    margin-top: 2px;
+                    white-space: nowrap;
+                    font-family: sans-serif;
+                    text-shadow: 0 0 2px black;
+                ">
+                    ${nombre}
+                </div>
+            </div>
+        `,
+        iconSize: [32, 50],  // Más alto para incluir el nombre
+        className: 'delivery-marker',
+        popupAnchor: [0, -20]  // El popup aparece arriba del nombre
+    });
+    
+    const marker = L.marker([lat, lng], { icon: iconoConNombre });
+    
+    if (estadoTexto) {
+        marker.bindPopup(`<b>🏍️ ${nombre}</b><br>${estadoTexto}`);
+    } else {
+        marker.bindPopup(`<b>🏍️ ${nombre}</b>`);
+    }
+    
+    return marker;
+}
+
 function convertirPedidoDeSupabase(pedidoSupabase) {
     return {
         id: pedidoSupabase.id,

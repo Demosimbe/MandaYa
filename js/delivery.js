@@ -47,6 +47,7 @@ function loadUser() {
         document.getElementById("onlineToggle").classList.remove("bg-gray-500");
         document.getElementById("onlineToggle").classList.add("bg-green-500");
         document.getElementById("onlineStatusText").innerHTML = '<i class="fas fa-circle online-dot mr-1"></i> En línea';
+    setTimeout(() => actualizarColorMarcador(), 1000); // ✅ Actualizar color
     }
     cargarPedidos();
 }
@@ -60,8 +61,15 @@ function startLocationTracking() {
                 if(userMarker) {
                     userMarker.setLatLng(coords);
                 } else {
-                    const motoIcon = getMotoIcon();
-                    userMarker = L.marker(coords, { icon: motoIcon }).addTo(map).bindPopup('🏍️ <b>Tu ubicación</b><br>Visible para los clientes');
+                    // ✅ NUEVO: Crear marcador con nombre (verde por defecto - disponible)
+                    userMarker = crearMarcadorDelivery(
+                        coords.lat, 
+                        coords.lng, 
+                        currentUser.nombre, 
+                        '#10B981'  // Verde = disponible
+                    );
+                    userMarker.addTo(map);
+                    userMarker.bindPopup(`🏍️ <b>${currentUser.nombre}</b><br>🟢 Disponible`);
                 }
                 
                 if(currentUser && isOnline) {
@@ -250,11 +258,11 @@ async function agarrarPedido(pedidoId) {
             .eq('estado', 'pendiente');
         
         if (error) throw error;
-        
-        mostrarToast(`✅ Pedido #${pedidoId} AGARRADO! Dirígete al origen.`);
-        pedidoSeleccionado = null;
-        cargarPedidos(); // Recargar desde Supabase
-        
+            mostrarToast(`✅ Pedido #${pedidoId} AGARRADO! Dirígete al origen.`);
+            pedidoSeleccionado = null;
+            cargarPedidos(); // Recargar desde Supabase
+            await actualizarColorMarcador();
+
     } catch(e) {
         console.error('Error agarrando pedido:', e);
         mostrarToast("❌ Error al agarrar el pedido", true);
@@ -289,6 +297,7 @@ async function completarPedido(pedidoId) {
         
         mostrarToast(`✅ Pedido #${pedidoId} COMPLETADO! Ganaste $${pedido?.tarifa || 0} MXN`);
         cargarPedidos(); // Recargar desde Supabase
+        await actualizarColorMarcador(); // Actualizar color del marcador al completar pedido
         
     } catch(e) {
         console.error('Error completando pedido:', e);
@@ -354,6 +363,7 @@ async function toggleOnline() {
         }
         if(ubicacionInterval) clearInterval(ubicacionInterval);
     }
+     await actualizarColorMarcador(); // ✅ Actualizar color del marcador al cambiar estado
 }
 
 async function verHistorial() {
@@ -419,6 +429,73 @@ function cerrarSesion() {
         localStorage.removeItem('sesion_activa'); 
         window.location.href = "index.html"; 
     } 
+}
+
+// Actualizar color del marcador según estado
+async function actualizarColorMarcador() {
+    if (!userMarker || !currentUser) return;
+    
+    // Verificar si el delivery tiene pedido activo
+    const tienePedido = await tienePedidoActivo(currentUser.id);
+    
+    let color;
+    let estadoTexto;
+    
+    if (tienePedido) {
+        color = '#FF6200';  // Naranja - Ocupado
+        estadoTexto = '🟠 En una entrega';
+    } else {
+        color = '#10B981';  // Verde - Disponible
+        estadoTexto = '🟢 Disponible';
+    }
+    
+    // ✅ Crear nuevo icono con el nombre
+    const nuevoIcono = L.divIcon({
+        html: `
+            <div style="text-align: center;">
+                <div style="
+                    background: ${color};
+                    width: 32px;
+                    height: 32px;
+                    border-radius: 50%;
+                    border: 2px solid white;
+                    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    margin: 0 auto;
+                ">
+                    <i class="fas fa-motorcycle" style="color:white; font-size:16px;"></i>
+                </div>
+                <div style="
+                    background: rgba(0,0,0,0.75);
+                    color: white;
+                    font-size: 10px;
+                    font-weight: bold;
+                    padding: 2px 6px;
+                    border-radius: 12px;
+                    margin-top: 2px;
+                    white-space: nowrap;
+                    font-family: sans-serif;
+                ">
+                    ${currentUser.nombre}
+                </div>
+            </div>
+        `,
+        iconSize: [32, 50],
+        className: 'moto-marker',
+        popupAnchor: [0, -20]
+    });
+    
+    userMarker.setIcon(nuevoIcono);
+    userMarker.setPopupContent(`🏍️ <b>${currentUser.nombre}</b><br>${estadoTexto}`);
+    
+    console.log(`🎨 Marcador actualizado: ${tienePedido ? 'NARANJA (ocupado)' : 'VERDE (disponible)'} - ${currentUser.nombre}`);
+}
+
+// Llamar a esta función cuando cambie el estado (al agarrar o completar pedido)
+async function actualizarEstadoYColor() {
+    await actualizarColorMarcador();
 }
 
 function mostrarToast(msg, err=false){ 

@@ -304,42 +304,7 @@ function iniciarSeguimientoDelivery() {
     }, 3000);
 }
 
-async function mostrarDeliveryEnMapa(deliveryId) {
-    const supabase = supabaseClient;
-    if (!supabase) return;
-    
-    try {
-        // ✅ Buscar delivery en Supabase
-        const { data: delivery, error } = await supabase
-            .from('usuarios')
-            .select('nombre')
-            .eq('id', deliveryId)
-            .single();
-        
-        if (error) throw error;
-        
-        if (delivery) {
-            document.getElementById("deliveryInfo").classList.remove("hidden");
-            document.getElementById("deliveryNombre").innerHTML = `<i class="fas fa-motorcycle"></i> ${delivery.nombre}`;
-            document.getElementById("deliveryEstado").innerHTML = "🟢 En camino a recoger tu paquete";
-            
-            if (deliveryMarker) {
-                const azulIcon = L.divIcon({
-                    html: '<div style="background:#2563EB; width:32px; height:32px; border-radius:50%; border:2px solid white; display:flex; align-items:center; justify-content:center;"><i class="fas fa-motorcycle" style="color:white; font-size:16px;"></i></div>',
-                    iconSize: [32, 32],
-                    className: 'moto-marker'
-                });
-                deliveryMarker.setIcon(azulIcon);
-            }
-        }
-    } catch(e) {
-        console.error('Error mostrando delivery:', e);
-    }
-}
-
 function seguirUbicacionDelivery(deliveryId) {
-
-// ✅ Limpiar intervalo anterior si existe
     if (ubicacionInterval) {
         clearInterval(ubicacionInterval);
         ubicacionInterval = null;
@@ -348,7 +313,6 @@ function seguirUbicacionDelivery(deliveryId) {
     ubicacionInterval = setInterval(async () => {
         let ubicacion = null;
         
-        // ✅ Primero intentar desde Supabase
         if (typeof obtenerUbicacionDeSupabase !== 'undefined') {
             const supabaseUbicacion = await obtenerUbicacionDeSupabase(deliveryId);
             if (supabaseUbicacion) {
@@ -356,14 +320,30 @@ function seguirUbicacionDelivery(deliveryId) {
             }
         }
         
+        // También obtener el nombre del delivery
+        let deliveryNombre = 'Delivery';
+        const supabase = supabaseClient;
+        if (supabase && deliveryId) {
+            const { data: delivery } = await supabase
+                .from('usuarios')
+                .select('nombre')
+                .eq('id', deliveryId)
+                .single();
+            if (delivery) deliveryNombre = delivery.nombre;
+        }
+        
         if (ubicacion) {
             if (deliveryMarker) map.removeLayer(deliveryMarker);
             
-            const motoIcon = getMotoIcon();
-            
-            deliveryMarker = L.marker([ubicacion.lat, ubicacion.lng], { icon: motoIcon })
-                .addTo(map)
-                .bindPopup('<b>🏍️ Delivery en camino</b><br>Tu pedido está siendo entregado');
+            // ✅ Usar marcador con nombre (naranja porque está ocupado)
+            deliveryMarker = crearMarcadorDelivery(
+                ubicacion.lat, 
+                ubicacion.lng, 
+                deliveryNombre, 
+                '#FF6200'
+            );
+            deliveryMarker.addTo(map);
+            deliveryMarker.bindPopup('<b>🏍️ Delivery en camino</b><br>Tu pedido está siendo entregado');
             
             if (destCoords && ubicacion) {
                 const distanciaADestino = calcularDistanciaEntrePuntos(ubicacion, destCoords);
@@ -377,8 +357,7 @@ function seguirUbicacionDelivery(deliveryId) {
             }
         }
         
-        // ✅ Verificar estado en Supabase
-        const supabase = supabaseClient;
+        // Verificar estado completado...
         if (supabase && pedidoActual) {
             const { data: pedidoActualizado } = await supabase
                 .from('pedidos')
@@ -606,6 +585,40 @@ function verPerfil() {
     alert(`👤 ${currentUser?.nombre}\n📧 ${currentUser?.email}\n💰 Cliente`); 
 }
 
+async function mostrarDeliveryEnMapa(deliveryId) {
+    const supabase = supabaseClient;
+    if (!supabase) return;
+    
+    try {
+        const { data: delivery, error } = await supabase
+            .from('usuarios')
+            .select('nombre')
+            .eq('id', deliveryId)
+            .single();
+        
+        if (error) throw error;
+        
+        if (delivery) {
+            document.getElementById("deliveryInfo").classList.remove("hidden");
+            document.getElementById("deliveryNombre").innerHTML = `<i class="fas fa-motorcycle"></i> ${delivery.nombre}`;
+            document.getElementById("deliveryEstado").innerHTML = "🟠 En camino a recoger tu paquete";
+            
+            // El marcador del delivery asignado será NARANJA
+            const naranjaIcon = L.divIcon({
+                html: '<div style="background:#FF6200; width:32px; height:32px; border-radius:50%; border:2px solid white; display:flex; align-items:center; justify-content:center;"><i class="fas fa-motorcycle" style="color:white; font-size:16px;"></i></div>',
+                iconSize: [32, 32],
+                className: 'moto-marker'
+            });
+            
+            if (deliveryMarker) {
+                deliveryMarker.setIcon(naranjaIcon);
+            }
+        }
+    } catch(e) {
+        console.error('Error mostrando delivery:', e);
+    }
+}
+
 // En cliente.js - función cerrarSesion()
 function cerrarSesion() { 
     if(confirm("¿Cerrar sesión?")){
@@ -686,7 +699,7 @@ async function cargarDeliverysEnLinea() {
     if (typeof supabaseClient === 'undefined' || !supabaseClient) return;
     
     try {
-        const { data, error } = await supabaseClient
+        const { data: ubicaciones, error } = await supabaseClient
             .from('ubicaciones')
             .select('*')
             .eq('online', true)
@@ -694,28 +707,37 @@ async function cargarDeliverysEnLinea() {
         
         if (error) throw error;
         
+        // Para cada delivery, verificar si tiene pedido activo
+        const deliverysConEstado = await Promise.all(ubicaciones.map(async (delivery) => {
+            const tienePedido = await tienePedidoActivo(delivery.delivery_id);
+            return { ...delivery, tienePedido };
+        }));
+        
         // Limpiar marcadores anteriores
         deliverysMarkers.forEach(marker => map.removeLayer(marker));
         deliverysMarkers = [];
         
-        // Mostrar cada delivery en el mapa
-        data.forEach(delivery => {
-            const motoIcon = L.divIcon({
-                html: `<div style="background:#3B82F6; width:28px; height:28px; border-radius:50%; border:2px solid white; display:flex; align-items:center; justify-content:center;">
-                        <i class="fas fa-motorcycle" style="color:white; font-size:14px;"></i>
-                       </div>`,
-                iconSize: [28, 28],
-                className: 'delivery-marker'
-            });
+        // Mostrar cada delivery con su nombre arriba
+        deliverysConEstado.forEach(delivery => {
+            const tienePedido = delivery.tienePedido;
+            const color = tienePedido ? '#FF6200' : '#10B981';
+            const estadoTexto = tienePedido ? '🟠 En entrega' : '🟢 Disponible';
             
-            const marker = L.marker([delivery.lat, delivery.lng], { icon: motoIcon })
-                .addTo(map)
-                .bindPopup(`<b>🏍️ ${delivery.delivery_nombre}</b><br>🟢 En línea`);
+            // ✅ Usar marcador con nombre
+            const marker = crearMarcadorDelivery(
+                delivery.lat, 
+                delivery.lng, 
+                delivery.delivery_nombre, 
+                color
+            );
             
+            marker.bindPopup(`<b>🏍️ ${delivery.delivery_nombre}</b><br>${estadoTexto}`);
+            marker.addTo(map);
             deliverysMarkers.push(marker);
         });
         
-        console.log(`✅ ${data.length} deliverys en línea mostrados`);
+        console.log(`✅ ${deliverysConEstado.length} deliverys mostrados (${deliverysConEstado.filter(d => d.tienePedido).length} ocupados, ${deliverysConEstado.filter(d => !d.tienePedido).length} disponibles)`);
+        
     } catch(e) {
         console.error('Error cargando deliverys:', e);
     }

@@ -122,6 +122,28 @@ async function setDeliveryOnlineSupabase(userId, online) {
     }
 }
 
+// ========== FUNCIONES PARA VERIFICAR ESTADO DEL DELIVERY ==========
+
+async function tienePedidoActivo(deliveryId) {
+    const supabase = initSupabase();
+    if (!supabase) return false;
+    
+    try {
+        const { data, error } = await supabase
+            .from('pedidos')
+            .select('id')
+            .eq('delivery_id', deliveryId)
+            .in('estado', ['asignado'])
+            .maybeSingle();
+        
+        if (error) throw error;
+        return !!data; // true si tiene pedido activo, false si no
+    } catch(e) {
+        console.error('Error verificando pedido activo:', e);
+        return false;
+    }
+}
+
 // Obtener TODOS los usuarios (para admin)
 async function getAllUsuariosSupabase() {
     const supabase = initSupabase();
