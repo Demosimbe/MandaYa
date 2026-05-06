@@ -149,6 +149,23 @@
             position: relative;
             z-index: 10001;
         }
+
+        /* Forzar sidebar desktop en PC sin romper móvil */
+@media (min-width: 1024px) {
+    body {
+        display: flex !important;
+    }
+    
+    .sidebar-desktop, .hidden.lg\:flex {
+        display: flex !important;
+    }
+}
+
+@media (max-width: 1023px) {
+    body {
+        display: block !important;
+    }
+}
         
         @keyframes slideUp {
             from { transform: translateY(30px); opacity: 0; }
@@ -258,7 +275,7 @@
         }
     </style>
 </head>
-<body class="h-screen overflow-hidden relative">
+<body class="h-screen overflow-hidden flex">
 
     <!-- SIDEBAR DESKTOP (visible en lg) -->
     <div class="hidden lg:flex w-96 bg-white sidebar flex-col h-full overflow-auto z-10 relative shadow-xl">

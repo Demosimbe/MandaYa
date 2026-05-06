@@ -13,13 +13,14 @@ let deliverysMarkers = []; // Para los marcadores de deliverys en línea
 // ==================== INICIALIZACIÓN ====================
 function initMap() {
     map = L.map('map').setView([18.6456, -91.8249], 13);
+    
     L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
-        maxZoom: 19
+        maxZoom: 15
     }).addTo(map);
     
-    const bounds = L.latLngBounds([BOUNDS.south, BOUNDS.west], [BOUNDS.north, BOUNDS.east]);
-    map.setMaxBounds(bounds);
+    // ✅ Limitar mapa a Ciudad del Carmen
+    limitarMapaACarmen(map);
     
     // Marcador de origen ARRASTRABLE
     const originIcon = L.divIcon({
@@ -41,11 +42,10 @@ function initMap() {
     destMarker = L.marker([18.6556, -91.8149], { icon: destIcon, draggable: true }).addTo(map);
     destMarker.bindPopup('🏁 <b>Destino</b><br>Arrástrame para cambiar');
     
-    // Eventos de arrastre
+    // Eventos de arrastre con validación de límites
     originMarker.on('dragend', function(e) {
         const coords = e.target.getLatLng();
-        if (coords.lat >= BOUNDS.south && coords.lat <= BOUNDS.north &&
-            coords.lng >= BOUNDS.west && coords.lng <= BOUNDS.east) {
+        if (coords.lat >= 18.58 && coords.lat <= 18.70 && coords.lng >= -91.88 && coords.lng <= -91.75) {
             originCoords = { lat: coords.lat, lng: coords.lng };
             reverseGeocode(originCoords, (addr) => document.getElementById("origen").value = addr);
             actualizarRutaYTarifa();
@@ -58,8 +58,7 @@ function initMap() {
     
     destMarker.on('dragend', function(e) {
         const coords = e.target.getLatLng();
-        if (coords.lat >= BOUNDS.south && coords.lat <= BOUNDS.north &&
-            coords.lng >= BOUNDS.west && coords.lng <= BOUNDS.east) {
+        if (coords.lat >= 18.58 && coords.lat <= 18.70 && coords.lng >= -91.88 && coords.lng <= -91.75) {
             destCoords = { lat: coords.lat, lng: coords.lng };
             reverseGeocode(destCoords, (addr) => document.getElementById("destino").value = addr);
             actualizarRutaYTarifa();
@@ -70,10 +69,9 @@ function initMap() {
         }
     });
     
-    // Click en el mapa
+    // Click en el mapa con validación
     map.on('click', (e) => {
-        if (e.latlng.lat >= BOUNDS.south && e.latlng.lat <= BOUNDS.north &&
-            e.latlng.lng >= BOUNDS.west && e.latlng.lng <= BOUNDS.east) {
+        if (e.latlng.lat >= 18.58 && e.latlng.lat <= 18.70 && e.latlng.lng >= -91.88 && e.latlng.lng <= -91.75) {
             if (selectMode === 'origen') {
                 originMarker.setLatLng(e.latlng);
                 originCoords = { lat: e.latlng.lat, lng: e.latlng.lng };

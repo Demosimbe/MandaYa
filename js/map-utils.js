@@ -109,3 +109,37 @@ function convertirPedidoDeSupabase(pedidoSupabase) {
         fechaCompletado: pedidoSupabase.fecha_completado
     };
 }
+
+// ==================== LIMITAR MAPA A CD DEL CARMEN ====================
+function limitarMapaACarmen(map) {
+    // Límites exactos de Ciudad del Carmen
+    const southWest = L.latLng(18.58, -91.88);  // Suroeste
+    const northEast = L.latLng(18.70, -91.75);  // Noreste
+    const bounds = L.latLngBounds(southWest, northEast);
+    
+    // 1. Limitar el movimiento del mapa
+    map.setMaxBounds(bounds);
+    
+    // 2. Limitar el zoom mínimo y máximo
+    map.setMinZoom(12);  // No puede alejarse más que esto
+    map.setMaxZoom(15);  // No puede acercarse más que esto
+    
+    // 3. Si el usuario intenta salirse, regresarlo suavemente
+    map.on('drag', function() {
+        if (!bounds.contains(map.getCenter())) {
+            map.panInsideBounds(bounds, { animate: true, duration: 0.5 });
+        }
+    });
+    
+    // 4. También limitar en zoomend (por si acaso)
+    map.on('zoomend', function() {
+        if (map.getZoom() > 15) {
+            map.setZoom(15);
+        }
+        if (map.getZoom() < 12) {
+            map.setZoom(12);
+        }
+    });
+    
+    console.log('🗺️ Mapa limitado a Ciudad del Carmen (zoom 12-15)');
+}

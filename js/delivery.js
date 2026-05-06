@@ -16,11 +16,11 @@ function initMap() {
     
     L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
-        maxZoom: 19
+        maxZoom: 15
     }).addTo(map);
     
-    const bounds = L.latLngBounds([BOUNDS.south, BOUNDS.west], [BOUNDS.north, BOUNDS.east]);
-    map.setMaxBounds(bounds);
+    // ✅ Limitar mapa a Ciudad del Carmen
+    limitarMapaACarmen(map);
     
     startLocationTracking();
     cargarPedidos();
