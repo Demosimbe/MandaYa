@@ -15,9 +15,10 @@ function initMap() {
     
     map = L.map('map').setView([cdDelCarmen.lat, cdDelCarmen.lng], 13);
     
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
-        maxZoom: 15
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; CartoDB',
+    maxZoom: 18,
+    subdomains: 'abcd'
     }).addTo(map);
     
     // ✅ Limitar mapa a Ciudad del Carmen
