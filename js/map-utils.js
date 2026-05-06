@@ -122,7 +122,7 @@ function limitarMapaACarmen(map) {
     
     // 2. Limitar el zoom mínimo y máximo
     map.setMinZoom(12);  // No puede alejarse más que esto
-    map.setMaxZoom(15);  // No puede acercarse más que esto
+    map.setMaxZoom(17);  // No puede acercarse más que esto
     
     // 3. Si el usuario intenta salirse, regresarlo suavemente
     map.on('drag', function() {
@@ -133,13 +133,13 @@ function limitarMapaACarmen(map) {
     
     // 4. También limitar en zoomend (por si acaso)
     map.on('zoomend', function() {
-        if (map.getZoom() > 15) {
-            map.setZoom(15);
+        if (map.getZoom() > 17) {
+            map.setZoom(17);
         }
         if (map.getZoom() < 12) {
             map.setZoom(12);
         }
     });
     
-    console.log('🗺️ Mapa limitado a Ciudad del Carmen (zoom 12-15)');
+    console.log('🗺️ Mapa limitado a Ciudad del Carmen (zoom 12-17)');
 }
