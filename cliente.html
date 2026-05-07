@@ -679,19 +679,11 @@
 
                 <div>
                     <label class="text-xs text-gray-600 font-medium mb-2 block">📦 Tipo de envío</label>
-                    <div class="grid grid-cols-2 gap-2">
-                        <button type="button" onclick="seleccionarTipoMobile('comida', '🍔 Comida')" class="tipo-mobile-btn bg-gray-100 hover:bg-orange-100 p-3 rounded-xl text-sm transition-all">
-                            🍔 Comida
-                        </button>
-                        <button type="button" onclick="seleccionarTipoMobile('paquete', '📦 Paquete')" class="tipo-mobile-btn bg-gray-100 hover:bg-orange-100 p-3 rounded-xl text-sm transition-all">
-                            📦 Paquete
-                        </button>
-                        <button type="button" onclick="seleccionarTipoMobile('mercancia', '📦 Mercancía')" class="tipo-mobile-btn bg-gray-100 hover:bg-orange-100 p-3 rounded-xl text-sm transition-all">
-                            📦 Mercancía
-                        </button>
-                        <button type="button" onclick="seleccionarTipoMobile('farmacia', '💊 Farmacia')" class="tipo-mobile-btn bg-gray-100 hover:bg-orange-100 p-3 rounded-xl text-sm transition-all">
-                            💊 Farmacia
-                        </button>
+                   <div class="grid grid-cols-2 gap-2">
+                          <button type="button" onclick="seleccionarTipoMobile('comida', '🍔 Comida')" class="tipo-mobile-btn ...">🍔 Comida</button>
+                          <button type="button" onclick="seleccionarTipoMobile('paquete', '📦 Paquete')" class="tipo-mobile-btn ...">📦 Paquete</button>
+                          <button type="button" onclick="seleccionarTipoMobile('mercancia', '📦 Mercancía')" class="tipo-mobile-btn ...">📦 Mercancía</button>
+                          <button type="button" onclick="seleccionarTipoMobile('farmacia', '💊 Farmacia')" class="tipo-mobile-btn ...">💊 Farmacia</button>
                     </div>
                     <input type="hidden" id="tipoEnvioMobile" value="">
                     <div id="tipoSeleccionadoMobile" class="text-xs text-green-600 mt-2 hidden">
@@ -750,40 +742,49 @@
         }
         
         function sincronizarInputsMobile() {
-            const origenDesktop = document.getElementById("origen");
-            const destinoDesktop = document.getElementById("destino");
-            const origenMobile = document.getElementById("origenMobile");
-            const destinoMobile = document.getElementById("destinoMobile");
-            const tarifaContainer = document.getElementById("tarifaContainer");
-            const tarifaContainerMobile = document.getElementById("tarifaContainerMobile");
-            const tarifaValue = document.getElementById("tarifaValue");
-            const tarifaValueMobile = document.getElementById("tarifaValueMobile");
-            const tipoEnvio = document.getElementById("tipoEnvio");
-            const tipoEnvioMobile = document.getElementById("tipoEnvioMobile");
+    const origenDesktop = document.getElementById("origen");
+    const destinoDesktop = document.getElementById("destino");
+    const origenMobile = document.getElementById("origenMobile");
+    const destinoMobile = document.getElementById("destinoMobile");
+    const tarifaContainer = document.getElementById("tarifaContainer");
+    const tarifaContainerMobile = document.getElementById("tarifaContainerMobile");
+    const tarifaValue = document.getElementById("tarifaValue");
+    const tarifaValueMobile = document.getElementById("tarifaValueMobile");
+    const tipoEnvio = document.getElementById("tipoEnvio");
+    const tipoEnvioMobile = document.getElementById("tipoEnvioMobile");
+    
+    if (origenDesktop && origenMobile) origenMobile.value = origenDesktop.value;
+    if (destinoDesktop && destinoMobile) destinoMobile.value = destinoDesktop.value;
+    
+    // ✅ CORREGIR: No forzar el valor del tipo de envío de escritorio desde móvil
+    // Solo sincronizar de escritorio a móvil, no al revés
+    if (tipoEnvio && tipoEnvioMobile) {
+        // Solo actualizar móvil si el valor de escritorio cambió
+        if (tipoEnvio.value !== tipoEnvioMobile.value) {
+            tipoEnvioMobile.value = tipoEnvio.value;
             
-            if (origenDesktop && origenMobile) origenMobile.value = origenDesktop.value;
-            if (destinoDesktop && destinoMobile) destinoMobile.value = destinoDesktop.value;
-            
-            if (tipoEnvio && tipoEnvioMobile) {
-                if (tipoEnvioMobile.value && tipoEnvioMobile.value !== tipoEnvio.value) {
-                    tipoEnvio.value = tipoEnvioMobile.value;
-                }
-                else if (tipoEnvio.value && tipoEnvio.value !== tipoEnvioMobile.value) {
-                    tipoEnvioMobile.value = tipoEnvio.value;
-                }
-            }
-            
-            if (tarifaContainer && tarifaContainerMobile) {
-                if (!tarifaContainer.classList.contains("hidden")) {
-                    tarifaContainerMobile.classList.remove("hidden");
-                    if (tarifaValue && tarifaValueMobile) {
-                        tarifaValueMobile.innerHTML = tarifaValue.innerHTML;
-                    }
-                } else {
-                    tarifaContainerMobile.classList.add("hidden");
-                }
+            // Actualizar el texto del botón seleccionado en móvil
+            const textoSeleccionado = tipoEnvio.options[tipoEnvio.selectedIndex]?.text || '';
+            const mensajeDiv = document.getElementById('tipoSeleccionadoMobile');
+            if (mensajeDiv && textoSeleccionado) {
+                mensajeDiv.innerHTML = `✅ ${textoSeleccionado}`;
+                mensajeDiv.classList.remove('hidden');
+                setTimeout(() => mensajeDiv.classList.add('hidden'), 1500);
             }
         }
+    }
+    
+    if (tarifaContainer && tarifaContainerMobile) {
+        if (!tarifaContainer.classList.contains("hidden")) {
+            tarifaContainerMobile.classList.remove("hidden");
+            if (tarifaValue && tarifaValueMobile) {
+                tarifaValueMobile.innerHTML = tarifaValue.innerHTML;
+            }
+        } else {
+            tarifaContainerMobile.classList.add("hidden");
+        }
+    }
+}
         
         function solicitarEnvioMobile() {
             const origenMobile = document.getElementById("origenMobile").value;
@@ -806,31 +807,42 @@
             solicitarEnvio();
         }
         
-        function seleccionarTipoMobile(valor, texto) {
-            document.getElementById('tipoEnvioMobile').value = valor;
-            const tipoDesktop = document.getElementById('tipoEnvio');
-            if (tipoDesktop) tipoDesktop.value = valor;
-            const mensajeDiv = document.getElementById('tipoSeleccionadoMobile');
-            mensajeDiv.classList.remove('hidden');
-            mensajeDiv.innerHTML = `✅ ${texto} seleccionado`;
-            document.querySelectorAll('.tipo-mobile-btn').forEach(btn => {
-                btn.classList.remove('bg-orange-500', 'text-white');
-                btn.classList.add('bg-gray-100', 'text-gray-800');
-            });
-            const btnActivo = event?.target?.closest?.('.tipo-mobile-btn') || event?.target;
-            if (btnActivo && btnActivo.classList) {
-                btnActivo.classList.remove('bg-gray-100', 'text-gray-800');
-                btnActivo.classList.add('bg-orange-500', 'text-white');
-            }
-            setTimeout(() => {
-                mensajeDiv.style.opacity = '0';
-                setTimeout(() => {
-                    mensajeDiv.classList.add('hidden');
-                    mensajeDiv.style.opacity = '1';
-                }, 500);
-            }, 2000);
+      function seleccionarTipoMobile(valor, texto) {
+    // Actualizar ambos selects
+    const tipoDesktop = document.getElementById('tipoEnvio');
+    const tipoMobile = document.getElementById('tipoEnvioMobile');
+    const mensajeDiv = document.getElementById('tipoSeleccionadoMobile');
+    
+    if (tipoDesktop) tipoDesktop.value = valor;
+    if (tipoMobile) tipoMobile.value = valor;
+    
+    // Mostrar confirmación
+    if (mensajeDiv) {
+        mensajeDiv.innerHTML = `✅ ${texto} seleccionado`;
+        mensajeDiv.classList.remove('hidden');
+        setTimeout(() => {
+            mensajeDiv.classList.add('hidden');
+        }, 2000);
+    }
+    
+    // Cambiar estilo de los botones
+    document.querySelectorAll('.tipo-mobile-btn').forEach(btn => {
+        btn.classList.remove('bg-orange-500', 'text-white');
+        btn.classList.add('bg-gray-100', 'text-gray-800');
+    });
+    
+    // Resaltar el botón clickeado
+    const botones = document.querySelectorAll('.tipo-mobile-btn');
+    for (let btn of botones) {
+        if (btn.textContent.includes(texto.split(' ')[0])) {
+            btn.classList.remove('bg-gray-100', 'text-gray-800');
+            btn.classList.add('bg-orange-500', 'text-white');
+            break;
         }
-        
+    }
+    
+    console.log(`✅ Tipo seleccionado: ${valor} - ${texto}`);
+}
         function centrarMapa() {
             if (map) map.setView([18.6456, -91.8249], 13);
             mostrarToast("📍 Mapa centrado en Ciudad del Carmen");

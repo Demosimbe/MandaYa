@@ -123,7 +123,6 @@ async function setDeliveryOnlineSupabase(userId, online) {
 }
 
 // ========== FUNCIONES PARA VERIFICAR ESTADO DEL DELIVERY ==========
-
 async function tienePedidoActivo(deliveryId) {
     const supabase = initSupabase();
     if (!supabase) return false;

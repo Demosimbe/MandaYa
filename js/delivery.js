@@ -9,6 +9,11 @@ let watchId = null;
 let ubicacionInterval = null;
 let cargaPedidosInterval = null;
 
+// ==================== NUEVAS VARIABLES PARA RUTAS ====================
+let currentRoutingControl = null;  // Control de ruta actual
+let recogidaMarker = null;         // Marcador del punto de recogida (origen)
+let destinoMarker = null;          // Marcador del punto de destino
+
 // ==================== INICIALIZACIÓN ====================
 function initMap() {
     const cdDelCarmen = { lat: 18.6456, lng: -91.8249 };
@@ -16,21 +21,18 @@ function initMap() {
     map = L.map('map').setView([cdDelCarmen.lat, cdDelCarmen.lng], 13);
     
     L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; CartoDB',
-    maxZoom: 18,
-    subdomains: 'abcd'
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; CartoDB',
+        maxZoom: 18,
+        subdomains: 'abcd'
     }).addTo(map);
     
-    // ✅ Limitar mapa a Ciudad del Carmen
     limitarMapaACarmen(map);
     
     startLocationTracking();
     cargarPedidos();
     
-    // ✅ Limpiar intervalo anterior si existe (por si se llama initMap varias veces)
     if(cargaPedidosInterval) clearInterval(cargaPedidosInterval);
     
-    // ✅ Crear nuevo intervalo para recargar pedidos cada 5 segundos
     cargaPedidosInterval = setInterval(() => { 
         if(isOnline) cargarPedidos(); 
     }, 5000);
@@ -47,9 +49,180 @@ function loadUser() {
         document.getElementById("onlineToggle").classList.remove("bg-gray-500");
         document.getElementById("onlineToggle").classList.add("bg-green-500");
         document.getElementById("onlineStatusText").innerHTML = '<i class="fas fa-circle online-dot mr-1"></i> En línea';
-    setTimeout(() => actualizarColorMarcador(), 1000); // ✅ Actualizar color
+        setTimeout(() => actualizarColorMarcador(), 1000);
     }
     cargarPedidos();
+}
+
+// ==================== LIMPIAR RUTAS Y MARCADORES ====================
+function limpiarRutasYMarcadores() {
+    if (currentRoutingControl) {
+        try { 
+            map.removeControl(currentRoutingControl); 
+        } catch(e) {}
+        currentRoutingControl = null;
+    }
+    
+    if (recogidaMarker) {
+        map.removeLayer(recogidaMarker);
+        recogidaMarker = null;
+    }
+    
+    if (destinoMarker) {
+        map.removeLayer(destinoMarker);
+        destinoMarker = null;
+    }
+}
+
+// ==================== RUTA DE RECOGIDA (delivery -> origen) ====================
+async function dibujarRutaRecogida(pedido) {
+    limpiarRutasYMarcadores();
+    
+    if (!pedido.origenCoords) {
+        mostrarToast("❌ No hay coordenadas de origen", true);
+        return;
+    }
+    
+    let ubicacionActual = null;
+    if (userMarker) {
+        const latLng = userMarker.getLatLng();
+        ubicacionActual = { lat: latLng.lat, lng: latLng.lng };
+    }
+    
+    let waypoints = [];
+    if (ubicacionActual) {
+        waypoints = [
+            L.latLng(ubicacionActual.lat, ubicacionActual.lng),
+            L.latLng(pedido.origenCoords.lat, pedido.origenCoords.lng)
+        ];
+    } else {
+        waypoints = [
+            L.latLng(pedido.origenCoords.lat, pedido.origenCoords.lng)
+        ];
+    }
+    
+    // ✅ Configuración mejorada para móvil
+    currentRoutingControl = L.Routing.control({
+        waypoints: waypoints,
+        routeWhileDragging: false,
+        showAlternatives: false,
+        fitSelectedRoutes: true,
+        lineOptions: {
+            styles: [{ color: '#10B981', weight: 6, opacity: 0.9 }],
+            addWaypoints: false
+        },
+        router: L.Routing.osrmv1({
+            serviceUrl: 'https://router.project-osrm.org/route/v1'
+        }),
+        show: false,
+        addWaypoints: false,
+        draggableWaypoints: false
+    }).addTo(map);
+    
+    // ✅ Forzar que se ajuste al bounds después de un pequeño retraso
+    setTimeout(() => {
+        if (ubicacionActual) {
+            map.fitBounds([
+                [ubicacionActual.lat, ubicacionActual.lng],
+                [pedido.origenCoords.lat, pedido.origenCoords.lng]
+            ], { padding: [50, 50], maxZoom: 15 });
+        } else {
+            map.setView([pedido.origenCoords.lat, pedido.origenCoords.lng], 15);
+        }
+    }, 200);
+    
+    // Agregar marcador de recogida
+    if (recogidaMarker) map.removeLayer(recogidaMarker);
+    recogidaMarker = L.marker([pedido.origenCoords.lat, pedido.origenCoords.lng], {
+        icon: L.divIcon({
+            html: '<div style="background:#10B981; width:36px; height:36px; border-radius:50%; border:3px solid white; box-shadow:0 2px 8px rgba(0,0,0,0.3); display:flex; align-items:center; justify-content:center;"><i class="fas fa-box" style="color:white; font-size:16px;"></i></div>',
+            iconSize: [36, 36]
+        })
+    }).addTo(map);
+    recogidaMarker.bindPopup(`<b>📍 RECOGER AQUÍ</b><br>${pedido.origen}`).openPopup();
+    
+    mostrarToast(`📍 Ruta de RECOGIDA - Dirígete a: ${pedido.origen}`);
+}
+
+// ==================== RUTA DE ENTREGA (origen -> destino) ====================
+async function dibujarRutaEntrega(pedido) {
+    limpiarRutasYMarcadores();
+    
+    if (!pedido.origenCoords || !pedido.destinoCoords) {
+        mostrarToast("❌ Faltan coordenadas", true);
+        return;
+    }
+    
+    currentRoutingControl = L.Routing.control({
+        waypoints: [
+            L.latLng(pedido.origenCoords.lat, pedido.origenCoords.lng),
+            L.latLng(pedido.destinoCoords.lat, pedido.destinoCoords.lng)
+        ],
+        routeWhileDragging: false,
+        showAlternatives: false,
+        fitSelectedRoutes: true,
+        lineOptions: {
+            styles: [{ color: '#FF6200', weight: 6, opacity: 0.9 }]
+        },
+        router: L.Routing.osrmv1({
+            serviceUrl: 'https://router.project-osrm.org/route/v1'
+        }),
+        show: false,
+        addWaypoints: false
+    }).addTo(map);
+    
+    setTimeout(() => {
+        map.fitBounds([
+            [pedido.origenCoords.lat, pedido.origenCoords.lng],
+            [pedido.destinoCoords.lat, pedido.destinoCoords.lng]
+        ], { padding: [50, 50], maxZoom: 15 });
+    }, 200);
+    
+    destinoMarker = L.marker([pedido.destinoCoords.lat, pedido.destinoCoords.lng], {
+        icon: L.divIcon({
+            html: '<div style="background:#3B82F6; width:36px; height:36px; border-radius:50%; border:3px solid white; box-shadow:0 2px 8px rgba(0,0,0,0.3); display:flex; align-items:center; justify-content:center;"><i class="fas fa-flag-checkered" style="color:white; font-size:16px;"></i></div>',
+            iconSize: [36, 36]
+        })
+    }).addTo(map);
+    destinoMarker.bindPopup(`<b>🏁 ENTREGAR AQUÍ</b><br>${pedido.destino}`).openPopup();
+    
+    mostrarToast(`🚚 Ruta de ENTREGA - Desde origen hasta destino`);
+}
+
+// ==================== MARCAR PAQUETE COMO RECOGIDO ====================
+async function marcarPaqueteRecogido(pedidoId) {
+    const supabase = supabaseClient;
+    if (!supabase) {
+        mostrarToast("❌ Error de conexión", true);
+        return;
+    }
+    
+    try {
+        const { error } = await supabase
+            .from('pedidos')
+            .update({
+                estado: 'recogido',
+                paquete_recogido_en: new Date().toISOString()
+            })
+            .eq('id', pedidoId);
+        
+        if (error) throw error;
+        
+        mostrarToast(`✅ ¡Paquete #${pedidoId} RECOGIDO! Ahora dirígete al destino.`);
+        
+        await cargarPedidos();
+        
+        const pedidoActualizado = misPedidosActivos.find(p => p.id === pedidoId);
+        if (pedidoActualizado) {
+            await dibujarRutaEntrega(pedidoActualizado);
+        }
+        
+        await actualizarColorMarcador();
+        
+    } catch(e) {
+        console.error('Error marcando paquete recogido:', e);
+        mostrarToast("❌ Error al registrar la recogida", true);
+    }
 }
 
 function startLocationTracking() {
@@ -60,23 +233,29 @@ function startLocationTracking() {
                 
                 if(userMarker) {
                     userMarker.setLatLng(coords);
+                    
+                    // Si hay un pedido activo en etapa de recogida, actualizar ruta en tiempo real
+                    if (misPedidosActivos.length > 0 && misPedidosActivos[0].estado === 'asignado') {
+                        const pedidoActivo = misPedidosActivos[0];
+                        if (pedidoActivo.origenCoords) {
+                            limpiarRutasYMarcadores();
+                            await dibujarRutaRecogida(pedidoActivo);
+                        }
+                    }
                 } else {
-                    // ✅ NUEVO: Crear marcador con nombre (verde por defecto - disponible)
                     userMarker = crearMarcadorDelivery(
                         coords.lat, 
                         coords.lng, 
                         currentUser.nombre, 
-                        '#10B981'  // Verde = disponible
+                        '#10B981'
                     );
                     userMarker.addTo(map);
                     userMarker.bindPopup(`🏍️ <b>${currentUser.nombre}</b><br>🟢 Disponible`);
                 }
                 
                 if(currentUser && isOnline) {
-                    // Guardar en localStorage
                     localStorage.setItem(`ubicacion_${currentUser.id}`, JSON.stringify(coords));
                     
-                    // Guardar en Supabase
                     if (typeof guardarUbicacionEnSupabase !== 'undefined') {
                         await guardarUbicacionEnSupabase(
                             currentUser.id,
@@ -106,7 +285,6 @@ function centrarMapa() {
 }
 
 async function cargarPedidos() {
-    // ✅ Cargar desde Supabase en lugar de localStorage
     const supabase = supabaseClient;
     if (!supabase) {
         console.error('Supabase no disponible');
@@ -114,7 +292,6 @@ async function cargarPedidos() {
     }
     
     try {
-        // Obtener pedidos PENDIENTES de Supabase
         const { data: pedidosPendientes, error: errorPendientes } = await supabase
             .from('pedidos')
             .select('*')
@@ -123,21 +300,33 @@ async function cargarPedidos() {
         
         if (errorPendientes) throw errorPendientes;
         
-        // Obtener pedidos ASIGNADOS a este delivery
         const { data: pedidosAsignados, error: errorAsignados } = await supabase
             .from('pedidos')
             .select('*')
             .eq('delivery_id', currentUser?.id)
-            .in('estado', ['asignado']);
+            .in('estado', ['asignado', 'recogido'])
+            .order('fecha', { ascending: true });
         
         if (errorAsignados) throw errorAsignados;
         
-        // Convertir formato de Supabase al que usa la interfaz
         pedidosDisponibles = (pedidosPendientes || []).map(p => convertirPedidoDeSupabase(p));
         misPedidosActivos = (pedidosAsignados || []).map(p => convertirPedidoDeSupabase(p));
         
         actualizarListaPedidos();
-        dibujarRutaSeleccionada();
+        
+        if (misPedidosActivos.length > 0) {
+            const pedidoActivo = misPedidosActivos[0];
+            if (pedidoActivo.estado === 'recogido') {
+                await dibujarRutaEntrega(pedidoActivo);
+            } else if (pedidoActivo.estado === 'asignado') {
+                await dibujarRutaRecogida(pedidoActivo);
+            }
+        } else {
+            limpiarRutasYMarcadores();
+            if (pedidoSeleccionado) {
+                dibujarRutaOptimaPedido(pedidoSeleccionado);
+            }
+        }
         
         console.log(`📦 ${pedidosDisponibles.length} pedidos disponibles, ${misPedidosActivos.length} activos`);
         
@@ -172,38 +361,47 @@ function actualizarListaPedidos() {
     if(misPedidosActivos.length === 0) {
         containerActivos.innerHTML = '<div class="text-center text-gray-400 py-4"><i class="fas fa-check-circle text-2xl mb-1 block"></i>No hay pedidos activos</div>';
     } else {
-        containerActivos.innerHTML = misPedidosActivos.map(p => `
+        containerActivos.innerHTML = misPedidosActivos.map(p => {
+            const esRecogido = p.estado === 'recogido';
+            
+            return `
             <div class="bg-orange-50 border border-orange-200 rounded-xl p-4 shadow-sm">
                 <div class="flex justify-between items-start mb-2">
                     <span class="font-bold text-[#FF6200]">#${p.id}</span>
-                    <span class="text-xs px-2 py-1 rounded-full bg-green-100 text-green-700">En curso</span>
+                    <span class="text-xs px-2 py-1 rounded-full ${esRecogido ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'}">
+                        ${esRecogido ? '📦 Paquete recogido' : '🟡 En camino a recoger'}
+                    </span>
                 </div>
-                <p class="text-sm"><i class="fas fa-circle text-[#FF6200] text-xs mr-1"></i> ${p.origen}</p>
-                <p class="text-sm mt-1"><i class="fas fa-square text-blue-600 text-xs mr-1"></i> ${p.destino}</p>
+                <p class="text-sm"><i class="fas fa-circle text-green-500 text-xs mr-1"></i> <strong>Recoger en:</strong> ${p.origen}</p>
+                <p class="text-sm mt-1"><i class="fas fa-square text-blue-600 text-xs mr-1"></i> <strong>Entregar en:</strong> ${p.destino}</p>
                 <p class="text-xs text-gray-500 mt-2">📏 ${p.distanciaReal} km • 💰 $${p.tarifa}</p>
-                <button onclick="completarPedido(${p.id})" class="w-full mt-3 bg-blue-500 hover:bg-blue-600 text-white py-2 rounded-lg text-sm font-medium transition-all">
-                    <i class="fas fa-check-circle mr-1"></i> COMPLETAR ENTREGA
-                </button>
+                <p class="text-xs text-gray-500">👤 Cliente: ${p.clienteNombre}</p>
+                ${!esRecogido ? 
+                    `<button onclick="marcarPaqueteRecogido(${p.id})" class="w-full mt-3 bg-green-500 hover:bg-green-600 text-white py-2 rounded-lg text-sm font-medium transition-all">
+                        <i class="fas fa-box-open mr-1"></i> 📦 MARCAR PAQUETE RECOGIDO
+                    </button>` :
+                    `<button onclick="completarPedido(${p.id})" class="w-full mt-3 bg-blue-500 hover:bg-blue-600 text-white py-2 rounded-lg text-sm font-medium transition-all">
+                        <i class="fas fa-check-circle mr-1"></i> 🏁 MARCAR ENTREGADO
+                    </button>`
+                }
             </div>
-        `).join('');
+        `}).join('');
     }
 }
 
 function seleccionarPedido(pedidoId) {
     pedidoSeleccionado = pedidosDisponibles.find(p => p.id === pedidoId);
-    dibujarRutaSeleccionada();
+    limpiarRutasYMarcadores();
+    dibujarRutaOptimaPedido(pedidoSeleccionado);
     actualizarListaPedidos();
     mostrarToast(`📍 Pedido #${pedidoId} seleccionado - Ruta mostrada en mapa`);
 }
 
 async function dibujarRutaOptimaPedido(pedido) {
-    if (window._currentRoutingControl) {
-        try { map.removeControl(window._currentRoutingControl); } catch(e) {}
-        window._currentRoutingControl = null;
-    }
+    limpiarRutasYMarcadores();
     
     if (pedido.origenCoords && pedido.destinoCoords) {
-        const routingControl = L.Routing.control({
+        currentRoutingControl = L.Routing.control({
             waypoints: [
                 L.latLng(pedido.origenCoords.lat, pedido.origenCoords.lng),
                 L.latLng(pedido.destinoCoords.lat, pedido.destinoCoords.lng)
@@ -221,12 +419,10 @@ async function dibujarRutaOptimaPedido(pedido) {
             draggableWaypoints: false
         }).addTo(map);
         
-        window._currentRoutingControl = routingControl;
-        
         map.fitBounds([
             [pedido.origenCoords.lat, pedido.origenCoords.lng],
             [pedido.destinoCoords.lat, pedido.destinoCoords.lng]
-        ]);
+        ], { padding: [50, 50] });
         
         mostrarToast(`📏 Distancia: ${pedido.distanciaReal} km • 💰 $${pedido.tarifa}`);
     }
@@ -246,7 +442,6 @@ async function agarrarPedido(pedidoId) {
     }
     
     try {
-        // ✅ Actualizar en Supabase
         const { error } = await supabase
             .from('pedidos')
             .update({
@@ -258,10 +453,11 @@ async function agarrarPedido(pedidoId) {
             .eq('estado', 'pendiente');
         
         if (error) throw error;
-            mostrarToast(`✅ Pedido #${pedidoId} AGARRADO! Dirígete al origen.`);
-            pedidoSeleccionado = null;
-            cargarPedidos(); // Recargar desde Supabase
-            await actualizarColorMarcador();
+        
+        mostrarToast(`✅ Pedido #${pedidoId} AGARRADO! Dirígete al origen para recoger.`);
+        pedidoSeleccionado = null;
+        await cargarPedidos();
+        await actualizarColorMarcador();
 
     } catch(e) {
         console.error('Error agarrando pedido:', e);
@@ -277,7 +473,6 @@ async function completarPedido(pedidoId) {
     }
     
     try {
-        // ✅ Actualizar en Supabase
         const { error } = await supabase
             .from('pedidos')
             .update({
@@ -288,21 +483,18 @@ async function completarPedido(pedidoId) {
         
         if (error) throw error;
         
-        // Obtener tarifa para mostrar
         const { data: pedido } = await supabase
             .from('pedidos')
             .select('tarifa')
             .eq('id', pedidoId)
             .single();
         
-        mostrarToast(`✅ Pedido #${pedidoId} COMPLETADO! Ganaste $${pedido?.tarifa || 0} MXN`);
+        mostrarToast(`✅ Pedido #${pedidoId} ENTREGADO! Ganaste $${pedido?.tarifa || 0} MXN`);
         
-        // ✅ Recargar pedidos
+        limpiarRutasYMarcadores();
+        
         await cargarPedidos();
         await actualizarColorMarcador();
-        
-        // ✅ Forzar una notificación al cliente (opcional, con broadcast de Supabase)
-        // Por ahora, el cliente lo detectará en su siguiente polling
         
     } catch(e) {
         console.error('Error completando pedido:', e);
@@ -325,7 +517,6 @@ async function toggleOnline() {
             currentUser.online = true;
             localStorage.setItem('sesion_activa', JSON.stringify(currentUser));
             
-            // ✅ Guardar en Supabase
             await setDeliveryOnlineSupabase(currentUser.id, true);
             
             if (userMarker) {
@@ -335,10 +526,9 @@ async function toggleOnline() {
         }
         cargarPedidos();
 
-        // ✅ Asegurar que el intervalo de carga esté activo
         if(cargaPedidosInterval) clearInterval(cargaPedidosInterval);
         cargaPedidosInterval = setInterval(() => { 
-        if(isOnline) cargarPedidos(); 
+            if(isOnline) cargarPedidos(); 
         }, 5000);
         
         if(ubicacionInterval) clearInterval(ubicacionInterval);
@@ -358,7 +548,6 @@ async function toggleOnline() {
             currentUser.online = false;
             localStorage.setItem('sesion_activa', JSON.stringify(currentUser));
             
-            // ✅ Guardar en Supabase
             await setDeliveryOnlineSupabase(currentUser.id, false);
             
             if (userMarker) {
@@ -368,7 +557,7 @@ async function toggleOnline() {
         }
         if(ubicacionInterval) clearInterval(ubicacionInterval);
     }
-     await actualizarColorMarcador(); // ✅ Actualizar color del marcador al cambiar estado
+    await actualizarColorMarcador();
 }
 
 async function verHistorial() {
@@ -409,22 +598,21 @@ function verPerfil() {
     alert(`👤 ${currentUser?.nombre}\n📧 ${currentUser?.email}\n🏍️ Delivery`); 
 }
 
-// En delivery.js - función cerrarSesion()
 function cerrarSesion() { 
     if(watchId) navigator.geolocation.clearWatch(watchId);
     
-    // ✅ LIMPIAR EL INTERVALO DE UBICACIÓN
     if(ubicacionInterval) {
         clearInterval(ubicacionInterval);
         ubicacionInterval = null;
     }
 
     if(cargaPedidosInterval) {
-    clearInterval(cargaPedidosInterval);
-    cargaPedidosInterval = null;
-   }
+        clearInterval(cargaPedidosInterval);
+        cargaPedidosInterval = null;
+    }
     
-    // Marcar como offline
+    limpiarRutasYMarcadores();
+    
     if(currentUser && typeof guardarUbicacionEnSupabase !== 'undefined' && userMarker) {
         const coords = userMarker.getLatLng();
         guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, coords.lat, coords.lng, false);
@@ -436,7 +624,6 @@ function cerrarSesion() {
     } 
 }
 
-// Actualizar color del marcador según estado
 async function actualizarColorMarcador() {
     if (!userMarker || !currentUser) return;
     
@@ -453,13 +640,11 @@ async function actualizarColorMarcador() {
         estadoTexto = '🟢 Disponible';
     }
     
-    // ✅ Obtener solo el primer nombre
     const nombreMostrar = obtenerPrimerNombre(currentUser.nombre);
     
     const nuevoIcono = L.divIcon({
         html: `
             <div style="text-align: center;">
-                <!-- ✅ NOMBRE ARRIBA con mejor fondo -->
                 <div style="
                     background: rgba(0, 0, 0, 0.85);
                     color: white;
@@ -476,7 +661,6 @@ async function actualizarColorMarcador() {
                 ">
                     ${nombreMostrar}
                 </div>
-                <!-- ✅ MOTO DEBAJO -->
                 <div style="
                     background: ${color};
                     width: 34px;
@@ -504,7 +688,6 @@ async function actualizarColorMarcador() {
     console.log(`🎨 Marcador actualizado: ${tienePedido ? 'NARANJA' : 'VERDE'} - ${nombreMostrar}`);
 }
 
-// Llamar a esta función cuando cambie el estado (al agarrar o completar pedido)
 async function actualizarEstadoYColor() {
     await actualizarColorMarcador();
 }

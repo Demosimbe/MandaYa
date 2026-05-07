@@ -422,17 +422,29 @@ function actualizarEstadoPanel(estado, deliveryNombre = null) {
             if(estadoIconoMobile) estadoIconoMobile.className = "fas fa-clock text-yellow-500";
             if(estadoDetalleMobile) estadoDetalleMobile.innerText = "Esperando a que un delivery tome tu pedido...";
             break;
+            
         case 'asignado':
-            if(estadoTexto) estadoTexto.innerText = "🚚 En camino";
+            if(estadoTexto) estadoTexto.innerText = "🚚 En camino a recoger";
             if(estadoIcono) estadoIcono.className = "fas fa-motorcycle text-orange-500";
             if(estadoDetalle) estadoDetalle.innerHTML = `🏍️ <strong>${deliveryNombre || 'Delivery'}</strong> ya se dirige a recoger tu paquete.`;
             
-            if(estadoTextoMobile) estadoTextoMobile.innerText = "🚚 En camino";
+            if(estadoTextoMobile) estadoTextoMobile.innerText = "🚚 En camino a recoger";
             if(estadoIconoMobile) estadoIconoMobile.className = "fas fa-motorcycle text-orange-500";
             if(estadoDetalleMobile) estadoDetalleMobile.innerHTML = `🏍️ <strong>${deliveryNombre || 'Delivery'}</strong> ya se dirige a recoger tu paquete.`;
             break;
+            
+        case 'recogido':
+            if(estadoTexto) estadoTexto.innerText = "📦 Paquete recogido";
+            if(estadoIcono) estadoIcono.className = "fas fa-box-open text-purple-500";
+            if(estadoDetalle) estadoDetalle.innerHTML = `🏍️ <strong>${deliveryNombre || 'Delivery'}</strong> ya recogió tu paquete y va en camino.`;
+            
+            if(estadoTextoMobile) estadoTextoMobile.innerText = "📦 Paquete recogido";
+            if(estadoIconoMobile) estadoIconoMobile.className = "fas fa-box-open text-purple-500";
+            if(estadoDetalleMobile) estadoDetalleMobile.innerHTML = `🏍️ <strong>${deliveryNombre || 'Delivery'}</strong> ya recogió tu paquete y va en camino.`;
+            break;
+            
         case 'completado':
-            // ✅ Ocultar el panel de estado cuando se completa
+            // Ocultar el panel de estado cuando se completa
             const panel = document.getElementById("panelEstadoPedido");
             const panelMobile = document.getElementById("panelEstadoPedidoMobile");
             if(panel) panel.classList.add("hidden");
@@ -662,14 +674,17 @@ function iniciarSeguimientoDelivery() {
                 // ✅ Actualizar el panel de estado con el nombre del delivery si está asignado
                 if (pedidoActualizado.estado === 'asignado' && pedidoActualizado.delivery_nombre) {
                     actualizarEstadoPanel('asignado', pedidoActualizado.delivery_nombre);
+                } else if (pedidoActualizado.estado === 'recogido' && pedidoActualizado.delivery_nombre) {
+                    actualizarEstadoPanel('recogido', pedidoActualizado.delivery_nombre);
                 } else if (pedidoActualizado.estado === 'pendiente') {
                     actualizarEstadoPanel('pendiente');
                 } else if (pedidoActualizado.estado === 'completado') {
                     actualizarEstadoPanel('completado');
                 }
+                    
             }
             
-            if (pedidoActualizado && pedidoActualizado.estado === 'asignado' && pedidoActualizado.delivery_id) {
+            if (pedidoActualizado && (pedidoActualizado.estado === 'asignado' || pedidoActualizado.estado === 'recogido') && pedidoActualizado.delivery_id) {
                 // ✅ Detener el intervalo de búsqueda ya que ya fue asignado
                 clearInterval(seguimientoInterval);
                 seguimientoInterval = null;
