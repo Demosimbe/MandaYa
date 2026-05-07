@@ -401,26 +401,63 @@ function mostrarPanelEstado(pedido) {
     panel.classList.remove("hidden");
 }
 
-function actualizarEstadoPanel(estado) {
+// Reemplazar la función actualizarEstadoPanel por esta:
+function actualizarEstadoPanel(estado, deliveryNombre = null) {
     const estadoTexto = document.getElementById("estadoTexto");
     const estadoIcono = document.getElementById("estadoIcono");
     const estadoDetalle = document.getElementById("estadoDetalle");
     
+    // También para mobile
+    const estadoTextoMobile = document.getElementById("estadoTextoMobile");
+    const estadoIconoMobile = document.getElementById("estadoIconoMobile");
+    const estadoDetalleMobile = document.getElementById("estadoDetalleMobile");
+    
     switch(estado) {
         case 'pendiente':
-            estadoTexto.innerText = "⏳ Pedido pendiente";
-            estadoIcono.className = "fas fa-clock text-yellow-500";
-            estadoDetalle.innerText = "Esperando a que un delivery tome tu pedido...";
+            if(estadoTexto) estadoTexto.innerText = "⏳ Pedido pendiente";
+            if(estadoIcono) estadoIcono.className = "fas fa-clock text-yellow-500";
+            if(estadoDetalle) estadoDetalle.innerText = "Esperando a que un delivery tome tu pedido...";
+            
+            if(estadoTextoMobile) estadoTextoMobile.innerText = "⏳ Pedido pendiente";
+            if(estadoIconoMobile) estadoIconoMobile.className = "fas fa-clock text-yellow-500";
+            if(estadoDetalleMobile) estadoDetalleMobile.innerText = "Esperando a que un delivery tome tu pedido...";
             break;
         case 'asignado':
-            estadoTexto.innerText = "🚚 En camino";
-            estadoIcono.className = "fas fa-motorcycle text-orange-500";
-            estadoDetalle.innerText = "Un delivery ya se dirige a recoger tu paquete.";
+            if(estadoTexto) estadoTexto.innerText = "🚚 En camino";
+            if(estadoIcono) estadoIcono.className = "fas fa-motorcycle text-orange-500";
+            if(estadoDetalle) estadoDetalle.innerHTML = `🏍️ <strong>${deliveryNombre || 'Delivery'}</strong> ya se dirige a recoger tu paquete.`;
+            
+            if(estadoTextoMobile) estadoTextoMobile.innerText = "🚚 En camino";
+            if(estadoIconoMobile) estadoIconoMobile.className = "fas fa-motorcycle text-orange-500";
+            if(estadoDetalleMobile) estadoDetalleMobile.innerHTML = `🏍️ <strong>${deliveryNombre || 'Delivery'}</strong> ya se dirige a recoger tu paquete.`;
             break;
         case 'completado':
-            estadoTexto.innerText = "✅ Completado";
-            estadoIcono.className = "fas fa-check-circle text-green-500";
-            estadoDetalle.innerText = "¡Envío entregado! Gracias por usar MandaYa.";
+            // ✅ Ocultar el panel de estado cuando se completa
+            const panel = document.getElementById("panelEstadoPedido");
+            const panelMobile = document.getElementById("panelEstadoPedidoMobile");
+            if(panel) panel.classList.add("hidden");
+            if(panelMobile) panelMobile.classList.add("hidden");
+            
+            // Limpiar el pedido actual
+            pedidoActual = null;
+            
+            // Detener intervalos
+            if(seguimientoInterval) {
+                clearInterval(seguimientoInterval);
+                seguimientoInterval = null;
+            }
+            if(ubicacionInterval) {
+                clearInterval(ubicacionInterval);
+                ubicacionInterval = null;
+            }
+            
+            // Eliminar marcador del delivery del mapa
+            if(deliveryMarker) {
+                map.removeLayer(deliveryMarker);
+                deliveryMarker = null;
+            }
+            
+            mostrarToast("🎉 ¡Envío completado! Gracias por usar MandaYa");
             break;
     }
 }
@@ -524,20 +561,24 @@ async function guardarPedidoEnSupabase() {
     }
     
     try {
+        // ✅ Asegurar que extras sea un objeto válido
+        const pedidoAGuardar = {
+            ...pedidoPendiente,
+            extras: pedidoPendiente.extras || { lluvia: false, noche: false, espera: false }
+        };
+        
         const { error } = await supabase
             .from('pedidos')
-            .insert([pedidoPendiente]);
+            .insert([pedidoAGuardar]);
         
         if (error) throw error;
         
         pedidoActual = pedidoPendiente;
         
-        // ✅ Cerrar cualquier modal de pago que esté abierto
         cerrarModalPago();
         cerrarModalEfectivo();
         cerrarModalTransferencia();
         
-        // ✅ Mostrar panel de estado con el pedido pendiente
         mostrarPanelEstado(pedidoActual);
         
         mostrarToast(`✅ ¡Envío solicitado! ID: #${pedidoActual.id} - Esperando delivery`);
@@ -545,7 +586,7 @@ async function guardarPedidoEnSupabase() {
         
     } catch(e) {
         console.error('Error creando pedido:', e);
-        mostrarToast("❌ Error al crear el pedido", true);
+        mostrarToast("❌ Error al crear el pedido: " + (e.message || "Verifica la consola"), true);
     }
 }
 
@@ -595,7 +636,7 @@ function iniciarSeguimientoDelivery() {
         return;
     }
 
-     if (seguimientoInterval) {
+    if (seguimientoInterval) {
         clearInterval(seguimientoInterval);
         seguimientoInterval = null;
     }
@@ -617,22 +658,30 @@ function iniciarSeguimientoDelivery() {
             
             if (pedidoActualizado) {
                 pedidoActual = pedidoActualizado;
-                // ✅ Actualizar el panel de estado
-                actualizarEstadoPanel(pedidoActualizado.estado);
+                
+                // ✅ Actualizar el panel de estado con el nombre del delivery si está asignado
+                if (pedidoActualizado.estado === 'asignado' && pedidoActualizado.delivery_nombre) {
+                    actualizarEstadoPanel('asignado', pedidoActualizado.delivery_nombre);
+                } else if (pedidoActualizado.estado === 'pendiente') {
+                    actualizarEstadoPanel('pendiente');
+                } else if (pedidoActualizado.estado === 'completado') {
+                    actualizarEstadoPanel('completado');
+                }
             }
             
             if (pedidoActualizado && pedidoActualizado.estado === 'asignado' && pedidoActualizado.delivery_id) {
+                // ✅ Detener el intervalo de búsqueda ya que ya fue asignado
                 clearInterval(seguimientoInterval);
                 seguimientoInterval = null;
-                mostrarToast(`✅ Delivery asignado: ${pedidoActualizado.delivery_nombre}`);
-                mostrarDeliveryEnMapa(pedidoActualizado.delivery_id);
+                
+                mostrarToast(`✅ Delivery asignado: ${pedidoActualizado.delivery_nombre || 'Delivery'}`);
+                mostrarDeliveryEnMapa(pedidoActualizado.delivery_id, pedidoActualizado.delivery_nombre);
                 seguirUbicacionDelivery(pedidoActualizado.delivery_id);
             } 
             else if (pedidoActualizado && pedidoActualizado.estado === 'completado') {
                 clearInterval(seguimientoInterval);
                 seguimientoInterval = null;
-                mostrarToast(`🎉 ¡Envío completado! Gracias por usar MandaYa`);
-                ocultarDeliveryInfo();
+                // El panel ya se oculta en actualizarEstadoPanel
             }
         } catch(e) {
             console.error('Error en seguimiento:', e);
@@ -658,13 +707,15 @@ function seguirUbicacionDelivery(deliveryId) {
         
         let deliveryNombre = 'Delivery';
         const supabase = supabaseClient;
-        if (supabase && deliveryId) {
+        if (supabase && deliveryId && !pedidoActual?.delivery_nombre) {
             const { data: delivery } = await supabase
                 .from('usuarios')
                 .select('nombre')
                 .eq('id', deliveryId)
                 .single();
             if (delivery) deliveryNombre = delivery.nombre;
+        } else if (pedidoActual?.delivery_nombre) {
+            deliveryNombre = pedidoActual.delivery_nombre;
         }
         
         if (ubicacion) {
@@ -677,7 +728,7 @@ function seguirUbicacionDelivery(deliveryId) {
                 '#FF6200'
             );
             deliveryMarker.addTo(map);
-            deliveryMarker.bindPopup('<b>🏍️ Delivery en camino</b><br>Tu pedido está siendo entregado');
+            deliveryMarker.bindPopup(`<b>🏍️ ${deliveryNombre}</b><br>Tu pedido está siendo entregado`);
             
             if (destCoords && ubicacion) {
                 const distanciaADestino = calcularDistanciaEntrePuntos(ubicacion, destCoords);
@@ -691,6 +742,7 @@ function seguirUbicacionDelivery(deliveryId) {
             }
         }
         
+        // ✅ Verificar si el pedido ya fue completado
         if (supabase && pedidoActual) {
             const { data: pedidoActualizado } = await supabase
                 .from('pedidos')
@@ -700,8 +752,25 @@ function seguirUbicacionDelivery(deliveryId) {
             
             if (pedidoActualizado?.estado === 'completado') {
                 clearInterval(ubicacionInterval);
+                ubicacionInterval = null;
+                
+                // Ocultar información del delivery
+                ocultarDeliveryInfo();
+                
+                // Ocultar panel de estado
+                const panel = document.getElementById("panelEstadoPedido");
+                const panelMobile = document.getElementById("panelEstadoPedidoMobile");
+                if(panel) panel.classList.add("hidden");
+                if(panelMobile) panelMobile.classList.add("hidden");
+                
+                // Eliminar marcador del delivery
+                if(deliveryMarker) {
+                    map.removeLayer(deliveryMarker);
+                    deliveryMarker = null;
+                }
+                
+                pedidoActual = null;
                 mostrarToast("🎉 ¡Envío completado! Gracias por usar MandaYa");
-                setTimeout(() => ocultarDeliveryInfo(), 5000);
             }
         }
     }, 2000);
@@ -972,33 +1041,29 @@ function cerrarModalPerfil() {
     if (modal) modal.remove();
 }
 
-async function mostrarDeliveryEnMapa(deliveryId) {
+async function mostrarDeliveryEnMapa(deliveryId, deliveryNombre = null) {
     const supabase = supabaseClient;
     if (!supabase) return;
     
     try {
-        const { data: delivery, error } = await supabase
-            .from('usuarios')
-            .select('nombre')
-            .eq('id', deliveryId)
-            .single();
+        let nombreDelivery = deliveryNombre;
         
-        if (error) throw error;
-        
-        if (delivery) {
-            document.getElementById("deliveryInfo").classList.remove("hidden");
-            document.getElementById("deliveryNombre").innerHTML = `<i class="fas fa-motorcycle"></i> ${delivery.nombre}`;
-            document.getElementById("deliveryEstado").innerHTML = "🟠 En camino a recoger tu paquete";
+        if (!nombreDelivery) {
+            const { data: delivery, error } = await supabase
+                .from('usuarios')
+                .select('nombre')
+                .eq('id', deliveryId)
+                .single();
             
-            const naranjaIcon = L.divIcon({
-                html: '<div style="background:#FF6200; width:32px; height:32px; border-radius:50%; border:2px solid white; display:flex; align-items:center; justify-content:center;"><i class="fas fa-motorcycle" style="color:white; font-size:16px;"></i></div>',
-                iconSize: [32, 32],
-                className: 'moto-marker'
-            });
-            
-            if (deliveryMarker) {
-                deliveryMarker.setIcon(naranjaIcon);
+            if (!error && delivery) {
+                nombreDelivery = delivery.nombre;
             }
+        }
+        
+        if (nombreDelivery) {
+            document.getElementById("deliveryInfo").classList.remove("hidden");
+            document.getElementById("deliveryNombre").innerHTML = `<i class="fas fa-motorcycle"></i> ${nombreDelivery}`;
+            document.getElementById("deliveryEstado").innerHTML = "🟠 En camino a recoger tu paquete";
         }
     } catch(e) {
         console.error('Error mostrando delivery:', e);

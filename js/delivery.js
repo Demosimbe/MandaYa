@@ -296,8 +296,13 @@ async function completarPedido(pedidoId) {
             .single();
         
         mostrarToast(`✅ Pedido #${pedidoId} COMPLETADO! Ganaste $${pedido?.tarifa || 0} MXN`);
-        cargarPedidos(); // Recargar desde Supabase
-        await actualizarColorMarcador(); // Actualizar color del marcador al completar pedido
+        
+        // ✅ Recargar pedidos
+        await cargarPedidos();
+        await actualizarColorMarcador();
+        
+        // ✅ Forzar una notificación al cliente (opcional, con broadcast de Supabase)
+        // Por ahora, el cliente lo detectará en su siguiente polling
         
     } catch(e) {
         console.error('Error completando pedido:', e);
