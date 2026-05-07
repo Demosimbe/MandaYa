@@ -193,7 +193,7 @@ function limitarMapaACarmen(map) {
     
     // ✅ Ahora podemos usar zoom hasta 17 (Voyager tiene tiles)
     map.setMinZoom(12);
-    map.setMaxZoom(17);   // Cambiado de 15 a 17
+    map.setMaxZoom(18);   // Cambiado de 15 a 18
     
     map.on('drag', function() {
         if (!bounds.contains(map.getCenter())) {
@@ -202,13 +202,13 @@ function limitarMapaACarmen(map) {
     });
     
     map.on('zoomend', function() {
-        if (map.getZoom() > 17) {
-            map.setZoom(17);
+        if (map.getZoom() > 18) {
+            map.setZoom(18);
         }
         if (map.getZoom() < 12) {
             map.setZoom(12);
         }
     });
     
-    console.log('🗺️ Mapa limitado a Ciudad del Carmen (zoom 12-17)');
+    console.log('🗺️ Mapa limitado a Ciudad del Carmen (zoom 12-18)');
 }

@@ -13,6 +13,38 @@ let deliverysInterval = null;  // Para el intervalo de deliverys en línea
 let pedidoPendiente = null; // Variable global para guardar pedido antes de pagar
 let clienteRouteControl = null;
 
+// ==================== CONTROL DE PETICIONES INTELIGENTE ====================
+let ultimaPeticionTime = 0;
+let paginaVisible = true;
+let ultimaPeticionDeliverys = 0;
+
+// Detectar cuando la pestaña está visible
+document.addEventListener('visibilitychange', () => {
+    paginaVisible = !document.hidden;
+    if (paginaVisible) {
+        console.log("🟢 Página visible - Reactivando actualizaciones");
+        // Forzar una actualización al volver
+        if (typeof cargarPedidos === 'function') cargarPedidos();
+        if (typeof cargarDeliverysEnLinea === 'function') cargarDeliverysEnLinea();
+    } else {
+        console.log("🔴 Página oculta - Reduciendo actualizaciones");
+    }
+});
+
+// Función para peticiones con throttling
+async function peticionConThrottling(funcion, nombre, intervaloMinimo = 3000) {
+    const ahora = Date.now();
+    if (!paginaVisible) {
+        console.log(`⏸️ Página oculta, omitiendo ${nombre}`);
+        return null;
+    }
+    if (ahora - ultimaPeticionTime < intervaloMinimo) {
+        console.log(`⏳ Throttling: ${nombre} - muy rápido`);
+        return null;
+    }
+    ultimaPeticionTime = ahora;
+    return await funcion();
+}
 
 // ==================== INICIALIZACIÓN ====================
 function initMap() {
@@ -290,8 +322,16 @@ async function solicitarEnvio() {
         mostrarToast("❌ Selecciona origen y destino", true);
         return;
     }
-    if (!tipo) {
-        mostrarToast("❌ Selecciona el tipo de envío", true);
+    
+    // ✅ MEJOR VALIDACIÓN para tipo de envío
+    if (!tipo || tipo === '') {
+        mostrarToast("❌ Por favor, selecciona qué vas a enviar (Comida, Paquete, Mercancía o Farmacia)", true);
+        // Opcional: resaltar el select
+        const selectTipo = document.getElementById("tipoEnvio");
+        selectTipo.style.border = "2px solid #dc2626";
+        setTimeout(() => {
+            selectTipo.style.border = "";
+        }, 2000);
         return;
     }
     
@@ -299,7 +339,7 @@ async function solicitarEnvio() {
     const rate = calculateShippingRate(distancia, tipo);
     let tarifaBase = rate.total;
     
-    // ✅ Verificar si hay extras guardados del resumen
+    // Verificar si hay extras guardados del resumen
     let tarifaFinal = tarifaBase;
     if (currentRouteData && currentRouteData.extras) {
         tarifaFinal = tarifaBase;
@@ -308,7 +348,7 @@ async function solicitarEnvio() {
         if (currentRouteData.extras.espera) tarifaFinal += 10;
     }
     
-    // Guardar pedido temporalmente CON los extras si ya los seleccionó
+    // Guardar pedido temporalmente
     pedidoPendiente = {
         id: Date.now(),
         cliente_id: currentUser.id,
@@ -321,13 +361,13 @@ async function solicitarEnvio() {
         destino_lng: destCoords.lng,
         tipo: tipo,
         distancia_real: distancia.toFixed(2),
-        tarifa: tarifaFinal,  // ✅ Usar tarifa con extras si existen
+        tarifa: tarifaFinal,
         extras: currentRouteData?.extras || { lluvia: false, noche: false, espera: false },
         estado: 'pendiente',
         fecha: new Date().toISOString()
     };
     
-    // ✅ IR DIRECTAMENTE AL PAGO
+    // Ir directamente al pago
     document.getElementById("modalPago").classList.remove("hidden");
     document.getElementById("modalPago").classList.add("flex");
 }
@@ -383,69 +423,12 @@ let extrasSeleccionados = {
 
 let tarifaBaseSinExtras = 0;
 
-function toggleExtra(extra) {
-    extrasSeleccionados[extra] = !extrasSeleccionados[extra];
-    
-    const checkDiv = document.getElementById(`check${extra.charAt(0).toUpperCase() + extra.slice(1)}`);
-     if (!checkDiv) return;
-    const checkIcon = checkDiv.querySelector('i');
-    
-    if (extrasSeleccionados[extra]) {
-        checkDiv.classList.remove('border-gray-500');
-        checkDiv.classList.add('border-green-500', 'bg-green-500/20');
-        checkIcon.classList.remove('hidden');
-    } else {
-        checkDiv.classList.remove('border-green-500', 'bg-green-500/20');
-        checkDiv.classList.add('border-gray-500');
-        checkIcon.classList.add('hidden');
-    }
-}
-
 function calcularTotalConExtras(tarifaBase) {
     let total = tarifaBase;
     if (extrasSeleccionados.lluvia) total += 10;
     if (extrasSeleccionados.noche) total += 10;
     if (extrasSeleccionados.espera) total += 10;
     return total;
-}
-
-function mostrarModalExtras(tarifaBase) {
-    tarifaBaseSinExtras = tarifaBase;
-    
-    // Resetear extras
-    extrasSeleccionados = { lluvia: false, noche: false, espera: false };
-    ['Lluvia', 'Noche', 'Espera'].forEach(extra => {
-        const checkDiv = document.getElementById(`check${extra}`);
-        if (checkDiv) {
-            checkDiv.classList.remove('border-green-500', 'bg-green-500/20');
-            checkDiv.classList.add('border-gray-500');
-            const checkIcon = checkDiv.querySelector('i');
-            if (checkIcon) checkIcon.classList.add('hidden');
-        }
-    });
-    
-    document.getElementById("modalExtras").classList.remove("hidden");
-    document.getElementById("modalExtras").classList.add("flex");
-}
-
-function cerrarModalExtras() {
-    document.getElementById("modalExtras").classList.add("hidden");
-    document.getElementById("modalExtras").classList.remove("flex");
-}
-
-function confirmarExtras() {
-    const totalConExtras = calcularTotalConExtras(tarifaBaseSinExtras);
-    cerrarModalExtras();
-    
-    // Actualizar pedido pendiente con la tarifa final
-    if (pedidoPendiente) {
-        pedidoPendiente.tarifa = totalConExtras;
-        pedidoPendiente.extras = { ...extrasSeleccionados };
-    }
-    
-    // Mostrar modal de pago directamente
-    document.getElementById("modalPago").classList.remove("hidden");
-    document.getElementById("modalPago").classList.add("flex");
 }
 
 // ==================== PANEL DE ESTADO DEL PEDIDO (NUEVO) ====================
@@ -660,11 +643,44 @@ async function guardarPedidoEnSupabase() {
 }
 
 function enviarComprobanteWhatsApp() {
+    if (!pedidoPendiente) {
+        mostrarToast("❌ No hay información del pedido", true);
+        return;
+    }
+    
     const total = pedidoPendiente.tarifa;
-    const numeroWhatsApp = "521234567890"; // Cambia por el número del delivery/admin
-    const mensaje = `Hola, realicé una transferencia por el envío #${pedidoPendiente.id} por $${total} MXN. Adjunto comprobante.`;
-    const url = `https://wa.me/${numeroWhatsApp}?text=${encodeURIComponent(mensaje)}`;
+    const pedidoId = pedidoPendiente.id;
+    
+    // ✅ TU NÚMERO ACTUALIZADO - Formato internacional sin "+" ni espacios
+    const numeroWhatsApp = "5219381083498";  // 52 es México, 9381083498 es tu número
+    
+    // ✅ Mensaje más completo y profesional
+    const mensaje = `🍔 *MANDAYA - NUEVO PEDIDO* 🍔
+    
+📦 *Pedido #${pedidoId}*
+💰 *Total:* $${total} MXN
+
+📝 *Detalles del envío:*
+📍 Origen: ${pedidoPendiente.origen}
+🏁 Destino: ${pedidoPendiente.destino}
+📏 Distancia: ${pedidoPendiente.distancia_real} km
+
+👤 *Cliente:* ${pedidoPendiente.cliente_nombre}
+
+✅ *Comprobante de pago adjunto*
+
+Gracias por usar MandaYa 🙏`;
+
+    // Codificar el mensaje para URL
+    const mensajeCodificado = encodeURIComponent(mensaje);
+    const url = `https://wa.me/${numeroWhatsApp}?text=${mensajeCodificado}`;
+    
+    console.log("📱 Abriendo WhatsApp con mensaje para:", numeroWhatsApp);
+    
+    // Abrir WhatsApp
     window.open(url, '_blank');
+    
+    // Confirmar pago después de enviar
     confirmarPagoTransferencia();
 }
 
@@ -766,7 +782,7 @@ function seguirUbicacionDelivery(deliveryId) {
         clearInterval(ubicacionInterval);
         ubicacionInterval = null;
     }
-
+    
     ubicacionInterval = setInterval(async () => {
         let ubicacion = null;
         
@@ -1240,7 +1256,7 @@ function mostrarToast(msg, err=false){
 
 function mostrarResumenRuta() {
     if (!originCoords || !destCoords) {
-        mostrarToast("Selecciona origen y destino primero", true);
+        mostrarToast("❌ Selecciona origen y destino primero", true);
         return;
     }
     
@@ -1248,6 +1264,9 @@ function mostrarResumenRuta() {
     const tipo = document.getElementById("tipoEnvio").value || 'paquete';
     const rate = calculateShippingRate(distancia, tipo);
     const duracion = currentRouteData ? currentRouteData.duration : (distancia * 2);
+    
+    // Mostrar loading mientras se obtiene la ruta real
+    mostrarToast("📏 Calculando ruta real...");
     
     getRealDistanceAndTime(originCoords, destCoords).then(routeData => {
         const distanciaKm = routeData ? routeData.distanceKm : distancia.toFixed(2);
@@ -1269,24 +1288,27 @@ function mostrarResumenRuta() {
     });
 }
 
-function mostrarModalResumen(distancia, tiempo, tarifa, tipo) {
+function mostrarModalResumen(distancia, tiempo, tarifaBase, tipo) {
+    // Eliminar modal existente si hay
     const modalExistente = document.getElementById("modalResumenRuta");
     if (modalExistente) modalExistente.remove();
     
-    // ✅ Obtener tarifa actual (podría tener extras previos)
-    let tarifaActual = tarifa;
-    if (currentRouteData && currentRouteData.extras) {
-        if (currentRouteData.extras.lluvia) tarifaActual += 10;
-        if (currentRouteData.extras.noche) tarifaActual += 10;
-        if (currentRouteData.extras.espera) tarifaActual += 10;
-    }
+    // Guardar tarifa base globalmente para cálculos
+    tarifaBaseSinExtras = tarifaBase;
     
-    // ✅ Preseleccionar los extras que ya estaban guardados
-    const extrasPrevios = currentRouteData?.extras || { lluvia: false, noche: false, espera: false };
+    // Recuperar extras guardados previamente (si existen)
+    const extrasGuardados = currentRouteData?.extras || { 
+        lluvia: false, 
+        noche: false, 
+        espera: false 
+    };
     
-    tarifaBaseSinExtras = tarifa;
-    console.log("📌 tarifaBaseSinExtras guardada:", tarifaBaseSinExtras);
-
+    // Calcular total inicial con extras guardados
+    let totalInicial = tarifaBase;
+    if (extrasGuardados.lluvia) totalInicial += 10;
+    if (extrasGuardados.noche) totalInicial += 10;
+    if (extrasGuardados.espera) totalInicial += 10;
+    
     const modal = document.createElement('div');
     modal.id = "modalResumenRuta";
     modal.className = "fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[10001] p-4";
@@ -1301,6 +1323,7 @@ function mostrarModalResumen(distancia, tiempo, tarifa, tipo) {
             </div>
             
             <div class="p-5 space-y-3">
+                <!-- Información de la ruta -->
                 <div class="bg-gray-700 rounded-xl p-3 flex justify-between items-center">
                     <span class="text-gray-400">📍 Distancia real</span>
                     <span class="text-white font-bold">${distancia} km</span>
@@ -1311,58 +1334,94 @@ function mostrarModalResumen(distancia, tiempo, tarifa, tipo) {
                 </div>
                 <div class="bg-gray-700 rounded-xl p-3 flex justify-between items-center">
                     <span class="text-gray-400">📦 Tipo de envío</span>
-                    <span class="text-white font-bold">${tipo}</span>
+                    <span class="text-white font-bold capitalize">${tipo}</span>
                 </div>
                 
+                <!-- Sección de EXTRAS -->
                 <div class="bg-gray-700 rounded-xl p-3">
-                    <div class="text-gray-400 text-sm mb-2">🎯 Extras adicionales (+$10 c/u)</div>
+                    <div class="text-gray-400 text-sm mb-3 flex items-center gap-2">
+                        <i class="fas fa-plus-circle text-orange-500"></i>
+                        Extras adicionales (+$10 c/u)
+                    </div>
                     
-                    <div class="flex items-center justify-between py-2 cursor-pointer" onclick="toggleExtraCheckbox('lluvia')">
-                        <div class="flex items-center gap-2">
-                            <i class="fas fa-cloud-rain text-blue-400"></i>
-                            <span class="text-white text-sm">Lluvia 🌧️</span>
+                    <!-- Extra Lluvia -->
+                    <div class="flex items-center justify-between py-2 cursor-pointer hover:bg-gray-600 rounded-lg px-2 transition-all" 
+                         onclick="toggleExtraCheckbox('lluvia')">
+                        <div class="flex items-center gap-3">
+                            <i class="fas fa-cloud-rain text-blue-400 text-lg"></i>
+                            <div>
+                                <span class="text-white text-sm">Lluvia 🌧️</span>
+                                <p class="text-xs text-gray-400">Clima adverso</p>
+                            </div>
                         </div>
                         <div class="flex items-center gap-2">
-                            <span class="text-orange-400 text-sm">+$10</span>
-                            <input type="checkbox" id="checkLluviaExtras" class="w-5 h-5 rounded border-gray-500 accent-orange-500" onchange="actualizarTotalConExtras()" ${extrasPrevios.lluvia ? 'checked' : ''}>
+                            <span class="text-orange-400 text-sm font-bold">+$10</span>
+                            <input type="checkbox" id="checkLluviaExtras" 
+                                   class="w-5 h-5 rounded border-gray-500 accent-orange-500" 
+                                   onchange="actualizarTotalConExtras()"
+                                   ${extrasGuardados.lluvia ? 'checked' : ''}>
                         </div>
                     </div>
                     
-                    <div class="flex items-center justify-between py-2 cursor-pointer" onclick="toggleExtraCheckbox('noche')">
-                        <div class="flex items-center gap-2">
-                            <i class="fas fa-moon text-yellow-400"></i>
-                            <span class="text-white text-sm">Noche 🌙</span>
+                    <!-- Extra Noche -->
+                    <div class="flex items-center justify-between py-2 cursor-pointer hover:bg-gray-600 rounded-lg px-2 transition-all" 
+                         onclick="toggleExtraCheckbox('noche')">
+                        <div class="flex items-center gap-3">
+                            <i class="fas fa-moon text-yellow-400 text-lg"></i>
+                            <div>
+                                <span class="text-white text-sm">Noche 🌙</span>
+                                <p class="text-xs text-gray-400">Horario nocturno (8pm - 6am)</p>
+                            </div>
                         </div>
                         <div class="flex items-center gap-2">
-                            <span class="text-orange-400 text-sm">+$10</span>
-                            <input type="checkbox" id="checkNocheExtras" class="w-5 h-5 rounded border-gray-500 accent-orange-500" onchange="actualizarTotalConExtras()" ${extrasPrevios.noche ? 'checked' : ''}>
+                            <span class="text-orange-400 text-sm font-bold">+$10</span>
+                            <input type="checkbox" id="checkNocheExtras" 
+                                   class="w-5 h-5 rounded border-gray-500 accent-orange-500" 
+                                   onchange="actualizarTotalConExtras()"
+                                   ${extrasGuardados.noche ? 'checked' : ''}>
                         </div>
                     </div>
                     
-                    <div class="flex items-center justify-between py-2 cursor-pointer" onclick="toggleExtraCheckbox('espera')">
-                        <div class="flex items-center gap-2">
-                            <i class="fas fa-clock text-purple-400"></i>
-                            <span class="text-white text-sm">Espera ⏱️</span>
+                    <!-- Extra Espera -->
+                    <div class="flex items-center justify-between py-2 cursor-pointer hover:bg-gray-600 rounded-lg px-2 transition-all" 
+                         onclick="toggleExtraCheckbox('espera')">
+                        <div class="flex items-center gap-3">
+                            <i class="fas fa-clock text-purple-400 text-lg"></i>
+                            <div>
+                                <span class="text-white text-sm">Espera ⏱️</span>
+                                <p class="text-xs text-gray-400">Tiempo de espera adicional</p>
+                            </div>
                         </div>
                         <div class="flex items-center gap-2">
-                            <span class="text-orange-400 text-sm">+$10</span>
-                            <input type="checkbox" id="checkEsperaExtras" class="w-5 h-5 rounded border-gray-500 accent-orange-500" onchange="actualizarTotalConExtras()" ${extrasPrevios.espera ? 'checked' : ''}>
+                            <span class="text-orange-400 text-sm font-bold">+$10</span>
+                            <input type="checkbox" id="checkEsperaExtras" 
+                                   class="w-5 h-5 rounded border-gray-500 accent-orange-500" 
+                                   onchange="actualizarTotalConExtras()"
+                                   ${extrasGuardados.espera ? 'checked' : ''}>
                         </div>
                     </div>
                 </div>
                 
+                <!-- Total a pagar -->
                 <div class="bg-orange-500 rounded-xl p-3 flex justify-between items-center">
                     <span class="text-white font-bold">💰 Total a pagar</span>
-                    <span class="text-white font-bold text-xl" id="totalConExtras">$${tarifaActual} MXN</span>
+                    <span class="text-white font-bold text-xl" id="totalConExtras">$${totalInicial} MXN</span>
+                </div>
+                
+                <!-- Nota informativa -->
+                <div class="text-center text-xs text-gray-400">
+                    <i class="fas fa-info-circle"></i> Los extras se pagan al delivery
                 </div>
             </div>
             
             <div class="px-5 pb-5 flex gap-3">
-                <button onclick="cerrarModalResumen()" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded-xl transition-all">
+                <button onclick="cerrarModalResumen()" 
+                        class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded-xl transition-all">
                     Cancelar
                 </button>
-                <button id="btnAceptarExtras" class="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl transition-all">
-                    ✅ Aceptar
+                <button id="btnConfirmarExtras" 
+                        class="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl transition-all">
+                    Continuar al pago
                 </button>
             </div>
         </div>
@@ -1370,41 +1429,83 @@ function mostrarModalResumen(distancia, tiempo, tarifa, tipo) {
     
     document.body.appendChild(modal);
     
-    // ✅ Inicializar extrasSeleccionados con los valores previos
-    extrasSeleccionados = { ...extrasPrevios };
+    // Inicializar extrasSeleccionados con valores guardados
+    extrasSeleccionados = { ...extrasGuardados };
     
-    document.getElementById("btnAceptarExtras").onclick = () => {
-        confirmarExtrasYContinuar();
+    // Evento para el botón confirmar
+    document.getElementById("btnConfirmarExtras").onclick = () => {
+        confirmarExtrasYPagar();
     };
 }
 
-function confirmarExtrasYContinuar() {
-    console.log("🔍 confirmarExtrasYContinuar EJECUTADA");
-    
-    // ✅ Obtener valores actuales de los checkboxes (ANTES de cerrar el modal)
+function toggleExtraCheckbox(extra) {
+    const checkbox = document.getElementById(`check${extra.charAt(0).toUpperCase() + extra.slice(1)}Extras`);
+    if (checkbox) {
+        checkbox.checked = !checkbox.checked;
+        actualizarTotalConExtras();
+        
+        // Feedback visual
+        const label = checkbox.closest('.flex.items-center.justify-between');
+        if (label) {
+            label.style.backgroundColor = checkbox.checked ? 'rgba(249, 115, 22, 0.2)' : '';
+            setTimeout(() => {
+                label.style.backgroundColor = '';
+            }, 200);
+        }
+    }
+}
+
+function actualizarTotalConExtras() {
+    // Verificar que estamos dentro del modal
     const checkLluvia = document.getElementById("checkLluviaExtras");
     const checkNoche = document.getElementById("checkNocheExtras");
     const checkEspera = document.getElementById("checkEsperaExtras");
     
-    // ✅ Verificar si los checkboxes existen
+    if (!checkLluvia || !checkNoche || !checkEspera) {
+        return; // No estamos en el modal de extras
+    }
+    
+    let total = tarifaBaseSinExtras;
+    
+    if (checkLluvia.checked) total += 10;
+    if (checkNoche.checked) total += 10;
+    if (checkEspera.checked) total += 10;
+    
+    const totalSpan = document.getElementById("totalConExtras");
+    if (totalSpan) {
+        totalSpan.innerHTML = `$${total} MXN`;
+        
+        // Pequeña animación
+        totalSpan.style.transform = 'scale(1.05)';
+        setTimeout(() => {
+            totalSpan.style.transform = 'scale(1)';
+        }, 150);
+    }
+    
+    return total;
+}
+
+function confirmarExtrasYPagar() {
+    console.log("🔍 Confirmando extras y procediendo al pago...");
+    
+    // Obtener valores actuales de los checkboxes
+    const checkLluvia = document.getElementById("checkLluviaExtras");
+    const checkNoche = document.getElementById("checkNocheExtras");
+    const checkEspera = document.getElementById("checkEsperaExtras");
+    
     if (!checkLluvia || !checkNoche || !checkEspera) {
         console.error("❌ No se encontraron los checkboxes de extras");
-        mostrarToast("❌ Error al leer los extras", true);
+        // Intentar cerrar modal y mostrar error
         cerrarModalResumen();
+        mostrarToast("❌ Error al leer los extras, intenta de nuevo", true);
         return;
     }
     
+    // Actualizar extras seleccionados
     const lluviaSeleccionada = checkLluvia.checked;
     const nocheSeleccionada = checkNoche.checked;
     const esperaSeleccionada = checkEspera.checked;
     
-    console.log("Checkboxes:", { 
-        lluvia: lluviaSeleccionada, 
-        noche: nocheSeleccionada, 
-        espera: esperaSeleccionada 
-    });
-    
-    // Actualizar extrasSeleccionados global
     extrasSeleccionados = {
         lluvia: lluviaSeleccionada,
         noche: nocheSeleccionada,
@@ -1413,7 +1514,7 @@ function confirmarExtrasYContinuar() {
     
     // Calcular total con extras
     let totalConExtras = tarifaBaseSinExtras;
-    let extrasAplicados = [];
+    const extrasAplicados = [];
     
     if (extrasSeleccionados.lluvia) {
         totalConExtras += 10;
@@ -1428,115 +1529,56 @@ function confirmarExtrasYContinuar() {
         extrasAplicados.push("⏱️ Espera");
     }
     
-    console.log("Tarifa base:", tarifaBaseSinExtras);
-    console.log("Total con extras:", totalConExtras);
-    console.log("Extras aplicados:", extrasAplicados);
+    console.log("📊 Resumen de tarifa:", {
+        base: tarifaBaseSinExtras,
+        extras: extrasSeleccionados,
+        total: totalConExtras,
+        extrasAplicados: extrasAplicados
+    });
     
-    // ✅ Guardar los extras en currentRouteData
+    // Guardar extras en currentRouteData
     if (currentRouteData) {
         currentRouteData.extras = { ...extrasSeleccionados };
         currentRouteData.totalConExtras = totalConExtras;
-        console.log("✅ currentRouteData.extras actualizado:", currentRouteData.extras);
     }
     
-    // ✅ ACTUALIZAR LA TARIFA EN LA PANTALLA PRINCIPAL
+    // ACTUALIZAR la tarifa en la pantalla principal
     const tarifaElement = document.getElementById("tarifaValue");
     if (tarifaElement) {
         tarifaElement.innerHTML = `$${totalConExtras} MXN`;
-        console.log("✅ Tarifa actualizada en pantalla a: $", totalConExtras);
-    } else {
-        console.error("❌ No se encontró el elemento tarifaValue");
     }
     
-    // ✅ También actualizar pedidoPendiente si existe
+    // También actualizar versión mobile si existe
+    const tarifaElementMobile = document.getElementById("tarifaValueMobile");
+    if (tarifaElementMobile) {
+        tarifaElementMobile.innerHTML = `$${totalConExtras} MXN`;
+    }
+    
+    // Guardar en pedidoPendiente si existe
     if (pedidoPendiente) {
         pedidoPendiente.tarifa = totalConExtras;
         pedidoPendiente.extras = { ...extrasSeleccionados };
     }
     
-    // ✅ Mostrar mensaje correcto según los extras seleccionados
+    // Mostrar mensaje de confirmación
     if (extrasAplicados.length > 0) {
-        mostrarToast(`✅ Extras aplicados: ${extrasAplicados.join(", ")} (+$${extrasAplicados.length * 10} MXN) - Total: $${totalConExtras} MXN`);
+        mostrarToast(`✅ Extras: ${extrasAplicados.join(", ")} (+$${extrasAplicados.length * 10}) - Total: $${totalConExtras}`);
     } else {
-        mostrarToast(`✅ Sin extras seleccionados - Total: $${totalConExtras} MXN`);
-    }
-    
-    // ✅ CERRAR EL MODAL
-    cerrarModalResumen();
-}
-
-function toggleExtraCheckbox(extra) {
-    const checkbox = document.getElementById(`check${extra.charAt(0).toUpperCase() + extra.slice(1)}Extras`);
-    if (checkbox) {
-        checkbox.checked = !checkbox.checked;
-        actualizarTotalConExtras();
-    }
-}
-
-function actualizarTotalConExtras() {
-    let total = tarifaBaseSinExtras;
-    
-    const checkLluvia = document.getElementById("checkLluviaExtras");
-    const checkNoche = document.getElementById("checkNocheExtras");
-    const checkEspera = document.getElementById("checkEsperaExtras");
-    
-    if (checkLluvia && checkLluvia.checked) total += 10;
-    if (checkNoche && checkNoche.checked) total += 10;
-    if (checkEspera && checkEspera.checked) total += 10;
-    
-    // ✅ Mostrar total actualizado en el resumen
-    const totalSpan = document.getElementById("totalConExtras");
-    if (totalSpan) {
-        totalSpan.innerHTML = `$${total} MXN`;
-        
-        // Animación sutil cuando cambia el total
-        totalSpan.style.transform = 'scale(1.05)';
-        setTimeout(() => {
-            totalSpan.style.transform = 'scale(1)';
-        }, 200);
-    }
-    
-    return total;
-}
-
-function confirmarExtrasDesdeResumen() {
-    // Obtener valores actuales de los checkboxes
-    const checkLluvia = document.getElementById("checkLluviaExtras");
-    const checkNoche = document.getElementById("checkNocheExtras");
-    const checkEspera = document.getElementById("checkEsperaExtras");
-    
-    // Actualizar extrasSeleccionados
-    extrasSeleccionados = {
-        lluvia: checkLluvia?.checked || false,
-        noche: checkNoche?.checked || false,
-        espera: checkEspera?.checked || false
-    };
-    
-    // Calcular total con extras
-    let totalConExtras = tarifaBaseSinExtras;
-    if (extrasSeleccionados.lluvia) totalConExtras += 10;
-    if (extrasSeleccionados.noche) totalConExtras += 10;
-    if (extrasSeleccionados.espera) totalConExtras += 10;
-    
-    // ✅ ACTUALIZAR pedidoPendiente con la tarifa final
-    if (pedidoPendiente) {
-        pedidoPendiente.tarifa = totalConExtras;
-        pedidoPendiente.extras = { ...extrasSeleccionados };
-        
-        // ✅ También mostrar en consola para verificar
-        console.log("Tarifa actualizada con extras:", {
-            base: tarifaBaseSinExtras,
-            extras: extrasSeleccionados,
-            total: totalConExtras
-        });
+        mostrarToast(`✅ Total: $${totalConExtras} MXN`);
     }
     
     // Cerrar modal de resumen
     cerrarModalResumen();
     
-    // ✅ Mostrar modal de pago con la tarifa ACTUALIZADA
-    document.getElementById("modalPago").classList.remove("hidden");
-    document.getElementById("modalPago").classList.add("flex");
+    // Mostrar modal de pago
+    const modalPago = document.getElementById("modalPago");
+    if (modalPago) {
+        modalPago.classList.remove("hidden");
+        modalPago.classList.add("flex");
+    } else {
+        console.error("❌ No se encontró el modal de pago");
+        mostrarToast("❌ Error al abrir el método de pago", true);
+    }
 }
 
 function cerrarModalResumen() {
@@ -1608,9 +1650,28 @@ function seleccionarDireccion(tipo, lat, lng, direccion) {
 
 // ==================== VER DELIVERYS EN LÍNEA ====================
 async function cargarDeliverysEnLinea() {
-    if (typeof supabaseClient === 'undefined' || !supabaseClient) return;
+    // ✅ 1. Verificar si la página está visible (ahorrar recursos)
+    if (!paginaVisible) {
+        console.log("📴 Página oculta, omitiendo carga de deliverys");
+        return;
+    }
+    
+    // ✅ 2. Throttling: mínimo 15 segundos entre peticiones
+    const ahora = Date.now();
+    if (ultimaPeticionDeliverys && (ahora - ultimaPeticionDeliverys) < 15000) {
+        console.log("⏳ Throttling: cargarDeliverysEnLinea - muy rápido, espera");
+        return;
+    }
+    ultimaPeticionDeliverys = ahora;
+    
+    // ✅ 3. Verificar Supabase
+    if (typeof supabaseClient === 'undefined' || !supabaseClient) {
+        console.log("❌ Supabase no disponible");
+        return;
+    }
     
     try {
+        // ✅ 4. Obtener deliverys online desde Supabase
         const { data: ubicaciones, error } = await supabaseClient
             .from('ubicaciones')
             .select('*')
@@ -1619,14 +1680,29 @@ async function cargarDeliverysEnLinea() {
         
         if (error) throw error;
         
+        if (!ubicaciones || ubicaciones.length === 0) {
+            // No hay deliverys online, limpiar marcadores existentes
+            deliverysMarkers.forEach(marker => {
+                try { map.removeLayer(marker); } catch(e) {}
+            });
+            deliverysMarkers = [];
+            console.log("📭 No hay deliverys en línea");
+            return;
+        }
+        
+        // ✅ 5. Verificar cuáles deliverys tienen pedido activo
         const deliverysConEstado = await Promise.all(ubicaciones.map(async (delivery) => {
             const tienePedido = await tienePedidoActivo(delivery.delivery_id);
             return { ...delivery, tienePedido };
         }));
         
-        deliverysMarkers.forEach(marker => map.removeLayer(marker));
+        // ✅ 6. Limpiar marcadores antiguos
+        deliverysMarkers.forEach(marker => {
+            try { map.removeLayer(marker); } catch(e) {}
+        });
         deliverysMarkers = [];
         
+        // ✅ 7. Crear nuevos marcadores para cada delivery
         deliverysConEstado.forEach(delivery => {
             const tienePedido = delivery.tienePedido;
             const color = tienePedido ? '#FF6200' : '#10B981';
@@ -1639,7 +1715,12 @@ async function cargarDeliverysEnLinea() {
                 color
             );
             
-            marker.bindPopup(`<b>🏍️ ${delivery.delivery_nombre}</b><br>${estadoTexto}`);
+            marker.bindPopup(`
+                <b>🏍️ ${delivery.delivery_nombre}</b><br>
+                ${estadoTexto}<br>
+                <small>Última actualización: ${new Date(delivery.updated_at).toLocaleTimeString()}</small>
+            `);
+            
             marker.addTo(map);
             deliverysMarkers.push(marker);
         });
@@ -1647,7 +1728,28 @@ async function cargarDeliverysEnLinea() {
         console.log(`✅ ${deliverysConEstado.length} deliverys mostrados (${deliverysConEstado.filter(d => d.tienePedido).length} ocupados, ${deliverysConEstado.filter(d => !d.tienePedido).length} disponibles)`);
         
     } catch(e) {
-        console.error('Error cargando deliverys:', e);
+        console.error('❌ Error cargando deliverys en línea:', e);
+    }
+}
+
+// ==================== FUNCIÓN FALTANTE ====================
+async function tienePedidoActivo(deliveryId) {
+    const supabase = supabaseClient;
+    if (!supabase) return false;
+    
+    try {
+        const { data, error } = await supabase
+            .from('pedidos')
+            .select('id')
+            .eq('delivery_id', deliveryId)
+            .in('estado', ['asignado', 'recogido'])
+            .limit(1);
+        
+        if (error) throw error;
+        return data && data.length > 0;
+    } catch(e) {
+        console.error('Error verificando pedido activo:', e);
+        return false;
     }
 }
 
@@ -1704,6 +1806,6 @@ window.onload = () => {
             if (currentUser && currentUser.rol === 'cliente') {
                 cargarDeliverysEnLinea();
             }
-        }, 5000);
+        }, 15000); // 15 segundos
     }
 };

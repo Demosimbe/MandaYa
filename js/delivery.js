@@ -16,6 +16,20 @@ let destinoMarker = null;          // Marcador del punto de destino
 let ultimoPedidoDibujado = null;
 let ultimaEtapa = null;
 let dibujandoRuta = false;
+let ultimaPeticionPedidos = 0;
+// ==================== CONTROL DE PETICIONES INTELIGENTE ====================
+let paginaVisible = true;
+
+document.addEventListener('visibilitychange', () => {
+    paginaVisible = !document.hidden;
+    if (paginaVisible) {
+        console.log("🟢 Página visible - Reactivando actualizaciones");
+        if (isOnline) cargarPedidos();
+    } else {
+        console.log("🔴 Página oculta - Reduciendo actualizaciones");
+    }
+});
+// ==================== FIN OPTIMIZACIÓN ====================
 
 // ==================== INICIALIZACIÓN ====================
 function initMap() {
@@ -38,7 +52,7 @@ function initMap() {
     
     cargaPedidosInterval = setInterval(() => { 
         if(isOnline) cargarPedidos(); 
-    },  10000);
+    },  5000);
 }
 
 function loadUser() {
@@ -47,7 +61,20 @@ function loadUser() {
     currentUser = JSON.parse(sesion);
     if(currentUser.rol !== 'delivery') { window.location.href = "cliente.html"; return; }
     isOnline = currentUser.online === true;
-    document.getElementById("userInfo").innerHTML = `<div class="flex items-center gap-2"><i class="fas fa-motorcycle text-[#FF6200] text-xl"></i><span class="font-medium">${currentUser.nombre}</span><span class="text-gray-400 text-xs">(Delivery)</span></div><div class="text-xs text-gray-500 mt-1"><i class="fas fa-star text-yellow-500"></i> Calificación: 4.9</div>`;
+    
+    // ✅ HTML con espacio para el badge de estado
+    document.getElementById("userInfo").innerHTML = `
+        <div class="flex items-center gap-2">
+            <i class="fas fa-motorcycle text-[#FF6200] text-xl"></i>
+            <span class="font-medium">${currentUser.nombre}</span>
+            <span class="text-gray-400 text-xs">(Delivery)</span>
+        </div>
+        <div class="text-xs text-gray-500 mt-1">
+            <i class="fas fa-star text-yellow-500"></i> Calificación: 4.9
+        </div>
+        <div id="estadoDeliveryBadge" class="mt-2 text-xs"></div>
+    `;
+    
     if(isOnline) {
         document.getElementById("onlineToggle").classList.remove("bg-gray-500");
         document.getElementById("onlineToggle").classList.add("bg-green-500");
@@ -55,6 +82,22 @@ function loadUser() {
         setTimeout(() => actualizarColorMarcador(), 1000);
     }
     cargarPedidos();
+}
+
+async function actualizarBadgeEstado() {
+    if (!currentUser) return;
+    if (!paginaVisible) return; // ✅ No actualizar si página oculta
+    
+    const tienePedido = await deliveryTienePedidoActivo(currentUser.id);
+    const badge = document.getElementById("estadoDeliveryBadge");
+    
+    if (badge) {
+        if (tienePedido) {
+            badge.innerHTML = '<span class="bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded-full"><i class="fas fa-motorcycle mr-1"></i> Ocupado - En entrega</span>';
+        } else {
+            badge.innerHTML = '<span class="bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full"><i class="fas fa-check-circle mr-1"></i> Disponible para entregas</span>';
+        }
+    }
 }
 
 // ==================== LIMPIAR RUTAS Y MARCADORES ====================
@@ -163,6 +206,7 @@ async function dibujarRutaRecogida(pedido) {
 
 // ==================== RUTA DE ENTREGA (origen -> destino) ====================
 async function dibujarRutaEntrega(pedido) {
+    // ✅ Validar que estamos en el pedido correcto
     if (ultimoPedidoDibujado === pedido.id && ultimaEtapa === 'entrega') {
         console.log("🟢 Ruta de entrega ya activa, omitiendo redibujo");
         return;
@@ -175,43 +219,66 @@ async function dibujarRutaEntrega(pedido) {
     
     dibujandoRuta = true;
     
+    // ✅ Limpiar rutas anteriores
     limpiarRutasYMarcadores();
     ultimoPedidoDibujado = pedido.id;
     ultimaEtapa = 'entrega';
     
+    // ✅ Validar coordenadas del origen (recogida) y destino
     if (!pedido.origenCoords || !pedido.destinoCoords) {
-        mostrarToast("❌ Faltan coordenadas", true);
+        console.error("❌ Faltan coordenadas para ruta de entrega:", {
+            origen: pedido.origenCoords,
+            destino: pedido.destinoCoords
+        });
+        mostrarToast("❌ No se pueden dibujar coordenadas de destino. Intenta recargar.", true);
         dibujandoRuta = false;
         return;
     }
     
-    currentRoutingControl = L.Routing.control({
-        waypoints: [
-            L.latLng(pedido.origenCoords.lat, pedido.origenCoords.lng),
-            L.latLng(pedido.destinoCoords.lat, pedido.destinoCoords.lng)
-        ],
-        routeWhileDragging: false,
-        showAlternatives: false,
-        fitSelectedRoutes: true,
-        lineOptions: {
-            styles: [{ color: '#FF6200', weight: 6, opacity: 0.9 }]
-        },
-        router: L.Routing.osrmv1({
-            serviceUrl: 'https://router.project-osrm.org/route/v1'
-        }),
-        show: false,
-        addWaypoints: false
-    }).addTo(map);
+    console.log("📍 Dibujando ruta de ENTREGA:", {
+        desde: pedido.origenCoords,
+        hasta: pedido.destinoCoords
+    });
     
-    setTimeout(() => {
-        map.fitBounds([
-            [pedido.origenCoords.lat, pedido.origenCoords.lng],
-            [pedido.destinoCoords.lat, pedido.destinoCoords.lng]
-        ], { padding: [50, 50] });
-        map.invalidateSize();
+    // ✅ Crear la ruta desde origen (recogida) hasta destino
+    try {
+        currentRoutingControl = L.Routing.control({
+            waypoints: [
+                L.latLng(pedido.origenCoords.lat, pedido.origenCoords.lng),
+                L.latLng(pedido.destinoCoords.lat, pedido.destinoCoords.lng)
+            ],
+            routeWhileDragging: false,
+            showAlternatives: false,
+            fitSelectedRoutes: true,
+            lineOptions: {
+                styles: [{ color: '#FF6200', weight: 6, opacity: 0.9 }]
+            },
+            router: L.Routing.osrmv1({
+                serviceUrl: 'https://router.project-osrm.org/route/v1'
+            }),
+            show: false,
+            addWaypoints: false,
+            draggableWaypoints: false
+        }).addTo(map);
+        
+        // ✅ Ajustar el mapa para ver toda la ruta
+        setTimeout(() => {
+            map.fitBounds([
+                [pedido.origenCoords.lat, pedido.origenCoords.lng],
+                [pedido.destinoCoords.lat, pedido.destinoCoords.lng]
+            ], { padding: [50, 50] });
+            map.invalidateSize();
+            dibujandoRuta = false;
+        }, 300);
+        
+    } catch(e) {
+        console.error("❌ Error dibujando ruta de entrega:", e);
+        mostrarToast("❌ Error al dibujar la ruta", true);
         dibujandoRuta = false;
-    }, 300);
+    }
     
+    // ✅ Crear marcador de destino si no existe
+    if (destinoMarker) map.removeLayer(destinoMarker);
     destinoMarker = L.marker([pedido.destinoCoords.lat, pedido.destinoCoords.lng], {
         icon: L.divIcon({
             html: '<div style="background:#3B82F6; width:36px; height:36px; border-radius:50%; border:3px solid white; box-shadow:0 2px 8px rgba(0,0,0,0.3); display:flex; align-items:center; justify-content:center;"><i class="fas fa-flag-checkered" style="color:white; font-size:16px;"></i></div>',
@@ -220,7 +287,12 @@ async function dibujarRutaEntrega(pedido) {
     }).addTo(map);
     destinoMarker.bindPopup(`<b>🏁 ENTREGAR AQUÍ</b><br>${pedido.destino}`).openPopup();
     
-    mostrarToast(`🚚 Ruta de ENTREGA - Desde origen hasta destino`);
+    mostrarToast(`🚚 Ruta de ENTREGA - Desde ${pedido.origen} hasta ${pedido.destino}`);
+    
+    // ✅ Opcional: cerrar popup después de 5 segundos
+    setTimeout(() => {
+        if (destinoMarker) destinoMarker.closePopup();
+    }, 5000);
 }
 
 // ==================== MARCAR PAQUETE COMO RECOGIDO ====================
@@ -231,7 +303,11 @@ async function marcarPaqueteRecogido(pedidoId) {
         return;
     }
     
+    // ✅ 1. Mostrar loading feedback
+    mostrarToast("📦 Actualizando estado del paquete...");
+    
     try {
+        // ✅ 2. Actualizar en Supabase
         const { error } = await supabase
             .from('pedidos')
             .update({
@@ -244,18 +320,35 @@ async function marcarPaqueteRecogido(pedidoId) {
         
         mostrarToast(`✅ ¡Paquete #${pedidoId} RECOGIDO! Ahora dirígete al destino.`);
         
+        // ✅ 3. Recargar pedidos y ESPERAR a que termine
         await cargarPedidos();
         
-        const pedidoActualizado = misPedidosActivos.find(p => p.id === pedidoId);
-        if (pedidoActualizado) {
-            await dibujarRutaEntrega(pedidoActualizado);
-        }
-        
-        await actualizarColorMarcador();
+        // ✅ 4. Buscar el pedido actualizado en misPedidosActivos
+        // Pequeño delay para asegurar que el estado se actualizó
+        setTimeout(async () => {
+            const pedidoActualizado = misPedidosActivos.find(p => p.id === pedidoId);
+            
+            if (pedidoActualizado && pedidoActualizado.estado === 'recogido') {
+                // ✅ 5. Dibujar ruta de ENTREGA
+                await dibujarRutaEntrega(pedidoActualizado);
+                
+                // ✅ 6. Actualizar color del marcador del delivery (ahora ocupado)
+                await actualizarColorMarcador();
+                
+                // ✅ 7. Mostrar popup con instrucciones
+                if (userMarker) {
+                    userMarker.bindPopup(`🏍️ <b>${currentUser.nombre}</b><br>📦 En camino a ENTREGAR`).openPopup();
+                    setTimeout(() => userMarker.closePopup(), 3000);
+                }
+            } else {
+                console.error("❌ No se encontró el pedido actualizado", pedidoId);
+                mostrarToast("⚠️ El pedido se actualizó, pero no se pudo dibujar la ruta", true);
+            }
+        }, 500);
         
     } catch(e) {
         console.error('Error marcando paquete recogido:', e);
-        mostrarToast("❌ Error al registrar la recogida", true);
+        mostrarToast("❌ Error al registrar la recogida: " + (e.message || "Verifica tu conexión"), true);
     }
 }
 
@@ -312,6 +405,20 @@ function centrarMapa() {
 }
 
 async function cargarPedidos() {
+    // ✅ THROTTLING: Verificar visibilidad
+    if (!paginaVisible) {
+        console.log("📴 Página oculta, no se cargan pedidos");
+        return;
+    }
+    
+    // ✅ THROTTLING: Mínimo 5 segundos entre peticiones
+    const ahora = Date.now();
+    if (ahora - ultimaPeticionPedidos < 5000) {
+        console.log(`⏳ Throttling: cargarPedidos - demasiado rápido (${ahora - ultimaPeticionPedidos}ms desde última)`);
+        return;
+    }
+    ultimaPeticionPedidos = ahora;
+    
     const supabase = supabaseClient;
     if (!supabase) {
         console.error('Supabase no disponible');
@@ -319,6 +426,7 @@ async function cargarPedidos() {
     }
     
     try {
+        // ✅ Cargar pedidos pendientes
         const { data: pedidosPendientes, error: errorPendientes } = await supabase
             .from('pedidos')
             .select('*')
@@ -327,6 +435,7 @@ async function cargarPedidos() {
         
         if (errorPendientes) throw errorPendientes;
         
+        // ✅ Cargar pedidos asignados a este delivery
         const { data: pedidosAsignados, error: errorAsignados } = await supabase
             .from('pedidos')
             .select('*')
@@ -336,101 +445,51 @@ async function cargarPedidos() {
         
         if (errorAsignados) throw errorAsignados;
         
+        // ✅ Convertir pedidos
         const nuevosDisponibles = (pedidosPendientes || []).map(p => convertirPedidoDeSupabase(p));
         const nuevosActivos = (pedidosAsignados || []).map(p => convertirPedidoDeSupabase(p));
         
-        // ✅ Solo actualizar si hay cambios
-        const disponiblesCambiaron = JSON.stringify(pedidosDisponibles) !== JSON.stringify(nuevosDisponibles);
-        const activosCambiaron = JSON.stringify(misPedidosActivos) !== JSON.stringify(nuevosActivos);
+        // ✅ Guardar estado anterior para detectar cambios
+        const estadoAnteriorActivo = misPedidosActivos.length > 0 ? misPedidosActivos[0]?.estado : null;
         
-        if (disponiblesCambiaron) {
-            pedidosDisponibles = nuevosDisponibles;
-        }
+        pedidosDisponibles = nuevosDisponibles;
+        misPedidosActivos = nuevosActivos;
         
-        if (activosCambiaron) {
-            misPedidosActivos = nuevosActivos;
-        }
+        // ✅ Actualizar UI
+        actualizarListaPedidos();
         
-        // ✅ Solo actualizar la lista si hubo cambios
-        if (disponiblesCambiaron || activosCambiaron) {
-            actualizarListaPedidos();
-        }
-        
-        // ✅ Solo dibujar ruta si el pedido activo cambió
-        if (activosCambiaron) {
-            if (misPedidosActivos.length > 0) {
-                const pedidoActivo = misPedidosActivos[0];
-                if (pedidoActivo.estado === 'recogido') {
-                    await dibujarRutaEntrega(pedidoActivo);
-                } else if (pedidoActivo.estado === 'asignado') {
-                    await dibujarRutaRecogida(pedidoActivo);
-                }
-            } else {
-                limpiarRutasYMarcadores();
-                if (pedidoSeleccionado) {
-                    dibujarRutaOptimaPedido(pedidoSeleccionado);
-                }
+        // ✅ Manejar cambios de estado para rutas
+        if (misPedidosActivos.length > 0) {
+            const pedidoActivo = misPedidosActivos[0];
+            const estadoActual = pedidoActivo.estado;
+            
+            if (estadoAnteriorActivo === 'asignado' && estadoActual === 'recogido') {
+                console.log("🔄 Estado cambiado: asignado → recogido. Dibujando ruta de entrega...");
+                await dibujarRutaEntrega(pedidoActivo);
+            }
+            else if (estadoActual === 'recogido' && (!currentRoutingControl || ultimaEtapa !== 'entrega')) {
+                console.log("🟠 Pedido en estado recogido, dibujando ruta de entrega...");
+                await dibujarRutaEntrega(pedidoActivo);
+            }
+            else if (estadoActual === 'asignado' && (!currentRoutingControl || ultimaEtapa !== 'recogida')) {
+                console.log("🟢 Pedido asignado, dibujando ruta de recogida...");
+                await dibujarRutaRecogida(pedidoActivo);
+            }
+        } else {
+            limpiarRutasYMarcadores();
+            if (pedidoSeleccionado) {
+                dibujarRutaOptimaPedido(pedidoSeleccionado);
             }
         }
+        
+        // ✅ Actualizar color del marcador y badge
+        await actualizarColorMarcador();
+        await actualizarBadgeEstado();
         
         console.log(`📦 ${pedidosDisponibles.length} pedidos disponibles, ${misPedidosActivos.length} activos`);
         
     } catch(e) {
         console.error('Error cargando pedidos:', e);
-    }
-}
-
-function actualizarListaPedidos() {
-    const containerDisponibles = document.getElementById("pedidosDisponibles");
-    if(pedidosDisponibles.length === 0) {
-        containerDisponibles.innerHTML = '<div class="text-center text-gray-400 py-8"><i class="fas fa-box-open text-4xl mb-2 block"></i>No hay pedidos disponibles</div>';
-    } else {
-        containerDisponibles.innerHTML = pedidosDisponibles.map(p => `
-            <div class="bg-white border rounded-xl p-4 shadow-sm pedido-card ${pedidoSeleccionado?.id === p.id ? 'pedido-seleccionado' : ''}" onclick="seleccionarPedido(${p.id})">
-                <div class="flex justify-between items-start mb-2">
-                    <span class="font-bold text-[#FF6200]">#${p.id}</span>
-                    <span class="text-xs px-2 py-1 rounded-full bg-yellow-100 text-yellow-700">Pendiente</span>
-                </div>
-                <p class="text-sm"><i class="fas fa-circle text-[#FF6200] text-xs mr-1"></i> ${p.origen}</p>
-                <p class="text-sm mt-1"><i class="fas fa-square text-blue-600 text-xs mr-1"></i> ${p.destino}</p>
-                <p class="text-xs text-gray-500 mt-2">📏 ${p.distanciaReal} km • 💰 $${p.tarifa}</p>
-                <p class="text-xs text-gray-500">👤 Cliente: ${p.clienteNombre}</p>
-                <button onclick="event.stopPropagation(); agarrarPedido(${p.id})" class="w-full mt-3 bg-green-500 hover:bg-green-600 text-white py-2 rounded-lg text-sm font-medium transition-all">
-                    <i class="fas fa-hand-paper mr-1"></i> AGARRAR PEDIDO
-                </button>
-            </div>
-        `).join('');
-    }
-    
-    const containerActivos = document.getElementById("pedidosActivos");
-    if(misPedidosActivos.length === 0) {
-        containerActivos.innerHTML = '<div class="text-center text-gray-400 py-4"><i class="fas fa-check-circle text-2xl mb-1 block"></i>No hay pedidos activos</div>';
-    } else {
-        containerActivos.innerHTML = misPedidosActivos.map(p => {
-            const esRecogido = p.estado === 'recogido';
-            
-            return `
-            <div class="bg-orange-50 border border-orange-200 rounded-xl p-4 shadow-sm">
-                <div class="flex justify-between items-start mb-2">
-                    <span class="font-bold text-[#FF6200]">#${p.id}</span>
-                    <span class="text-xs px-2 py-1 rounded-full ${esRecogido ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'}">
-                        ${esRecogido ? '📦 Paquete recogido' : '🟡 En camino a recoger'}
-                    </span>
-                </div>
-                <p class="text-sm"><i class="fas fa-circle text-green-500 text-xs mr-1"></i> <strong>Recoger en:</strong> ${p.origen}</p>
-                <p class="text-sm mt-1"><i class="fas fa-square text-blue-600 text-xs mr-1"></i> <strong>Entregar en:</strong> ${p.destino}</p>
-                <p class="text-xs text-gray-500 mt-2">📏 ${p.distanciaReal} km • 💰 $${p.tarifa}</p>
-                <p class="text-xs text-gray-500">👤 Cliente: ${p.clienteNombre}</p>
-                ${!esRecogido ? 
-                    `<button onclick="marcarPaqueteRecogido(${p.id})" class="w-full mt-3 bg-green-500 hover:bg-green-600 text-white py-2 rounded-lg text-sm font-medium transition-all">
-                        <i class="fas fa-box-open mr-1"></i> 📦 MARCAR PAQUETE RECOGIDO
-                    </button>` :
-                    `<button onclick="completarPedido(${p.id})" class="w-full mt-3 bg-blue-500 hover:bg-blue-600 text-white py-2 rounded-lg text-sm font-medium transition-all">
-                        <i class="fas fa-check-circle mr-1"></i> 🏁 MARCAR ENTREGADO
-                    </button>`
-                }
-            </div>
-        `}).join('');
     }
 }
 
@@ -486,27 +545,89 @@ async function agarrarPedido(pedidoId) {
         return;
     }
     
+    // ✅ VERIFICACIÓN 1: ¿El delivery ya tiene un pedido activo?
+    mostrarToast("🔍 Verificando disponibilidad...");
+    
     try {
+        // Usar la función de config.js
+        const tienePedidoActivo = await deliveryTienePedidoActivo(currentUser.id);
+        
+        if (tienePedidoActivo) {
+            const pedidoActivo = await getPedidoActivoDelDelivery(currentUser.id);
+            mostrarToast(`❌ Ya tienes un pedido activo (#${pedidoActivo?.id}). Complétalo primero.`, true);
+            
+            // Resaltar el pedido activo en la lista
+            if (pedidoActivo) {
+                const elementoActivo = document.querySelector(`[data-pedido-id="${pedidoActivo.id}"]`);
+                if (elementoActivo) {
+                    elementoActivo.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    elementoActivo.style.border = '2px solid #FF6200';
+                    setTimeout(() => {
+                        elementoActivo.style.border = '';
+                    }, 3000);
+                }
+            }
+            return;
+        }
+        
+        // ✅ VERIFICACIÓN 2: ¿El pedido sigue disponible (estado pendiente)?
+        const { data: pedidoActual, error: errorPedido } = await supabase
+            .from('pedidos')
+            .select('estado')
+            .eq('id', pedidoId)
+            .single();
+        
+        if (errorPedido) throw errorPedido;
+        
+        if (pedidoActual.estado !== 'pendiente') {
+            mostrarToast(`❌ El pedido #${pedidoId} ya no está disponible (fue agarrado por otro delivery)`, true);
+            await cargarPedidos(); // Recargar lista
+            return;
+        }
+        
+        // ✅ VERIFICACIÓN 3: Confirmar con el usuario (opcional pero recomendado)
+        const confirmar = confirm(`¿Seguro que quieres AGARRAR el pedido #${pedidoId}?`);
+        if (!confirmar) {
+            mostrarToast("❌ Acción cancelada");
+            return;
+        }
+        
+        // ✅ AGARRAR EL PEDIDO
         const { error } = await supabase
             .from('pedidos')
             .update({
                 estado: 'asignado',
                 delivery_id: currentUser.id,
-                delivery_nombre: currentUser.nombre
+                delivery_nombre: currentUser.nombre,
+                fecha_asignado: new Date().toISOString()
             })
             .eq('id', pedidoId)
-            .eq('estado', 'pendiente');
+            .eq('estado', 'pendiente'); // Doble verificación: solo si sigue pendiente
         
         if (error) throw error;
         
         mostrarToast(`✅ Pedido #${pedidoId} AGARRADO! Dirígete al origen para recoger.`);
+        
+        // ✅ Limpiar selección y recargar
         pedidoSeleccionado = null;
         await cargarPedidos();
         await actualizarColorMarcador();
+        
+        // ✅ Mostrar ruta de recogida inmediatamente
+        const pedidoAsignado = misPedidosActivos.find(p => p.id === pedidoId);
+        if (pedidoAsignado) {
+            await dibujarRutaRecogida(pedidoAsignado);
+            // Centrar mapa en la ruta
+            setTimeout(() => {
+                if (pedidoAsignado.origenCoords) {
+                    map.setView([pedidoAsignado.origenCoords.lat, pedidoAsignado.origenCoords.lng], 14);
+                }
+            }, 500);
+        }
 
     } catch(e) {
         console.error('Error agarrando pedido:', e);
-        mostrarToast("❌ Error al agarrar el pedido", true);
+        mostrarToast("❌ Error al agarrar el pedido: " + (e.message || "Intenta de nuevo"), true);
     }
 }
 
@@ -544,6 +665,76 @@ async function completarPedido(pedidoId) {
     } catch(e) {
         console.error('Error completando pedido:', e);
         mostrarToast("❌ Error al completar el pedido", true);
+    }
+}
+
+function actualizarListaPedidos() {
+    const containerDisponibles = document.getElementById("pedidosDisponibles");
+    
+    // Verificar si el delivery ya tiene pedido activo (para UI)
+    const tienePedidoActivo = misPedidosActivos.length > 0;
+    
+    if(pedidosDisponibles.length === 0) {
+        containerDisponibles.innerHTML = '<div class="text-center text-gray-400 py-8"><i class="fas fa-box-open text-4xl mb-2 block"></i>No hay pedidos disponibles</div>';
+    } else {
+        containerDisponibles.innerHTML = pedidosDisponibles.map(p => `
+            <div class="bg-white border rounded-xl p-4 shadow-sm pedido-card ${pedidoSeleccionado?.id === p.id ? 'pedido-seleccionado' : ''}" onclick="seleccionarPedido(${p.id})">
+                <div class="flex justify-between items-start mb-2">
+                    <span class="font-bold text-[#FF6200]">#${p.id}</span>
+                    <span class="text-xs px-2 py-1 rounded-full bg-yellow-100 text-yellow-700">Pendiente</span>
+                </div>
+                <p class="text-sm"><i class="fas fa-circle text-[#FF6200] text-xs mr-1"></i> ${p.origen}</p>
+                <p class="text-sm mt-1"><i class="fas fa-square text-blue-600 text-xs mr-1"></i> ${p.destino}</p>
+                <p class="text-xs text-gray-500 mt-2">📏 ${p.distanciaReal} km • 💰 $${p.tarifa}</p>
+                <p class="text-xs text-gray-500">👤 Cliente: ${p.clienteNombre}</p>
+                ${tienePedidoActivo ? 
+                    `<button disabled class="w-full mt-3 bg-gray-400 cursor-not-allowed text-white py-2 rounded-lg text-sm font-medium transition-all">
+                        <i class="fas fa-lock mr-1"></i> Completar pedido actual primero
+                    </button>` :
+                    `<button onclick="event.stopPropagation(); agarrarPedido(${p.id})" class="w-full mt-3 bg-green-500 hover:bg-green-600 text-white py-2 rounded-lg text-sm font-medium transition-all">
+                        <i class="fas fa-hand-paper mr-1"></i> AGARRAR PEDIDO
+                    </button>`
+                }
+            </div>
+        `).join('');
+    }
+    
+    // Resto del código para pedidos activos...
+    const containerActivos = document.getElementById("pedidosActivos");
+    if(misPedidosActivos.length === 0) {
+        containerActivos.innerHTML = '<div class="text-center text-gray-400 py-4"><i class="fas fa-check-circle text-2xl mb-1 block"></i>No hay pedidos activos</div>';
+    } else {
+        containerActivos.innerHTML = misPedidosActivos.map(p => {
+            const esRecogido = p.estado === 'recogido';
+            const estaAsignado = p.estado === 'asignado';
+            
+            return `
+            <div class="bg-orange-50 border border-orange-200 rounded-xl p-4 shadow-sm" data-pedido-id="${p.id}">
+                <div class="flex justify-between items-start mb-2">
+                    <span class="font-bold text-[#FF6200]">#${p.id}</span>
+                    <span class="text-xs px-2 py-1 rounded-full ${esRecogido ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'}">
+                        ${esRecogido ? '📦 Paquete recogido' : '🟡 En camino a recoger'}
+                    </span>
+                </div>
+                <p class="text-sm"><i class="fas fa-circle text-green-500 text-xs mr-1"></i> <strong>Recoger en:</strong> ${p.origen}</p>
+                <p class="text-sm mt-1"><i class="fas fa-square text-blue-600 text-xs mr-1"></i> <strong>Entregar en:</strong> ${p.destino}</p>
+                <p class="text-xs text-gray-500 mt-2">📏 ${p.distanciaReal} km • 💰 $${p.tarifa}</p>
+                <p class="text-xs text-gray-500">👤 Cliente: ${p.clienteNombre}</p>
+                <div class="mt-3 text-xs text-center text-gray-500">
+                    <i class="fas fa-info-circle"></i> Debes completar este pedido antes de agarrar otro
+                </div>
+                ${estaAsignado ? 
+                    `<button onclick="marcarPaqueteRecogido(${p.id})" class="w-full mt-3 bg-green-500 hover:bg-green-600 text-white py-2 rounded-lg text-sm font-medium transition-all">
+                        <i class="fas fa-box-open mr-1"></i> 📦 MARCAR PAQUETE RECOGIDO
+                    </button>` : 
+                    (esRecogido ?
+                    `<button onclick="completarPedido(${p.id})" class="w-full mt-3 bg-blue-500 hover:bg-blue-600 text-white py-2 rounded-lg text-sm font-medium transition-all">
+                        <i class="fas fa-check-circle mr-1"></i> 🏁 MARCAR ENTREGADO
+                    </button>` : '')
+                }
+            </div>
+            `;
+        }).join('');
     }
 }
 

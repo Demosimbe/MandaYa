@@ -388,81 +388,6 @@
         </div>
     </div>
 
-    <!-- MODAL EXTRAS (antes del pago) -->
-    <div id="modalExtras" class="hidden fixed inset-0 bg-black bg-opacity-95 flex items-center justify-center z-[10001] p-4">
-        <div class="bg-gray-800 rounded-3xl max-w-md w-full modal-uber">
-            <div class="text-center pt-6 pb-3 border-b border-gray-700">
-                <div class="w-16 h-16 bg-orange-500 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <i class="fas fa-plus-circle text-white text-2xl"></i>
-                </div>
-                <h2 class="text-xl font-bold text-white">Extras adicionales</h2>
-                <p class="text-gray-400 text-sm mt-1">Selecciona servicios adicionales si los necesitas</p>
-            </div>
-
-            <div class="p-5 space-y-3">
-                <!-- Extra Lluvia -->
-                <div class="bg-gray-700 rounded-xl p-3 flex items-center justify-between cursor-pointer hover:bg-gray-600 transition-all" onclick="toggleExtra('lluvia')">
-                    <div class="flex items-center gap-3">
-                        <i class="fas fa-cloud-rain text-blue-400 text-xl"></i>
-                        <div>
-                            <div class="font-bold text-white">Lluvia 🌧️</div>
-                            <div class="text-xs text-gray-400">Clima adverso</div>
-                        </div>
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <span class="text-orange-400 font-bold">+$10</span>
-                        <div id="checkLluvia" class="w-6 h-6 rounded-full border-2 border-gray-500 flex items-center justify-center">
-                            <i class="fas fa-check text-green-500 text-xs hidden"></i>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Extra Noche -->
-                <div class="bg-gray-700 rounded-xl p-3 flex items-center justify-between cursor-pointer hover:bg-gray-600 transition-all" onclick="toggleExtra('noche')">
-                    <div class="flex items-center gap-3">
-                        <i class="fas fa-moon text-yellow-400 text-xl"></i>
-                        <div>
-                            <div class="font-bold text-white">Noche 🌙</div>
-                            <div class="text-xs text-gray-400">Horario nocturno (8pm - 6am)</div>
-                        </div>
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <span class="text-orange-400 font-bold">+$10</span>
-                        <div id="checkNoche" class="w-6 h-6 rounded-full border-2 border-gray-500 flex items-center justify-center">
-                            <i class="fas fa-check text-green-500 text-xs hidden"></i>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Extra Espera -->
-                <div class="bg-gray-700 rounded-xl p-3 flex items-center justify-between cursor-pointer hover:bg-gray-600 transition-all" onclick="toggleExtra('espera')">
-                    <div class="flex items-center gap-3">
-                        <i class="fas fa-clock text-purple-400 text-xl"></i>
-                        <div>
-                            <div class="font-bold text-white">Espera ⏱️</div>
-                            <div class="text-xs text-gray-400">Tiempo de espera adicional</div>
-                        </div>
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <span class="text-orange-400 font-bold">+$10</span>
-                        <div id="checkEspera" class="w-6 h-6 rounded-full border-2 border-gray-500 flex items-center justify-center">
-                            <i class="fas fa-check text-green-500 text-xs hidden"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="px-5 pb-5 flex gap-3">
-                <button onclick="cerrarModalExtras()" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded-xl transition-all">
-                    Cancelar
-                </button>
-                <button onclick="confirmarExtras()" class="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl transition-all">
-                    Continuar
-                </button>
-            </div>
-        </div>
-    </div>
-
     <!-- MODAL DE PAGO -->
     <div id="modalPago" class="hidden fixed inset-0 bg-black bg-opacity-95 flex items-center justify-center z-[10001] p-4">
         <div class="bg-gray-800 rounded-3xl max-w-md w-full modal-uber overflow-y-auto max-h-[90vh]">
@@ -786,26 +711,46 @@
     }
 }
         
-        function solicitarEnvioMobile() {
-            const origenMobile = document.getElementById("origenMobile").value;
-            const destinoMobile = document.getElementById("destinoMobile").value;
-            const tipoMobile = document.getElementById("tipoEnvioMobile").value;
-            
-            if (!origenMobile || !destinoMobile) {
-                mostrarToast("❌ Selecciona origen y destino", true);
-                return;
-            }
-            if (!tipoMobile || tipoMobile === '') {
-                mostrarToast("❌ Selecciona el tipo de envío tocando un botón", true);
-                return;
-            }
-            
-            if (document.getElementById("origen")) document.getElementById("origen").value = origenMobile;
-            if (document.getElementById("destino")) document.getElementById("destino").value = destinoMobile;
-            if (document.getElementById("tipoEnvio")) document.getElementById("tipoEnvio").value = tipoMobile;
-            
-            solicitarEnvio();
-        }
+       function solicitarEnvioMobile() {
+           const origenMobile = document.getElementById("origenMobile").value;
+           const destinoMobile = document.getElementById("destinoMobile").value;
+           const tipoMobile = document.getElementById("tipoEnvioMobile").value;
+           
+           if (!origenMobile || !destinoMobile) {
+               mostrarToast("❌ Selecciona origen y destino", true);
+               return;
+           }
+           
+           // ✅ MEJOR VALIDACIÓN para móvil
+           if (!tipoMobile || tipoMobile === '') {
+               mostrarToast("❌ Selecciona el tipo de envío (Comida, Paquete, etc.)", true);
+               // Resaltar los botones de tipo
+               document.querySelectorAll('.tipo-mobile-btn').forEach(btn => {
+                   btn.style.animation = 'shake 0.5s ease';
+                   setTimeout(() => {
+                       btn.style.animation = '';
+                   }, 500);
+               });
+               return;
+           }
+           
+           if (document.getElementById("origen")) document.getElementById("origen").value = origenMobile;
+           if (document.getElementById("destino")) document.getElementById("destino").value = destinoMobile;
+           if (document.getElementById("tipoEnvio")) document.getElementById("tipoEnvio").value = tipoMobile;
+           
+           solicitarEnvio();
+       }
+       
+       // Agregar animación shake para errores
+       const style = document.createElement('style');
+       style.textContent = `
+           @keyframes shake {
+               0%, 100% { transform: translateX(0); }
+               25% { transform: translateX(-5px); }
+               75% { transform: translateX(5px); }
+           }
+       `;
+       document.head.appendChild(style);
         
       function seleccionarTipoMobile(valor, texto) {
     // Actualizar ambos selects

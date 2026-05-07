@@ -163,6 +163,51 @@ async function getAllUsuariosSupabase() {
     }
 }
 
+// ========== FUNCIONES PARA VERIFICAR PEDIDOS ACTIVOS DEL DELIVERY ==========
+
+async function deliveryTienePedidoActivo(deliveryId) {
+    const supabase = initSupabase();
+    if (!supabase) return true; // Por seguridad, asumir que tiene pedido si hay error
+    
+    try {
+        const { data, error } = await supabase
+            .from('pedidos')
+            .select('id, estado')
+            .eq('delivery_id', deliveryId)
+            .in('estado', ['asignado', 'recogido'])
+            .limit(1);
+        
+        if (error) throw error;
+        
+        return data && data.length > 0;
+    } catch(e) {
+        console.error('Error verificando pedido activo:', e);
+        return true; // Por seguridad, evitar que agarre pedido si hay error
+    }
+}
+
+// Versión que también devuelve el pedido activo
+async function getPedidoActivoDelDelivery(deliveryId) {
+    const supabase = initSupabase();
+    if (!supabase) return null;
+    
+    try {
+        const { data, error } = await supabase
+            .from('pedidos')
+            .select('*')
+            .eq('delivery_id', deliveryId)
+            .in('estado', ['asignado', 'recogido'])
+            .limit(1);
+        
+        if (error) throw error;
+        
+        return data && data.length > 0 ? data[0] : null;
+    } catch(e) {
+        console.error('Error obteniendo pedido activo:', e);
+        return null;
+    }
+}
+
 // Eliminar usuario (solo admin)
 async function eliminarUsuarioSupabase(userId) {
     const supabase = initSupabase();
