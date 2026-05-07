@@ -1,309 +1,65 @@
-import { 
-    supabaseClient, 
-    crearPedidoEnSupabase,
-    guardarUbicacionEnSupabase,
-    tienePedidoActivo,
-    MAPBOX_TOKEN
-} from './config.js';
+// Constantes y variables globales
+const BOUNDS = { north: 18.70, south: 18.58, east: -91.75, west: -91.88 };
 
-import { 
-    drawRealRoute, 
-    calculateShippingRate, 
-    formatDuration,
-    convertirPedidoDeSupabase,
-    limitarMapaACarmen,
-    crearMarcadorDelivery,
-    obtenerPrimerNombre,
-    getRealDistanceAndTime,
-    geocodificarDireccion,
-    reverseGeocodingMapbox,
-    crearMarcadorArrastrable
-} from './map-utils.js';
-
-// ==================== VARIABLES GLOBALES ====================
 let map, originMarker, destMarker, routeLine, deliveryMarker;
 let originCoords = null, destCoords = null;
 let currentUser = null, pedidoActual = null;
 let selectMode = 'origen';
+let seguimientoInterval = null;
+let ubicacionInterval = null;
 let currentRouteData = null;
-let deliverysMarkers = [];
-let deliverysInterval = null;
-let busquedaTimeout = null;
-let mapboxMap = null;
-let usandoMapbox = false;
-let paginaVisible = true;
+let deliverysMarkers = []; // Para los marcadores de deliverys en línea
+let deliverysInterval = null;  // Para el intervalo de deliverys en línea
+let pedidoPendiente = null; // Variable global para guardar pedido antes de pagar
 let clienteRouteControl = null;
-let ultimaPeticionDeliverys = 0;  // ← Variable faltante agregada
 
-// ==================== FUNCIONES GLOBALES ====================
-window.mostrarToast = function(msg, err = false) {
-    const toast = document.createElement('div');
-    toast.className = 'toast-message';
-    toast.style.cssText = `
-        position: fixed;
-        bottom: 20px;
-        left: 50%;
-        transform: translateX(-50%) translateY(20px);
-        background: ${err ? '#dc2626' : '#10b981'};
-        color: white;
-        padding: 14px 28px;
-        border-radius: 50px;
-        font-size: 14px;
-        font-weight: 500;
-        z-index: 10000;
-        opacity: 0;
-        transition: all 0.3s ease;
-    `;
-    toast.innerHTML = `<i class="fas ${err ? 'fa-exclamation-circle' : 'fa-check-circle'} mr-2"></i>${msg}`;
-    document.body.appendChild(toast);
-    setTimeout(() => {
-        toast.style.transform = 'translateX(-50%) translateY(0)';
-        toast.style.opacity = '1';
-    }, 10);
-    setTimeout(() => {
-        toast.style.transform = 'translateX(-50%) translateY(20px)';
-        toast.style.opacity = '0';
-        setTimeout(() => toast.remove(), 300);
-    }, 3000);
-};
+// ==================== CONTROL DE PETICIONES INTELIGENTE ====================
+let ultimaPeticionTime = 0;
+let paginaVisible = true;
+let ultimaPeticionDeliverys = 0;
 
-window.mostrarModalConfirmacion = function(titulo, mensaje, onConfirm) {
-    const confirmar = confirm(`${titulo}\n\n${mensaje}`);
-    if (confirmar && onConfirm) onConfirm();
-};
-
-window.verPerfil = function() {
-    if (currentUser) {
-        alert(`👤 ${currentUser.nombre}\n📧 ${currentUser.email}\n📍 Cliente MandaYa`);
-    }
-};
-
-window.cerrarSesion = function() {
-    if (confirm("¿Cerrar sesión?")) {
-        if (deliverysInterval) clearInterval(deliverysInterval);
-        localStorage.removeItem('sesion_activa');
-        window.location.href = "index.html";
-    }
-};
-
-window.verHistorial = async function() {
-    const supabase = supabaseClient;
-    if (!supabase || !currentUser) {
-        window.mostrarToast("Error de conexión", true);
-        return;
-    }
-    
-    try {
-        const { data, error } = await supabase
-            .from('pedidos')
-            .select('*')
-            .eq('cliente_id', currentUser.id)
-            .order('fecha', { ascending: false });
-        
-        if (error) throw error;
-        
-        if (!data || data.length === 0) {
-            window.mostrarToast("No tienes envíos registrados");
-        } else {
-            let msg = "📦 MIS ENVÍOS:\n\n";
-            data.forEach(p => {
-                msg += `#${p.id}: ${p.origen} → ${p.destino}\n💰 $${p.tarifa}\n📅 ${new Date(p.fecha).toLocaleDateString()}\nEstado: ${p.estado}\n━━━━━━━━━━━━\n`;
-            });
-            alert(msg);
-        }
-    } catch(e) {
-        console.error('Error:', e);
-        window.mostrarToast("Error al cargar historial", true);
-    }
-};
-
-window.setSelectMode = function(mode) {
-    selectMode = mode;
-    document.getElementById('btnOrigen').className = mode === 'origen' ? 'mode-btn active' : 'mode-btn inactive';
-    document.getElementById('btnDestino').className = mode === 'destino' ? 'mode-btn active' : 'mode-btn inactive';
-    window.mostrarToast(mode === 'origen' ? "📍 Modo ORIGEN activado" : "🏁 Modo DESTINO activado");
-};
-
-window.solicitarEnvio = async function() {
-    const origen = document.getElementById("origen").value;
-    const destino = document.getElementById("destino").value;
-    const tipo = document.getElementById("tipoEnvio").value;
-    const tarifaTexto = document.getElementById("tarifaValue").innerText;
-    const tarifa = parseFloat(tarifaTexto.replace('$', '').replace(' MXN', '').replace('(estimado)', '').trim());
-    
-    if (!origen || !destino) {
-        window.mostrarToast("❌ Selecciona origen y destino", true);
-        return;
-    }
-    if (!tipo) {
-        window.mostrarToast("❌ Selecciona el tipo de envío", true);
-        return;
-    }
-    if (!originCoords || !destCoords) {
-        window.mostrarToast("❌ Coordenadas no disponibles", true);
-        return;
-    }
-    
-    const supabase = supabaseClient;
-    if (!supabase) {
-        window.mostrarToast("❌ Error de conexión", true);
-        return;
-    }
-    
-    const pedido = {
-        id: Date.now().toString(),
-        clienteId: currentUser.id,
-        clienteNombre: currentUser.nombre,
-        origen: origen,
-        destino: destino,
-        origenCoords: originCoords,
-        destinoCoords: destCoords,
-        tipo: tipo,
-        distanciaReal: currentRouteData?.distance?.toFixed(2) || calcularDistancia().toFixed(2),
-        tarifa: isNaN(tarifa) ? 50 : tarifa,
-        estado: 'pendiente',
-        fecha: new Date().toISOString()
-    };
-    
-    const resultado = await crearPedidoEnSupabase(pedido);
-    
-    if (resultado?.error) {
-        window.mostrarToast("❌ Error al crear pedido", true);
+// Detectar cuando la pestaña está visible
+document.addEventListener('visibilitychange', () => {
+    paginaVisible = !document.hidden;
+    if (paginaVisible) {
+        console.log("🟢 Página visible - Reactivando actualizaciones");
+        // Forzar una actualización al volver
+        if (typeof cargarPedidos === 'function') cargarPedidos();
+        if (typeof cargarDeliverysEnLinea === 'function') cargarDeliverysEnLinea();
     } else {
-        window.mostrarToast(`✅ Pedido #${pedido.id} creado exitosamente`);
-        document.getElementById("panelEstadoPedido").classList.remove("hidden");
-        document.getElementById("pedidoIdLabel").innerText = pedido.id;
-        document.getElementById("pedidoIdLabelMobile").innerText = pedido.id;
-        document.getElementById("panelEstadoPedidoMobile")?.classList.remove("hidden");
-        setTimeout(() => window.location.reload(), 2000);
+        console.log("🔴 Página oculta - Reduciendo actualizaciones");
     }
-};
+});
 
-function calcularDistancia() {
-    if (!originCoords || !destCoords) return 0;
-    const R = 6371;
-    const dLat = (destCoords.lat - originCoords.lat) * Math.PI / 180;
-    const dLon = (destCoords.lng - originCoords.lng) * Math.PI / 180;
-    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-              Math.cos(originCoords.lat * Math.PI / 180) * Math.cos(destCoords.lat * Math.PI / 180) *
-              Math.sin(dLon/2) * Math.sin(dLon/2);
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+// Función para peticiones con throttling
+async function peticionConThrottling(funcion, nombre, intervaloMinimo = 3000) {
+    const ahora = Date.now();
+    if (!paginaVisible) {
+        console.log(`⏸️ Página oculta, omitiendo ${nombre}`);
+        return null;
+    }
+    if (ahora - ultimaPeticionTime < intervaloMinimo) {
+        console.log(`⏳ Throttling: ${nombre} - muy rápido`);
+        return null;
+    }
+    ultimaPeticionTime = ahora;
+    return await funcion();
 }
 
-function loadUser() {
-    const sesion = localStorage.getItem('sesion_activa');
-    if (!sesion) { window.location.href = "index.html"; return; }
-    currentUser = JSON.parse(sesion);
-    if (currentUser.rol !== 'cliente') { window.location.href = "delivery.html"; return; }
-    document.getElementById("userInfo").innerHTML = `<div class="flex items-center gap-2"><i class="fas fa-user-circle text-[#FF6200] text-xl"></i><span class="font-medium">${currentUser.nombre}</span><span class="text-gray-400 text-xs">(Cliente)</span></div>`;
-}
-
+// ==================== INICIALIZACIÓN ====================
 function initMap() {
-    if (typeof mapboxgl !== 'undefined' && MAPBOX_TOKEN && MAPBOX_TOKEN !== 'TU_TOKEN_AQUI') {
-        try {
-            mapboxgl.accessToken = MAPBOX_TOKEN;
-            mapboxMap = new mapboxgl.Map({
-                container: 'map',
-                style: 'mapbox://styles/mapbox/streets-v12',
-                center: [-91.8249, 18.6456],
-                zoom: 13,
-                maxZoom: 17,
-                minZoom: 12
-            });
-            
-            mapboxMap.setMaxBounds([
-                [-91.88, 18.58],
-                [-91.75, 18.70]
-            ]);
-            
-            map = mapboxMap;
-            usandoMapbox = true;
-            console.log("✅ Usando Mapbox");
-            
-            mapboxMap.addControl(new mapboxgl.GeolocateControl({
-                positionOptions: { enableHighAccuracy: true },
-                trackUserLocation: true,
-                showUserHeading: true
-            }));
-            
-            originMarker = crearMarcadorArrastrable(-91.8249, 18.6456, '#FF6200', '📍 Origen');
-            destMarker = crearMarcadorArrastrable(-91.8149, 18.6556, '#3B82F6', '🏁 Destino');
-            
-            if (originMarker) originMarker.addTo(mapboxMap);
-            if (destMarker) destMarker.addTo(mapboxMap);
-            
-            if (originMarker) {
-                originMarker.on('dragend', async () => {
-                    const lngLat = originMarker.getLngLat();
-                    originCoords = { lat: lngLat.lat, lng: lngLat.lng };
-                    const direccion = await reverseGeocodingMapbox(lngLat.lat, lngLat.lng);
-                    document.getElementById("origen").value = direccion;
-                    actualizarRutaYTarifa();
-                });
-            }
-            
-            if (destMarker) {
-                destMarker.on('dragend', async () => {
-                    const lngLat = destMarker.getLngLat();
-                    destCoords = { lat: lngLat.lat, lng: lngLat.lng };
-                    const direccion = await reverseGeocodingMapbox(lngLat.lat, lngLat.lng);
-                    document.getElementById("destino").value = direccion;
-                    actualizarRutaYTarifa();
-                });
-            }
-            
-            mapboxMap.on('click', (e) => {
-                const { lng, lat } = e.lngLat;
-                if (selectMode === 'origen') {
-                    if (originMarker) originMarker.setLngLat([lng, lat]);
-                    originCoords = { lat, lng };
-                    reverseGeocodingMapbox(lat, lng).then(addr => {
-                        document.getElementById("origen").value = addr;
-                    });
-                } else {
-                    if (destMarker) destMarker.setLngLat([lng, lat]);
-                    destCoords = { lat, lng };
-                    reverseGeocodingMapbox(lat, lng).then(addr => {
-                        document.getElementById("destino").value = addr;
-                    });
-                }
-                actualizarRutaYTarifa();
-            });
-            
-            originCoords = { lat: 18.6456, lng: -91.8249 };
-            destCoords = { lat: 18.6556, lng: -91.8149 };
-            
-            reverseGeocodingMapbox(18.6456, -91.8249).then(addr => {
-                document.getElementById("origen").value = addr;
-            });
-            reverseGeocodingMapbox(18.6556, -91.8149).then(addr => {
-                document.getElementById("destino").value = addr;
-            });
-            
-            setTimeout(() => actualizarRutaYTarifa(), 500);
-            
-        } catch(e) {
-            console.log("Error cargando Mapbox, usando Leaflet:", e);
-            iniciarLeaflet();
-        }
-    } else {
-        console.log("Mapbox no configurado, usando Leaflet");
-        iniciarLeaflet();
-    }
-}
-
-function iniciarLeaflet() {
-    usandoMapbox = false;
     map = L.map('map').setView([18.6456, -91.8249], 13);
     
     L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; OSM & CartoDB',
-        maxZoom: 18,
-        subdomains: 'abcd'
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; CartoDB',
+    maxZoom: 18,
+    subdomains: 'abcd'
     }).addTo(map);
     
+    // ✅ Limitar mapa a Ciudad del Carmen
     limitarMapaACarmen(map);
     
+    // Marcador de origen ARRASTRABLE
     const originIcon = L.divIcon({
         html: '<div style="background:#FF6200; width:28px; height:28px; border-radius:50%; border:3px solid white; box-shadow:0 2px 5px rgba(0,0,0,0.3); display:flex; align-items:center; justify-content:center;"><i class="fas fa-circle" style="color:white; font-size:12px;"></i></div>',
         iconSize: [28, 28],
@@ -313,6 +69,7 @@ function iniciarLeaflet() {
     originMarker = L.marker([18.6456, -91.8249], { icon: originIcon, draggable: true }).addTo(map);
     originMarker.bindPopup('📍 <b>Origen</b><br>Arrástrame para cambiar');
     
+    // Marcador de destino ARRASTRABLE
     const destIcon = L.divIcon({
         html: '<div style="background:#3B82F6; width:28px; height:28px; border-radius:50%; border:3px solid white; box-shadow:0 2px 5px rgba(0,0,0,0.3); display:flex; align-items:center; justify-content:center;"><i class="fas fa-square" style="color:white; font-size:12px;"></i></div>',
         iconSize: [28, 28],
@@ -322,15 +79,16 @@ function iniciarLeaflet() {
     destMarker = L.marker([18.6556, -91.8149], { icon: destIcon, draggable: true }).addTo(map);
     destMarker.bindPopup('🏁 <b>Destino</b><br>Arrástrame para cambiar');
     
+    // Eventos de arrastre con validación de límites
     originMarker.on('dragend', function(e) {
         const coords = e.target.getLatLng();
         if (coords.lat >= 18.58 && coords.lat <= 18.70 && coords.lng >= -91.88 && coords.lng <= -91.75) {
             originCoords = { lat: coords.lat, lng: coords.lng };
             reverseGeocode(originCoords, (addr) => document.getElementById("origen").value = addr);
             actualizarRutaYTarifa();
-            window.mostrarToast("📍 Origen actualizado");
+            mostrarToast("📍 Origen actualizado");
         } else {
-            window.mostrarToast("❌ Ubicación fuera de Ciudad del Carmen", true);
+            mostrarToast("❌ Ubicación fuera de Ciudad del Carmen", true);
             if (originCoords) originMarker.setLatLng([originCoords.lat, originCoords.lng]);
         }
     });
@@ -341,13 +99,14 @@ function iniciarLeaflet() {
             destCoords = { lat: coords.lat, lng: coords.lng };
             reverseGeocode(destCoords, (addr) => document.getElementById("destino").value = addr);
             actualizarRutaYTarifa();
-            window.mostrarToast("🏁 Destino actualizado");
+            mostrarToast("🏁 Destino actualizado");
         } else {
-            window.mostrarToast("❌ Ubicación fuera de Ciudad del Carmen", true);
+            mostrarToast("❌ Ubicación fuera de Ciudad del Carmen", true);
             if (destCoords) destMarker.setLatLng([destCoords.lat, destCoords.lng]);
         }
     });
     
+    // Click en el mapa con validación
     map.on('click', (e) => {
         if (e.latlng.lat >= 18.58 && e.latlng.lat <= 18.70 && e.latlng.lng >= -91.88 && e.latlng.lng <= -91.75) {
             if (selectMode === 'origen') {
@@ -355,19 +114,20 @@ function iniciarLeaflet() {
                 originCoords = { lat: e.latlng.lat, lng: e.latlng.lng };
                 reverseGeocode(originCoords, (addr) => document.getElementById("origen").value = addr);
                 actualizarRutaYTarifa();
-                window.mostrarToast("📍 Origen actualizado");
+                mostrarToast("📍 Origen actualizado");
             } else {
                 destMarker.setLatLng(e.latlng);
                 destCoords = { lat: e.latlng.lat, lng: e.latlng.lng };
                 reverseGeocode(destCoords, (addr) => document.getElementById("destino").value = addr);
                 actualizarRutaYTarifa();
-                window.mostrarToast("🏁 Destino actualizado");
+                mostrarToast("🏁 Destino actualizado");
             }
         } else {
-            window.mostrarToast("❌ Solo dentro de Ciudad del Carmen", true);
+            mostrarToast("❌ Solo dentro de Ciudad del Carmen", true);
         }
     });
     
+    // Inicializar coordenadas
     originCoords = { lat: 18.6456, lng: -91.8249 };
     destCoords = { lat: 18.6556, lng: -91.8149 };
     
@@ -377,14 +137,170 @@ function iniciarLeaflet() {
     setTimeout(() => actualizarRutaYTarifa(), 500);
 }
 
-window.centrarMapa = function() {
-    if (mapboxMap) {
-        mapboxMap.setCenter([-91.8249, 18.6456]).setZoom(13);
-    } else if (map) {
-        map.setView([18.6456, -91.8249], 13);
+function loadUser() {
+    const sesion = localStorage.getItem('sesion_activa');
+    if (!sesion) { window.location.href = "index.html"; return; }
+    currentUser = JSON.parse(sesion);
+    if (currentUser.rol !== 'cliente') { window.location.href = "delivery.html"; return; }
+    document.getElementById("userInfo").innerHTML = `<div class="flex items-center gap-2"><i class="fas fa-user-circle text-[#FF6200] text-xl"></i><span class="font-medium">${currentUser.nombre}</span><span class="text-gray-400 text-xs">(Cliente)</span></div>`;
+}
+
+function centrarMapa() {
+    if(map) map.setView([18.6456, -91.8249], 13);
+    mostrarToast("📍 Mapa centrado en Ciudad del Carmen");
+}
+
+function setSelectMode(mode) {
+    selectMode = mode;
+    document.getElementById('btnOrigen').className = mode === 'origen' ? 'mode-btn active' : 'mode-btn inactive';
+    document.getElementById('btnDestino').className = mode === 'destino' ? 'mode-btn active' : 'mode-btn inactive';
+    
+    if (mode === 'origen') {
+        originMarker.openPopup();
+        mostrarToast("📍 Modo ORIGEN - Haz clic en el mapa o arrastra el marcador naranja");
+    } else {
+        destMarker.openPopup();
+        mostrarToast("🏁 Modo DESTINO - Haz clic en el mapa o arrastra el marcador azul");
     }
-    window.mostrarToast("📍 Mapa centrado en Ciudad del Carmen");
-};
+}
+
+function limpiarRutaCliente() {
+    if (clienteRouteControl) {
+        try { map.removeControl(clienteRouteControl); } catch(e) {}
+        clienteRouteControl = null;
+    }
+}
+
+async function dibujarRutaDeliveryEnCliente(ubicacionDelivery, destinoCoords, tipo) {
+    if (!ubicacionDelivery || !destinoCoords) {
+        console.log("❌ Faltan coordenadas para dibujar ruta:", { ubicacionDelivery, destinoCoords });
+        return;
+    }
+    
+    limpiarRutaCliente();
+    
+    let waypoints = [];
+    let color = '#FF6200';
+    
+    if (tipo === 'recogida') {
+        waypoints = [
+            L.latLng(ubicacionDelivery.lat, ubicacionDelivery.lng),
+            L.latLng(destinoCoords.lat, destinoCoords.lng)
+        ];
+        color = '#10B981';
+        console.log("🟢 Waypoints RECOGIDA:", waypoints);
+    } else if (tipo === 'entrega') {
+        waypoints = [
+            L.latLng(ubicacionDelivery.lat, ubicacionDelivery.lng),
+            L.latLng(destinoCoords.lat, destinoCoords.lng)
+        ];
+        color = '#FF6200';
+        console.log("🟠 Waypoints ENTREGA:", waypoints);
+    }
+    
+    clienteRouteControl = L.Routing.control({
+        waypoints: waypoints,
+        routeWhileDragging: false,
+        showAlternatives: false,
+        fitSelectedRoutes: true,
+        lineOptions: {
+            styles: [{ color: color, weight: 4, opacity: 0.8 }]
+        },
+        router: L.Routing.osrmv1({
+            serviceUrl: 'https://router.project-osrm.org/route/v1'
+        }),
+        show: false,
+        addWaypoints: false
+    }).addTo(map);
+    
+    setTimeout(() => {
+        map.fitBounds(waypoints, { padding: [50, 50] });
+        map.invalidateSize();
+    }, 300);
+}
+
+async function actualizarRutaYTarifa() {
+    if (originCoords && destCoords) {
+        const tarifaContainer = document.getElementById("tarifaContainer");
+        tarifaContainer.classList.remove("hidden");
+        document.getElementById("tarifaValue").innerHTML = '<div class="loading-spinner"></div> Calculando...';
+        
+        if (routeLine) {
+            if (typeof routeLine.remove === 'function') {
+                routeLine.remove();
+            } else if (routeLine._map) {
+                try { map.removeControl(routeLine); } catch(e) {}
+            }
+            routeLine = null;
+        }
+        
+        // ✅ Guardar los extras actuales antes de recalcular
+        const extrasGuardados = currentRouteData?.extras || null;
+        
+        const tipoEnvio = document.getElementById("tipoEnvio").value || 'paquete';
+        const routeResult = await drawRealRoute(map, originCoords, destCoords, '#FF6200', 5);
+        
+        if (routeResult && routeResult.routeData) {
+            routeLine = routeResult.line;
+            const distance = routeResult.routeData.distance;
+            const duration = routeResult.routeData.duration;
+            const rate = calculateShippingRate(distance, tipoEnvio);
+            
+            // ✅ Crear currentRouteData manteniendo los extras si existían
+            currentRouteData = { 
+                distance: distance, 
+                duration: duration,
+                extras: extrasGuardados || { lluvia: false, noche: false, espera: false }
+            };
+            
+            // ✅ Calcular tarifa base y aplicar extras si existen
+            let tarifaMostrar = rate.total;
+            if (currentRouteData.extras) {
+                if (currentRouteData.extras.lluvia) tarifaMostrar += 10;
+                if (currentRouteData.extras.noche) tarifaMostrar += 10;
+                if (currentRouteData.extras.espera) tarifaMostrar += 10;
+            }
+            
+            document.getElementById("tarifaValue").innerHTML = `$${tarifaMostrar} MXN`;
+            mostrarToast(`📏 Distancia: ${distance.toFixed(2)} km • ⏱️ ${formatDuration(duration)}`);
+            
+        } else {
+            const distance = calcularDistancia();
+            const rate = calculateShippingRate(distance, tipoEnvio);
+            
+            // ✅ Crear currentRouteData manteniendo los extras si existían
+            currentRouteData = { 
+                distance: distance, 
+                duration: distance * 2,
+                extras: extrasGuardados || { lluvia: false, noche: false, espera: false }
+            };
+            
+            let tarifaMostrar = rate.total;
+            if (currentRouteData.extras) {
+                if (currentRouteData.extras.lluvia) tarifaMostrar += 10;
+                if (currentRouteData.extras.noche) tarifaMostrar += 10;
+                if (currentRouteData.extras.espera) tarifaMostrar += 10;
+            }
+            
+            document.getElementById("tarifaValue").innerHTML = `$${tarifaMostrar} MXN (estimado)`;
+            
+            routeLine = L.polyline([
+                [originCoords.lat, originCoords.lng],
+                [destCoords.lat, destCoords.lng]
+            ], { color: '#FF6200', weight: 5, opacity: 0.6, dashArray: '5, 10' }).addTo(map);
+        }
+    }
+}
+
+function calcularDistancia() {
+    const R = 6371;
+    const dLat = (destCoords.lat - originCoords.lat) * Math.PI / 180;
+    const dLon = (destCoords.lng - originCoords.lng) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(originCoords.lat * Math.PI / 180) * Math.cos(destCoords.lat * Math.PI / 180) *
+              Math.sin(dLon/2) * Math.sin(dLon/2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
 
 function reverseGeocode(latlng, callback) {
     fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latlng.lat}&lon=${latlng.lng}&zoom=18`)
@@ -397,108 +313,1445 @@ function reverseGeocode(latlng, callback) {
         .catch(() => callback(`${latlng.lat.toFixed(4)}, ${latlng.lng.toFixed(4)}`));
 }
 
+async function solicitarEnvio() {
+    const origen = document.getElementById("origen").value;
+    const destino = document.getElementById("destino").value;
+    const tipo = document.getElementById("tipoEnvio").value;
+    
+    if (!origen || !destino) {
+        mostrarToast("❌ Selecciona origen y destino", true);
+        return;
+    }
+    
+    // ✅ MEJOR VALIDACIÓN para tipo de envío
+    if (!tipo || tipo === '') {
+        mostrarToast("❌ Por favor, selecciona qué vas a enviar (Comida, Paquete, Mercancía o Farmacia)", true);
+        // Opcional: resaltar el select
+        const selectTipo = document.getElementById("tipoEnvio");
+        selectTipo.style.border = "2px solid #dc2626";
+        setTimeout(() => {
+            selectTipo.style.border = "";
+        }, 2000);
+        return;
+    }
+    
+    let distancia = currentRouteData ? currentRouteData.distance : calcularDistancia();
+    const rate = calculateShippingRate(distancia, tipo);
+    let tarifaBase = rate.total;
+    
+    // Verificar si hay extras guardados del resumen
+    let tarifaFinal = tarifaBase;
+    if (currentRouteData && currentRouteData.extras) {
+        tarifaFinal = tarifaBase;
+        if (currentRouteData.extras.lluvia) tarifaFinal += 10;
+        if (currentRouteData.extras.noche) tarifaFinal += 10;
+        if (currentRouteData.extras.espera) tarifaFinal += 10;
+    }
+    
+    // Guardar pedido temporalmente
+    pedidoPendiente = {
+        id: Date.now(),
+        cliente_id: currentUser.id,
+        cliente_nombre: currentUser.nombre,
+        origen: origen,
+        destino: destino,
+        origen_lat: originCoords.lat,
+        origen_lng: originCoords.lng,
+        destino_lat: destCoords.lat,
+        destino_lng: destCoords.lng,
+        tipo: tipo,
+        distancia_real: distancia.toFixed(2),
+        tarifa: tarifaFinal,
+        extras: currentRouteData?.extras || { lluvia: false, noche: false, espera: false },
+        estado: 'pendiente',
+        fecha: new Date().toISOString()
+    };
+    
+    // Ir directamente al pago
+    document.getElementById("modalPago").classList.remove("hidden");
+    document.getElementById("modalPago").classList.add("flex");
+}
+
+function seleccionarPago(metodo) {
+    cerrarModalPago();
+    
+    if (metodo === 'efectivo') {
+        const total = pedidoPendiente.tarifa;
+        document.getElementById("efectivoTotal").innerHTML = `$${total}`;
+        document.getElementById("montoPaga").value = '';
+        document.getElementById("cambioTotal").innerHTML = '$0';
+        document.getElementById("modalEfectivo").classList.remove("hidden");
+        document.getElementById("modalEfectivo").classList.add("flex");
+    } else if (metodo === 'transferencia') {
+        document.getElementById("transferenciaTotal").innerHTML = `$${pedidoPendiente.tarifa}`;
+        document.getElementById("modalTransferencia").classList.remove("hidden");
+        document.getElementById("modalTransferencia").classList.add("flex");
+    }
+}
+
+function calcularCambio() {
+    const total = pedidoPendiente.tarifa;
+    const paga = parseFloat(document.getElementById("montoPaga").value) || 0;
+    const cambio = paga - total;
+    document.getElementById("cambioTotal").innerHTML = `$${cambio >= 0 ? cambio : 0}`;
+}
+
+async function confirmarPagoEfectivo() {
+    const total = pedidoPendiente.tarifa;
+    const paga = parseFloat(document.getElementById("montoPaga").value) || 0;
+    
+    if (paga < total) {
+        mostrarToast(`❌ El monto es insuficiente. Faltan $${(total - paga).toFixed(2)}`, true);
+        return;
+    }
+    
+    const cambio = paga - total;
+    if (cambio > 0) {
+        mostrarToast(`✅ Cambio a devolver: $${cambio.toFixed(2)}`);
+    }
+    
+    await guardarPedidoEnSupabase();
+    cerrarModalEfectivo();
+}
+
+// ==================== EXTRAS ====================
+let extrasSeleccionados = {
+    lluvia: false,
+    noche: false,
+    espera: false
+};
+
+let tarifaBaseSinExtras = 0;
+
+function calcularTotalConExtras(tarifaBase) {
+    let total = tarifaBase;
+    if (extrasSeleccionados.lluvia) total += 10;
+    if (extrasSeleccionados.noche) total += 10;
+    if (extrasSeleccionados.espera) total += 10;
+    return total;
+}
+
+// ==================== PANEL DE ESTADO DEL PEDIDO (NUEVO) ====================
+function mostrarPanelEstado(pedido) {
+    const panel = document.getElementById("panelEstadoPedido");
+    if (!panel) return;
+    
+    document.getElementById("pedidoIdLabel").innerText = pedido.id;
+    actualizarEstadoPanel(pedido.estado);
+    panel.classList.remove("hidden");
+}
+
+// Reemplazar la función actualizarEstadoPanel por esta:
+function actualizarEstadoPanel(estado, deliveryNombre = null) {
+    const estadoTexto = document.getElementById("estadoTexto");
+    const estadoIcono = document.getElementById("estadoIcono");
+    const estadoDetalle = document.getElementById("estadoDetalle");
+    
+    // También para mobile
+    const estadoTextoMobile = document.getElementById("estadoTextoMobile");
+    const estadoIconoMobile = document.getElementById("estadoIconoMobile");
+    const estadoDetalleMobile = document.getElementById("estadoDetalleMobile");
+    
+    switch(estado) {
+        case 'pendiente':
+            if(estadoTexto) estadoTexto.innerText = "⏳ Pedido pendiente";
+            if(estadoIcono) estadoIcono.className = "fas fa-clock text-yellow-500";
+            if(estadoDetalle) estadoDetalle.innerText = "Esperando a que un delivery tome tu pedido...";
+            
+            if(estadoTextoMobile) estadoTextoMobile.innerText = "⏳ Pedido pendiente";
+            if(estadoIconoMobile) estadoIconoMobile.className = "fas fa-clock text-yellow-500";
+            if(estadoDetalleMobile) estadoDetalleMobile.innerText = "Esperando a que un delivery tome tu pedido...";
+            break;
+            
+        case 'asignado':
+            if(estadoTexto) estadoTexto.innerText = "🚚 En camino a recoger";
+            if(estadoIcono) estadoIcono.className = "fas fa-motorcycle text-orange-500";
+            if(estadoDetalle) estadoDetalle.innerHTML = `🏍️ <strong>${deliveryNombre || 'Delivery'}</strong> ya se dirige a recoger tu paquete.`;
+            
+            if(estadoTextoMobile) estadoTextoMobile.innerText = "🚚 En camino a recoger";
+            if(estadoIconoMobile) estadoIconoMobile.className = "fas fa-motorcycle text-orange-500";
+            if(estadoDetalleMobile) estadoDetalleMobile.innerHTML = `🏍️ <strong>${deliveryNombre || 'Delivery'}</strong> ya se dirige a recoger tu paquete.`;
+            break;
+            
+        case 'recogido':
+            if(estadoTexto) estadoTexto.innerText = "📦 Paquete recogido";
+            if(estadoIcono) estadoIcono.className = "fas fa-box-open text-purple-500";
+            if(estadoDetalle) estadoDetalle.innerHTML = `🏍️ <strong>${deliveryNombre || 'Delivery'}</strong> ya recogió tu paquete y va en camino.`;
+            
+            if(estadoTextoMobile) estadoTextoMobile.innerText = "📦 Paquete recogido";
+            if(estadoIconoMobile) estadoIconoMobile.className = "fas fa-box-open text-purple-500";
+            if(estadoDetalleMobile) estadoDetalleMobile.innerHTML = `🏍️ <strong>${deliveryNombre || 'Delivery'}</strong> ya recogió tu paquete y va en camino.`;
+            break;
+            
+        case 'completado':
+            // Ocultar el panel de estado cuando se completa
+            const panel = document.getElementById("panelEstadoPedido");
+            const panelMobile = document.getElementById("panelEstadoPedidoMobile");
+            if(panel) panel.classList.add("hidden");
+            if(panelMobile) panelMobile.classList.add("hidden");
+            
+            // Limpiar el pedido actual
+            pedidoActual = null;
+            
+            // Detener intervalos
+            if(seguimientoInterval) {
+                clearInterval(seguimientoInterval);
+                seguimientoInterval = null;
+            }
+            if(ubicacionInterval) {
+                clearInterval(ubicacionInterval);
+                ubicacionInterval = null;
+            }
+            
+            // Eliminar marcador del delivery del mapa
+            if(deliveryMarker) {
+                map.removeLayer(deliveryMarker);
+                deliveryMarker = null;
+            }
+            
+            mostrarToast("🎉 ¡Envío completado! Gracias por usar MandaYa");
+            break;
+    }
+}
+
+async function cancelarPedido() {
+    if (!pedidoActual || pedidoActual.estado !== 'pendiente') {
+        mostrarToast("❌ No se puede cancelar este pedido porque ya está en camino o completado", true);
+        return;
+    }
+    
+    mostrarModalConfirmacion(
+        "Cancelar pedido",
+        `¿Estás seguro de cancelar el pedido #${pedidoActual.id}? Esta acción no se puede deshacer.`,
+        async () => {
+            const supabase = supabaseClient;
+            if (!supabase) return;
+            
+            try {
+                const { error } = await supabase
+                    .from('pedidos')
+                    .delete()
+                    .eq('id', pedidoActual.id);
+                
+                if (error) throw error;
+                
+                mostrarToast(`✅ Pedido #${pedidoActual.id} cancelado correctamente`);
+                limpiarYResetearUI();
+                
+            } catch(e) {
+                console.error('Error cancelando pedido:', e);
+                mostrarToast("❌ Error al cancelar el pedido", true);
+            }
+        }
+    );
+}
+
+function limpiarYResetearUI() {
+    // Detener intervalos
+    if (seguimientoInterval) {
+        clearInterval(seguimientoInterval);
+        seguimientoInterval = null;
+    }
+    if (ubicacionInterval) {
+        clearInterval(ubicacionInterval);
+        ubicacionInterval = null;
+    }
+    if (deliverysInterval) {
+        clearInterval(deliverysInterval);
+        deliverysInterval = null;
+    }
+    
+    // Limpiar campos del formulario
+    document.getElementById("origen").value = "";
+    document.getElementById("destino").value = "";
+    document.getElementById("tipoEnvio").value = "";
+    document.getElementById("tarifaContainer").classList.add("hidden");
+    
+    // Restablecer marcadores a posición por defecto
+    if (originMarker && destMarker) {
+        originCoords = { lat: 18.6456, lng: -91.8249 };
+        destCoords = { lat: 18.6556, lng: -91.8149 };
+        originMarker.setLatLng([originCoords.lat, originCoords.lng]);
+        destMarker.setLatLng([destCoords.lat, destCoords.lng]);
+        reverseGeocode(originCoords, (addr) => document.getElementById("origen").value = addr);
+        reverseGeocode(destCoords, (addr) => document.getElementById("destino").value = addr);
+    }
+    
+    // Eliminar ruta y marcador de delivery
+    if (routeLine) {
+        if (typeof routeLine.remove === 'function') routeLine.remove();
+        routeLine = null;
+    }
+    if (deliveryMarker) {
+        map.removeLayer(deliveryMarker);
+        deliveryMarker = null;
+    }
+    
+    // Ocultar panel de estado
+    document.getElementById("panelEstadoPedido").classList.add("hidden");
+    
+    // Resetear variables
+    pedidoActual = null;
+    pedidoPendiente = null;
+    
+    // Reactivar la carga de deliverys en línea
+    if (currentUser && currentUser.rol === 'cliente') {
+        if (deliverysInterval) clearInterval(deliverysInterval);
+        deliverysInterval = setInterval(() => cargarDeliverysEnLinea(), 5000);
+        cargarDeliverysEnLinea();
+    }
+    
+    mostrarToast("🔄 Todo listo. Puedes hacer un nuevo envío.");
+}
+
+// ==================== FUNCIONES DE PEDIDO MODIFICADAS ====================
+async function guardarPedidoEnSupabase() {
+    const supabase = supabaseClient;
+    if (!supabase) {
+        mostrarToast("❌ Error de conexión", true);
+        return;
+    }
+    
+    try {
+        // ✅ Asegurar que extras sea un objeto válido
+        const pedidoAGuardar = {
+            ...pedidoPendiente,
+            extras: pedidoPendiente.extras || { lluvia: false, noche: false, espera: false }
+        };
+        
+        const { error } = await supabase
+            .from('pedidos')
+            .insert([pedidoAGuardar]);
+        
+        if (error) throw error;
+        
+        pedidoActual = pedidoPendiente;
+        
+        cerrarModalPago();
+        cerrarModalEfectivo();
+        cerrarModalTransferencia();
+        
+        mostrarPanelEstado(pedidoActual);
+        
+        mostrarToast(`✅ ¡Envío solicitado! ID: #${pedidoActual.id} - Esperando delivery`);
+        iniciarSeguimientoDelivery();
+        
+    } catch(e) {
+        console.error('Error creando pedido:', e);
+        mostrarToast("❌ Error al crear el pedido: " + (e.message || "Verifica la consola"), true);
+    }
+}
+
+function enviarComprobanteWhatsApp() {
+    if (!pedidoPendiente) {
+        mostrarToast("❌ No hay información del pedido", true);
+        return;
+    }
+    
+    const total = pedidoPendiente.tarifa;
+    const pedidoId = pedidoPendiente.id;
+    
+    // ✅ TU NÚMERO ACTUALIZADO - Formato internacional sin "+" ni espacios
+    const numeroWhatsApp = "5219381083498";  // 52 es México, 9381083498 es tu número
+    
+    // ✅ Mensaje más completo y profesional
+    const mensaje = `🍔 *MANDAYA - NUEVO PEDIDO* 🍔
+    
+📦 *Pedido #${pedidoId}*
+💰 *Total:* $${total} MXN
+
+📝 *Detalles del envío:*
+📍 Origen: ${pedidoPendiente.origen}
+🏁 Destino: ${pedidoPendiente.destino}
+📏 Distancia: ${pedidoPendiente.distancia_real} km
+
+👤 *Cliente:* ${pedidoPendiente.cliente_nombre}
+
+✅ *Comprobante de pago adjunto*
+
+Gracias por usar MandaYa 🙏`;
+
+    // Codificar el mensaje para URL
+    const mensajeCodificado = encodeURIComponent(mensaje);
+    const url = `https://wa.me/${numeroWhatsApp}?text=${mensajeCodificado}`;
+    
+    console.log("📱 Abriendo WhatsApp con mensaje para:", numeroWhatsApp);
+    
+    // Abrir WhatsApp
+    window.open(url, '_blank');
+    
+    // Confirmar pago después de enviar
+    confirmarPagoTransferencia();
+}
+
+async function confirmarPagoTransferencia() {
+    await guardarPedidoEnSupabase();
+    cerrarModalTransferencia();
+    mostrarToast("✅ ¡Pago registrado! Envía tu comprobante por WhatsApp para confirmar.");
+}
+
+function cerrarModalPago() {
+    const modal = document.getElementById("modalPago");
+    modal.classList.add("hidden");
+    modal.classList.remove("flex");
+}
+
+function cerrarModalEfectivo() {
+    const modal = document.getElementById("modalEfectivo");
+    modal.classList.add("hidden");
+    modal.classList.remove("flex");
+}
+
+function cerrarModalTransferencia() {
+    const modal = document.getElementById("modalTransferencia");
+    modal.classList.add("hidden");
+    modal.classList.remove("flex");
+}
+
+function copiarDatosBancarios() {
+    const datos = `BBVA México\nCuenta: 1234 5678 9012 3456\nCLABE: 012 345 6789 01234567 8\nBeneficiario: MandaYa Servicios`;
+    navigator.clipboard.writeText(datos);
+    mostrarToast("✅ Datos bancarios copiados");
+}
+
+// ==================== SEGUIMIENTO DE DELIVERY ====================
+function iniciarSeguimientoDelivery() {
+    if (!pedidoActual || !pedidoActual.id) {
+        console.error("No hay pedido actual para seguir");
+        return;
+    }
+
+    if (seguimientoInterval) {
+        clearInterval(seguimientoInterval);
+        seguimientoInterval = null;
+    }
+    
+    mostrarToast("🟢 Buscando delivery disponible...");
+
+    seguimientoInterval = setInterval(async () => {
+        const supabase = supabaseClient;
+        if (!supabase) return;
+        
+        try {
+            const { data: pedidoActualizado, error } = await supabase
+                .from('pedidos')
+                .select('*')
+                .eq('id', pedidoActual.id)
+                .single();
+            
+            if (error) throw error;
+            
+            if (pedidoActualizado) {
+                pedidoActual = pedidoActualizado;
+                
+                // ✅ Actualizar el panel de estado con el nombre del delivery si está asignado
+                if (pedidoActualizado.estado === 'asignado' && pedidoActualizado.delivery_nombre) {
+                    actualizarEstadoPanel('asignado', pedidoActualizado.delivery_nombre);
+                } else if (pedidoActualizado.estado === 'recogido' && pedidoActualizado.delivery_nombre) {
+                    actualizarEstadoPanel('recogido', pedidoActualizado.delivery_nombre);
+                } else if (pedidoActualizado.estado === 'pendiente') {
+                    actualizarEstadoPanel('pendiente');
+                } else if (pedidoActualizado.estado === 'completado') {
+                    actualizarEstadoPanel('completado');
+                }
+                    
+            }
+            
+            if (pedidoActualizado && (pedidoActualizado.estado === 'asignado' || pedidoActualizado.estado === 'recogido') && pedidoActualizado.delivery_id) {
+                // ✅ Detener el intervalo de búsqueda ya que ya fue asignado
+                clearInterval(seguimientoInterval);
+                seguimientoInterval = null;
+                
+                mostrarToast(`✅ Delivery asignado: ${pedidoActualizado.delivery_nombre || 'Delivery'}`);
+                mostrarDeliveryEnMapa(pedidoActualizado.delivery_id, pedidoActualizado.delivery_nombre);
+                seguirUbicacionDelivery(pedidoActualizado.delivery_id);
+            } 
+            else if (pedidoActualizado && pedidoActualizado.estado === 'completado') {
+                clearInterval(seguimientoInterval);
+                seguimientoInterval = null;
+                // El panel ya se oculta en actualizarEstadoPanel
+            }
+        } catch(e) {
+            console.error('Error en seguimiento:', e);
+        }
+    }, 3000);
+}
+
+function seguirUbicacionDelivery(deliveryId) {
+    if (ubicacionInterval) {
+        clearInterval(ubicacionInterval);
+        ubicacionInterval = null;
+    }
+    
+    ubicacionInterval = setInterval(async () => {
+        let ubicacion = null;
+        
+        if (typeof obtenerUbicacionDeSupabase !== 'undefined') {
+            const supabaseUbicacion = await obtenerUbicacionDeSupabase(deliveryId);
+            if (supabaseUbicacion) {
+                ubicacion = { lat: supabaseUbicacion.lat, lng: supabaseUbicacion.lng };
+                console.log("📍 Ubicación delivery obtenida:", ubicacion);
+            }
+        }
+        
+        let deliveryNombre = 'Delivery';
+        const supabase = supabaseClient;
+        if (supabase && deliveryId && !pedidoActual?.delivery_nombre) {
+            const { data: delivery } = await supabase
+                .from('usuarios')
+                .select('nombre')
+                .eq('id', deliveryId)
+                .single();
+            if (delivery) deliveryNombre = delivery.nombre;
+        } else if (pedidoActual?.delivery_nombre) {
+            deliveryNombre = pedidoActual.delivery_nombre;
+        }
+        
+        if (ubicacion) {
+            if (deliveryMarker) map.removeLayer(deliveryMarker);
+            
+            deliveryMarker = crearMarcadorDelivery(
+                ubicacion.lat, 
+                ubicacion.lng, 
+                deliveryNombre, 
+                '#FF6200'
+            );
+            deliveryMarker.addTo(map);
+            
+            // ✅ Dibujar ruta según el estado del pedido
+            if (pedidoActual) {
+                console.log("📌 Estado pedido:", pedidoActual.estado);
+                
+                if (pedidoActual.estado === 'asignado') {
+                    // Ruta: delivery -> origen (usando origen_lat, origen_lng)
+                    if (pedidoActual.origen_lat && pedidoActual.origen_lng) {
+                        const origenCoords = { lat: pedidoActual.origen_lat, lng: pedidoActual.origen_lng };
+                        console.log("🟢 Dibujando ruta RECOGIDA hacia:", origenCoords);
+                        await dibujarRutaDeliveryEnCliente(ubicacion, origenCoords, 'recogida');
+                        deliveryMarker.bindPopup(`<b>🏍️ ${deliveryNombre}</b><br>🟠 En camino a recoger tu paquete`);
+                    } else {
+                        console.log("❌ No hay coordenadas de origen");
+                    }
+                    
+                } else if (pedidoActual.estado === 'recogido') {
+                    // Ruta: delivery -> destino (usando destino_lat, destino_lng)
+                    if (pedidoActual.destino_lat && pedidoActual.destino_lng) {
+                        const destinoCoords = { lat: pedidoActual.destino_lat, lng: pedidoActual.destino_lng };
+                        console.log("🟠 Dibujando ruta ENTREGA hacia:", destinoCoords);
+                        await dibujarRutaDeliveryEnCliente(ubicacion, destinoCoords, 'entrega');
+                        deliveryMarker.bindPopup(`<b>🏍️ ${deliveryNombre}</b><br>📦 En camino a entregar tu paquete`);
+                    } else {
+                        console.log("❌ No hay coordenadas de destino");
+                    }
+                }
+            }
+            
+            // Mostrar distancia al destino
+            if (pedidoActual && pedidoActual.destino_lat && ubicacion) {
+                const destinoCoords = { lat: pedidoActual.destino_lat, lng: pedidoActual.destino_lng };
+                const distanciaADestino = calcularDistanciaEntrePuntos(ubicacion, destinoCoords);
+                if (distanciaADestino < 0.5) {
+                    document.getElementById("deliveryEstado").innerHTML = "🟢 Muy cerca de tu destino 🎯";
+                } else if (distanciaADestino < 1) {
+                    document.getElementById("deliveryEstado").innerHTML = "🟡 Cerca de tu destino";
+                } else {
+                    document.getElementById("deliveryEstado").innerHTML = `🔴 A ${distanciaADestino.toFixed(1)} km de tu destino`;
+                }
+            }
+        }
+        
+        // ✅ Verificar si el pedido ya fue completado
+        if (supabase && pedidoActual) {
+            const { data: pedidoActualizado } = await supabase
+                .from('pedidos')
+                .select('estado')
+                .eq('id', pedidoActual.id)
+                .single();
+            
+            if (pedidoActualizado?.estado === 'completado') {
+                clearInterval(ubicacionInterval);
+                ubicacionInterval = null;
+                
+                ocultarDeliveryInfo();
+                limpiarRutaCliente();
+                
+                const panel = document.getElementById("panelEstadoPedido");
+                const panelMobile = document.getElementById("panelEstadoPedidoMobile");
+                if(panel) panel.classList.add("hidden");
+                if(panelMobile) panelMobile.classList.add("hidden");
+                
+                if(deliveryMarker) {
+                    map.removeLayer(deliveryMarker);
+                    deliveryMarker = null;
+                }
+                
+                pedidoActual = null;
+                mostrarToast("🎉 ¡Envío completado! Gracias por usar MandaYa");
+            }
+        }
+    }, 2000);
+}
+
+function calcularDistanciaEntrePuntos(punto1, punto2) {
+    const R = 6371;
+    const dLat = (punto2.lat - punto1.lat) * Math.PI / 180;
+    const dLon = (punto2.lng - punto1.lng) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(punto1.lat * Math.PI / 180) * Math.cos(punto2.lat * Math.PI / 180) *
+              Math.sin(dLon/2) * Math.sin(dLon/2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function ocultarDeliveryInfo() {
+    document.getElementById("deliveryInfo").classList.add("hidden");
+    if (deliveryMarker) map.removeLayer(deliveryMarker);
+}
+
+// ==================== HISTORIAL Y PERFIL ====================
+async function mostrarHistorialCompleto() {
+    const supabase = supabaseClient;
+    if (!supabase) {
+        mostrarToast("Error de conexión", true);
+        return;
+    }
+    
+    try {
+        const { data: misPedidos, error } = await supabase
+            .from('pedidos')
+            .select('*')
+            .eq('cliente_id', currentUser?.id)
+            .order('fecha', { ascending: false });
+        
+        if (error) throw error;
+        
+        if (!misPedidos || misPedidos.length === 0) {
+            mostrarToast("📭 No tienes envíos anteriores");
+            return;
+        }
+        
+        let modalExistente = document.getElementById("modalHistorial");
+        if (modalExistente) modalExistente.remove();
+        
+        const modal = document.createElement('div');
+        modal.id = "modalHistorial";
+        modal.className = "fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[10000] p-4";
+        modal.innerHTML = `
+            <div class="bg-gray-800 rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-hidden modal-uber">
+                <div class="flex justify-between items-center pt-6 pb-3 px-6 border-b border-gray-700">
+                    <div>
+                        <i class="fas fa-history text-3xl text-orange-500 mb-1 block"></i>
+                        <h3 class="text-xl font-bold text-white">Mis Envíos</h3>
+                        <p class="text-gray-400 text-xs">Historial completo de tus envíos</p>
+                    </div>
+                    <button onclick="cerrarModalHistorial()" class="text-gray-400 hover:text-white text-2xl transition-all">
+                        <i class="fas fa-times-circle"></i>
+                    </button>
+                </div>
+                
+                <div class="overflow-y-auto max-h-[60vh] p-4 space-y-3">
+                    ${misPedidos.map(p => `
+                        <div class="bg-gray-700 rounded-xl p-4 ${p.estado === 'completado' ? 'border-l-4 border-green-500' : p.estado === 'pendiente' ? 'border-l-4 border-yellow-500' : 'border-l-4 border-blue-500'}">
+                            <div class="flex justify-between items-start mb-2">
+                                <div>
+                                    <span class="font-bold text-orange-400">#${p.id}</span>
+                                    <span class="text-xs ml-2 px-2 py-0.5 rounded-full ${p.estado === 'completado' ? 'bg-green-500/20 text-green-400' : p.estado === 'pendiente' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-blue-500/20 text-blue-400'}">
+                                        ${p.estado === 'completado' ? '✅ Completado' : p.estado === 'pendiente' ? '⏳ Pendiente' : '🚚 En camino'}
+                                    </span>
+                                </div>
+                                <span class="text-xs text-gray-400">${new Date(p.fecha).toLocaleDateString()}</span>
+                            </div>
+                            <p class="text-sm text-gray-300">
+                                <i class="fas fa-circle text-orange-500 text-xs mr-1"></i> ${p.origen}
+                            </p>
+                            <p class="text-sm text-gray-300 mt-1">
+                                <i class="fas fa-square text-blue-500 text-xs mr-1"></i> ${p.destino}
+                            </p>
+                            <div class="flex justify-between items-center mt-3 pt-2 border-t border-gray-600">
+                                <div class="text-sm">
+                                    <span class="text-gray-400">📏 ${p.distancia_real} km</span>
+                                    <span class="text-gray-400 ml-3">💰 $${p.tarifa}</span>
+                                </div>
+                                <button onclick="eliminarEnvio(${p.id})" class="bg-red-500/20 hover:bg-red-500 text-red-400 hover:text-white px-3 py-1 rounded-lg text-sm transition-all">
+                                    <i class="fas fa-trash-alt mr-1"></i> Eliminar
+                                </button>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+                
+                <div class="border-t border-gray-700 p-4">
+                    <div class="flex justify-between text-sm text-gray-400">
+                        <span>Total: ${misPedidos.length}</span>
+                        <span>✅ Completados: ${misPedidos.filter(p => p.estado === 'completado').length}</span>
+                        <span>⏳ Pendientes: ${misPedidos.filter(p => p.estado === 'pendiente').length}</span>
+                        <span>🚚 En camino: ${misPedidos.filter(p => p.estado === 'asignado').length}</span>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+    } catch(e) {
+        console.error('Error cargando historial:', e);
+        mostrarToast("Error al cargar historial", true);
+    }
+}
+
+function cerrarModalHistorial() {
+    const modal = document.getElementById("modalHistorial");
+    if (modal) modal.remove();
+}
+
+async function eliminarEnvio(pedidoId) {
+    const supabase = supabaseClient;
+    if (!supabase) {
+        mostrarToast("Error de conexión", true);
+        return;
+    }
+    
+    const { data: pedido } = await supabase
+        .from('pedidos')
+        .select('*')
+        .eq('id', pedidoId)
+        .single();
+    
+    if (!pedido) {
+        mostrarToast("Envío no encontrado", true);
+        return;
+    }
+    
+    let mensaje = "";
+    if (pedido.estado === 'completado') {
+        mensaje = "Este envío ya está completado. ¿Seguro que quieres eliminarlo del historial?";
+    } else if (pedido.estado === 'asignado') {
+        mensaje = "⚠️ Este envío está en camino. Si lo eliminas, el delivery ya no lo verá. ¿Estás seguro?";
+    } else {
+        mensaje = "¿Estás seguro de que quieres eliminar este envío? Esta acción no se puede deshacer.";
+    }
+    
+    mostrarModalConfirmacion(
+        "Eliminar envío",
+        mensaje,
+        async () => {
+            try {
+                const { error } = await supabase
+                    .from('pedidos')
+                    .delete()
+                    .eq('id', pedidoId);
+                
+                if (error) throw error;
+                
+                mostrarToast(`🗑️ Envío #${pedidoId} eliminado correctamente`);
+                
+                if (document.getElementById("modalHistorial")) {
+                    mostrarHistorialCompleto();
+                }
+            } catch(e) {
+                console.error('Error eliminando:', e);
+                mostrarToast("Error al eliminar el envío", true);
+            }
+        }
+    );
+}
+
+function mostrarModalConfirmacion(titulo, mensaje, onConfirm) {
+    let modalExistente = document.getElementById("modalConfirmacion");
+    if (modalExistente) modalExistente.remove();
+    
+    const modal = document.createElement('div');
+    modal.id = "modalConfirmacion";
+    modal.className = "fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[10000] p-4";
+    modal.innerHTML = `
+        <div class="bg-gray-800 rounded-3xl max-w-sm w-full modal-uber text-center p-6">
+            <div class="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                <i class="fas fa-exclamation-triangle text-3xl text-red-500"></i>
+            </div>
+            <h3 class="text-xl font-bold text-white mb-2">${titulo}</h3>
+            <p class="text-gray-400 text-sm mb-6">${mensaje}</p>
+            <div class="flex gap-3">
+                <button onclick="cerrarModalConfirmacion()" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-2 rounded-xl transition-all">
+                    Cancelar
+                </button>
+                <button id="confirmarBtn" class="flex-1 bg-red-500 hover:bg-red-600 text-white py-2 rounded-xl transition-all">
+                    Eliminar
+                </button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    document.getElementById("confirmarBtn").onclick = () => {
+        cerrarModalConfirmacion();
+        if (onConfirm) onConfirm();
+    };
+}
+
+function cerrarModalConfirmacion() {
+    const modal = document.getElementById("modalConfirmacion");
+    if (modal) modal.remove();
+}
+
+function verHistorial() {
+    mostrarHistorialCompleto();
+}
+
+function verPerfil() {
+    const modalExistente = document.getElementById("modalPerfil");
+    if (modalExistente) modalExistente.remove();
+    
+    const modal = document.createElement('div');
+    modal.id = "modalPerfil";
+    modal.className = "fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[10001] p-4";
+    modal.innerHTML = `
+        <div class="bg-gray-800 rounded-3xl max-w-sm w-full modal-uber">
+            <div class="text-center pt-6 pb-3 border-b border-gray-700">
+                <div class="w-16 h-16 bg-orange-500 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <i class="fas fa-user-circle text-white text-3xl"></i>
+                </div>
+                <h2 class="text-xl font-bold text-white">Mi Perfil</h2>
+                <p class="text-gray-400 text-sm mt-1">Datos de tu cuenta</p>
+            </div>
+            
+            <div class="p-5 space-y-3">
+                <div class="bg-gray-700 rounded-xl p-3 flex items-center gap-3">
+                    <i class="fas fa-user text-orange-500 w-5"></i>
+                    <div class="flex-1">
+                        <div class="text-xs text-gray-400">Nombre</div>
+                        <div class="text-white font-medium">${currentUser?.nombre || 'No disponible'}</div>
+                    </div>
+                </div>
+                
+                <div class="bg-gray-700 rounded-xl p-3 flex items-center gap-3">
+                    <i class="fas fa-envelope text-orange-500 w-5"></i>
+                    <div class="flex-1">
+                        <div class="text-xs text-gray-400">Correo electrónico</div>
+                        <div class="text-white font-medium">${currentUser?.email || 'No disponible'}</div>
+                    </div>
+                </div>
+                
+                <div class="bg-gray-700 rounded-xl p-3 flex items-center gap-3">
+                    <i class="fas fa-tag text-orange-500 w-5"></i>
+                    <div class="flex-1">
+                        <div class="text-xs text-gray-400">Rol</div>
+                        <div class="text-white font-medium">
+                            <span class="bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded-full text-xs">Cliente</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="px-5 pb-5">
+                <button onclick="cerrarModalPerfil()" class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl transition-all">
+                    Cerrar
+                </button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+}
+
+function cerrarModalPerfil() {
+    const modal = document.getElementById("modalPerfil");
+    if (modal) modal.remove();
+}
+
+async function mostrarDeliveryEnMapa(deliveryId, deliveryNombre = null) {
+    const supabase = supabaseClient;
+    if (!supabase) return;
+    
+    try {
+        let nombreDelivery = deliveryNombre;
+        
+        if (!nombreDelivery) {
+            const { data: delivery, error } = await supabase
+                .from('usuarios')
+                .select('nombre')
+                .eq('id', deliveryId)
+                .single();
+            
+            if (!error && delivery) {
+                nombreDelivery = delivery.nombre;
+            }
+        }
+        
+        if (nombreDelivery) {
+            document.getElementById("deliveryInfo").classList.remove("hidden");
+            document.getElementById("deliveryNombre").innerHTML = `<i class="fas fa-motorcycle"></i> ${nombreDelivery}`;
+            
+            // Limpiar ruta anterior
+            limpiarRutaCliente();
+            
+            // ✅ Asegurar que destinoCoords esté disponible en pedidoActual
+            if (pedidoActual && !pedidoActual.destinoCoords && pedidoActual.destino_lat) {
+                pedidoActual.destinoCoords = {
+                    lat: pedidoActual.destino_lat,
+                    lng: pedidoActual.destino_lng
+                };
+            }
+            if (pedidoActual && !pedidoActual.origenCoords && pedidoActual.origen_lat) {
+                pedidoActual.origenCoords = {
+                    lat: pedidoActual.origen_lat,
+                    lng: pedidoActual.origen_lng
+                };
+            }
+        }
+    } catch(e) {
+        console.error('Error mostrando delivery:', e);
+    }
+}
+
+function cerrarSesion() { 
+    mostrarModalConfirmacion(
+        "Cerrar Sesión",
+        "¿Estás seguro de que deseas cerrar sesión?",
+        () => {
+            if(seguimientoInterval) { clearInterval(seguimientoInterval); seguimientoInterval = null;}
+            if(ubicacionInterval) { clearInterval(ubicacionInterval); ubicacionInterval = null;}
+            if(deliverysInterval) { clearInterval(deliverysInterval); deliverysInterval = null; }
+            
+            localStorage.removeItem('sesion_activa'); 
+            window.location.href = "index.html";
+        }
+    );
+}
+
+function mostrarToast(msg, err=false){ 
+    const t=document.createElement('div'); 
+    t.className='toast-message'; 
+    t.style.cssText = `
+        position: fixed;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%) translateY(20px);
+        background: ${err ? 'linear-gradient(135deg, #dc2626, #ef4444)' : 'linear-gradient(135deg, #10b981, #059669)'};
+        color: white;
+        padding: 14px 28px;
+        border-radius: 50px;
+        font-size: 14px;
+        font-weight: 500;
+        z-index: 10000;
+        box-shadow: 0 10px 25px -5px rgba(0,0,0,0.2);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        opacity: 0;
+        transition: all 0.3s ease;
+    `;
+    t.innerHTML = `<i class="fas ${err ? 'fa-exclamation-circle' : 'fa-check-circle'}"></i> ${msg}`;
+    document.body.appendChild(t);
+    
+    setTimeout(() => {
+        t.style.transform = 'translateX(-50%) translateY(0)';
+        t.style.opacity = '1';
+    }, 10);
+    
+    setTimeout(() => {
+        t.style.transform = 'translateX(-50%) translateY(20px)';
+        t.style.opacity = '0';
+        setTimeout(() => t.remove(), 300);
+    }, 3000);
+}
+
+function mostrarResumenRuta() {
+    if (!originCoords || !destCoords) {
+        mostrarToast("❌ Selecciona origen y destino primero", true);
+        return;
+    }
+    
+    const distancia = currentRouteData ? currentRouteData.distance : calcularDistancia();
+    const tipo = document.getElementById("tipoEnvio").value || 'paquete';
+    const rate = calculateShippingRate(distancia, tipo);
+    const duracion = currentRouteData ? currentRouteData.duration : (distancia * 2);
+    
+    // Mostrar loading mientras se obtiene la ruta real
+    mostrarToast("📏 Calculando ruta real...");
+    
+    getRealDistanceAndTime(originCoords, destCoords).then(routeData => {
+        const distanciaKm = routeData ? routeData.distanceKm : distancia.toFixed(2);
+        const duracionTexto = routeData ? routeData.durationText : formatDuration(duracion);
+        
+        mostrarModalResumen(
+            distanciaKm,
+            duracionTexto,
+            rate.total,
+            tipo
+        );
+    }).catch(() => {
+        mostrarModalResumen(
+            distancia.toFixed(2),
+            formatDuration(duracion),
+            rate.total,
+            tipo
+        );
+    });
+}
+
+function mostrarModalResumen(distancia, tiempo, tarifaBase, tipo) {
+    const modalExistente = document.getElementById("modalResumenRuta");
+    if (modalExistente) modalExistente.remove();
+    
+    tarifaBaseSinExtras = tarifaBase;
+    
+    const extrasGuardados = currentRouteData?.extras || { 
+        lluvia: false, 
+        noche: false, 
+        espera: false 
+    };
+    
+    // Calcular total inicial
+    let totalInicial = tarifaBase;
+    if (extrasGuardados.lluvia) totalInicial += 10;
+    if (extrasGuardados.noche) totalInicial += 10;
+    if (extrasGuardados.espera) totalInicial += 10;
+    
+    const modal = document.createElement('div');
+    modal.id = "modalResumenRuta";
+    modal.className = "fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[10001] p-4";
+    modal.innerHTML = `
+        <div class="bg-gray-800 rounded-2xl max-w-sm w-full modal-uber">
+            <div class="text-center pt-4 pb-2 border-b border-gray-700">
+                <div class="w-12 h-12 bg-orange-500 rounded-full flex items-center justify-center mx-auto mb-2">
+                    <i class="fas fa-route text-white text-xl"></i>
+                </div>
+                <h2 class="text-lg font-bold text-white">Resumen de Ruta</h2>
+                <p class="text-gray-400 text-xs mt-1">Detalles de tu envío</p>
+            </div>
+            
+            <div class="p-3 space-y-2">
+                <div class="bg-gray-700 rounded-lg p-2 flex justify-between items-center">
+                    <span class="text-gray-400 text-xs">📍 Distancia real</span>
+                    <span class="text-white font-bold text-sm">${distancia} km</span>
+                </div>
+                <div class="bg-gray-700 rounded-lg p-2 flex justify-between items-center">
+                    <span class="text-gray-400 text-xs">⏱️ Tiempo estimado</span>
+                    <span class="text-white font-bold text-sm">${tiempo}</span>
+                </div>
+                <div class="bg-gray-700 rounded-lg p-2 flex justify-between items-center">
+                    <span class="text-gray-400 text-xs">📦 Tipo de envío</span>
+                    <span class="text-white font-bold text-sm capitalize">${tipo}</span>
+                </div>
+                
+                <!-- Extras horizontales -->
+                <div class="bg-gray-700 rounded-lg p-2">
+                    <div class="text-gray-400 text-xs mb-2 flex items-center gap-1">
+                        <i class="fas fa-plus-circle text-orange-500 text-xs"></i>
+                        Extras (+$10 c/u)
+                    </div>
+                    
+                    <div class="flex flex-wrap gap-2 justify-center">
+                        <!-- Lluvia -->
+                        <div class="flex flex-col items-center bg-gray-600 rounded-lg p-2 w-16 cursor-pointer hover:bg-gray-500 transition-all" 
+                             onclick="toggleExtraEnResumen('lluvia')">
+                            <i class="fas fa-cloud-rain text-blue-400 text-lg mb-0.5"></i>
+                            <span class="text-white text-xs">Lluvia</span>
+                            <span class="text-orange-400 text-xs">+$10</span>
+                            <div id="checkLluviaResumen" class="mt-1 w-4 h-4 rounded-full border-2 ${extrasGuardados.lluvia ? 'bg-orange-500 border-orange-500' : 'border-gray-400'} flex items-center justify-center">
+                                ${extrasGuardados.lluvia ? '<i class="fas fa-check text-white text-[8px]"></i>' : ''}
+                            </div>
+                        </div>
+                        
+                        <!-- Noche -->
+                        <div class="flex flex-col items-center bg-gray-600 rounded-lg p-2 w-16 cursor-pointer hover:bg-gray-500 transition-all" 
+                             onclick="toggleExtraEnResumen('noche')">
+                            <i class="fas fa-moon text-yellow-400 text-lg mb-0.5"></i>
+                            <span class="text-white text-xs">Noche</span>
+                            <span class="text-orange-400 text-xs">+$10</span>
+                            <div id="checkNocheResumen" class="mt-1 w-4 h-4 rounded-full border-2 ${extrasGuardados.noche ? 'bg-orange-500 border-orange-500' : 'border-gray-400'} flex items-center justify-center">
+                                ${extrasGuardados.noche ? '<i class="fas fa-check text-white text-[8px]"></i>' : ''}
+                            </div>
+                        </div>
+                        
+                        <!-- Espera -->
+                        <div class="flex flex-col items-center bg-gray-600 rounded-lg p-2 w-16 cursor-pointer hover:bg-gray-500 transition-all" 
+                             onclick="toggleExtraEnResumen('espera')">
+                            <i class="fas fa-clock text-purple-400 text-lg mb-0.5"></i>
+                            <span class="text-white text-xs">Espera</span>
+                            <span class="text-orange-400 text-xs">+$10</span>
+                            <div id="checkEsperaResumen" class="mt-1 w-4 h-4 rounded-full border-2 ${extrasGuardados.espera ? 'bg-orange-500 border-orange-500' : 'border-gray-400'} flex items-center justify-center">
+                                ${extrasGuardados.espera ? '<i class="fas fa-check text-white text-[8px]"></i>' : ''}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Total a pagar (se actualiza en tiempo real) -->
+                <div class="bg-orange-500 rounded-lg p-2 flex justify-between items-center">
+                    <span class="text-white font-bold text-sm">💰 Total</span>
+                    <span class="text-white font-bold text-lg" id="totalConExtrasResumen">$${totalInicial} MXN</span>
+                </div>
+                
+                <div class="text-center text-[10px] text-gray-400">
+                    <i class="fas fa-info-circle text-[8px]"></i> Los extras se pagan al delivery
+                </div>
+            </div>
+            
+            <div class="px-3 pb-3 flex gap-2">
+                <button onclick="cerrarModalResumen()" 
+                        class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 rounded-lg text-sm transition-all">
+                    Cancelar
+                </button>
+                <button id="btnAceptarExtrasResumen" 
+                        class="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-medium py-2 rounded-lg text-sm transition-all">
+                    ✅ Aceptar
+                </button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // Guardar estado temporal de extras (para selección en el modal)
+    window.extrasTemporales = { ...extrasGuardados };
+    window.tarifaBaseActual = tarifaBase;
+    
+    // Evento para el botón ACEPTAR
+    document.getElementById("btnAceptarExtrasResumen").onclick = () => {
+        confirmarExtrasDesdeResumen();
+    };
+}
+
+function toggleExtraEnResumen(extra) {
+    // Cambiar estado temporal
+    if (!window.extrasTemporales) {
+        window.extrasTemporales = { lluvia: false, noche: false, espera: false };
+    }
+    window.extrasTemporales[extra] = !window.extrasTemporales[extra];
+    
+    // Actualizar visual del check
+    const checkDiv = document.getElementById(`check${extra.charAt(0).toUpperCase() + extra.slice(1)}Resumen`);
+    if (checkDiv) {
+        if (window.extrasTemporales[extra]) {
+            checkDiv.classList.remove('border-gray-400');
+            checkDiv.classList.add('bg-orange-500', 'border-orange-500');
+            checkDiv.innerHTML = '<i class="fas fa-check text-white text-[8px]"></i>';
+        } else {
+            checkDiv.classList.remove('bg-orange-500', 'border-orange-500');
+            checkDiv.classList.add('border-gray-400');
+            checkDiv.innerHTML = '';
+        }
+    }
+    
+    // ✅ ACTUALIZAR EL TOTAL EN TIEMPO REAL
+    let total = window.tarifaBaseActual;
+    if (window.extrasTemporales.lluvia) total += 10;
+    if (window.extrasTemporales.noche) total += 10;
+    if (window.extrasTemporales.espera) total += 10;
+    
+    const totalSpan = document.getElementById("totalConExtrasResumen");
+    if (totalSpan) {
+        totalSpan.innerHTML = `$${total} MXN`;
+        // Pequeña animación
+        totalSpan.style.transform = 'scale(1.05)';
+        setTimeout(() => {
+            totalSpan.style.transform = 'scale(1)';
+        }, 150);
+    }
+    
+    // Efecto visual en la tarjeta
+    const card = document.querySelector(`[onclick="toggleExtraEnResumen('${extra}')"]`);
+    if (card) {
+        card.style.transform = 'scale(0.95)';
+        setTimeout(() => {
+            card.style.transform = 'scale(1)';
+        }, 150);
+    }
+}
+
+function actualizarTotalConExtras() {
+    // Verificar que estamos dentro del modal
+    const checkLluvia = document.getElementById("checkLluviaExtras");
+    const checkNoche = document.getElementById("checkNocheExtras");
+    const checkEspera = document.getElementById("checkEsperaExtras");
+    
+    if (!checkLluvia || !checkNoche || !checkEspera) {
+        return; // No estamos en el modal de extras
+    }
+    
+    let total = tarifaBaseSinExtras;
+    
+    if (checkLluvia.checked) total += 10;
+    if (checkNoche.checked) total += 10;
+    if (checkEspera.checked) total += 10;
+    
+    const totalSpan = document.getElementById("totalConExtras");
+    if (totalSpan) {
+        totalSpan.innerHTML = `$${total} MXN`;
+        
+        // Pequeña animación
+        totalSpan.style.transform = 'scale(1.05)';
+        setTimeout(() => {
+            totalSpan.style.transform = 'scale(1)';
+        }, 150);
+    }
+    
+    return total;
+}
+
+// Función para seleccionar/deseleccionar extras visualmente (sin afectar el total)
+function toggleExtraSeleccion(extra) {
+    // Obtener el estado actual temporal
+    const estadoActual = window.extrasTemporales ? window.extrasTemporales[extra] : false;
+    
+    // Cambiar estado
+    if (!window.extrasTemporales) window.extrasTemporales = { lluvia: false, noche: false, espera: false };
+    window.extrasTemporales[extra] = !estadoActual;
+    
+    // Actualizar visual del checkbox
+    const checkDiv = document.getElementById(`check${extra.charAt(0).toUpperCase() + extra.slice(1)}Resumen`);
+    if (checkDiv) {
+        if (window.extrasTemporales[extra]) {
+            checkDiv.classList.remove('border-gray-400');
+            checkDiv.classList.add('bg-orange-500', 'border-orange-500');
+            checkDiv.innerHTML = '<i class="fas fa-check text-white text-xs"></i>';
+        } else {
+            checkDiv.classList.remove('bg-orange-500', 'border-orange-500');
+            checkDiv.classList.add('border-gray-400');
+            checkDiv.innerHTML = '';
+        }
+    }
+    
+    // Efecto visual de clic
+    const card = document.querySelector(`.extra-card[data-extra="${extra}"]`);
+    if (card) {
+        card.style.transform = 'scale(0.95)';
+        setTimeout(() => {
+            card.style.transform = 'scale(1)';
+        }, 150);
+    }
+}
+
+// Función para confirmar extras SOLO cuando se presiona ACEPTAR
+function confirmarExtrasDesdeResumen() {
+    console.log("✅ Confirmando extras...");
+    
+    // Obtener valores temporales
+    const lluviaSeleccionada = window.extrasTemporales?.lluvia || false;
+    const nocheSeleccionada = window.extrasTemporales?.noche || false;
+    const esperaSeleccionada = window.extrasTemporales?.espera || false;
+    
+    // Actualizar extras globales
+    extrasSeleccionados = {
+        lluvia: lluviaSeleccionada,
+        noche: nocheSeleccionada,
+        espera: esperaSeleccionada
+    };
+    
+    // Calcular total final
+    let totalFinal = tarifaBaseSinExtras;
+    const extrasAplicados = [];
+    
+    if (extrasSeleccionados.lluvia) {
+        totalFinal += 10;
+        extrasAplicados.push("🌧️ Lluvia");
+    }
+    if (extrasSeleccionados.noche) {
+        totalFinal += 10;
+        extrasAplicados.push("🌙 Noche");
+    }
+    if (extrasSeleccionados.espera) {
+        totalFinal += 10;
+        extrasAplicados.push("⏱️ Espera");
+    }
+    
+    // Guardar en currentRouteData
+    if (currentRouteData) {
+        currentRouteData.extras = { ...extrasSeleccionados };
+        currentRouteData.totalConExtras = totalFinal;
+    }
+    
+    // ✅ ACTUALIZAR TARIFA EN PANTALLA PRINCIPAL
+    const tarifaElement = document.getElementById("tarifaValue");
+    if (tarifaElement) {
+        tarifaElement.innerHTML = `$${totalFinal} MXN`;
+    }
+    
+    const tarifaElementMobile = document.getElementById("tarifaValueMobile");
+    if (tarifaElementMobile) {
+        tarifaElementMobile.innerHTML = `$${totalFinal} MXN`;
+    }
+    
+    // Actualizar pedido pendiente
+    if (pedidoPendiente) {
+        pedidoPendiente.tarifa = totalFinal;
+        pedidoPendiente.extras = { ...extrasSeleccionados };
+    }
+    
+    // Mostrar mensaje
+    if (extrasAplicados.length > 0) {
+        mostrarToast(`✅ Extras: ${extrasAplicados.join(", ")} (+$${extrasAplicados.length * 10}) - Total: $${totalFinal}`);
+    } else {
+        mostrarToast(`✅ Total: $${totalFinal} MXN`);
+    }
+    
+    // Cerrar modal
+    cerrarModalResumen();
+    
+}
+
+function confirmarExtrasYPagar() {
+    console.log("🔍 Confirmando extras y procediendo al pago...");
+    
+    // Obtener valores actuales de los checkboxes
+    const checkLluvia = document.getElementById("checkLluviaExtras");
+    const checkNoche = document.getElementById("checkNocheExtras");
+    const checkEspera = document.getElementById("checkEsperaExtras");
+    
+    if (!checkLluvia || !checkNoche || !checkEspera) {
+        console.error("❌ No se encontraron los checkboxes de extras");
+        // Intentar cerrar modal y mostrar error
+        cerrarModalResumen();
+        mostrarToast("❌ Error al leer los extras, intenta de nuevo", true);
+        return;
+    }
+    
+    // Actualizar extras seleccionados
+    const lluviaSeleccionada = checkLluvia.checked;
+    const nocheSeleccionada = checkNoche.checked;
+    const esperaSeleccionada = checkEspera.checked;
+    
+    extrasSeleccionados = {
+        lluvia: lluviaSeleccionada,
+        noche: nocheSeleccionada,
+        espera: esperaSeleccionada
+    };
+    
+    // Calcular total con extras
+    let totalConExtras = tarifaBaseSinExtras;
+    const extrasAplicados = [];
+    
+    if (extrasSeleccionados.lluvia) {
+        totalConExtras += 10;
+        extrasAplicados.push("🌧️ Lluvia");
+    }
+    if (extrasSeleccionados.noche) {
+        totalConExtras += 10;
+        extrasAplicados.push("🌙 Noche");
+    }
+    if (extrasSeleccionados.espera) {
+        totalConExtras += 10;
+        extrasAplicados.push("⏱️ Espera");
+    }
+    
+    console.log("📊 Resumen de tarifa:", {
+        base: tarifaBaseSinExtras,
+        extras: extrasSeleccionados,
+        total: totalConExtras,
+        extrasAplicados: extrasAplicados
+    });
+    
+    // Guardar extras en currentRouteData
+    if (currentRouteData) {
+        currentRouteData.extras = { ...extrasSeleccionados };
+        currentRouteData.totalConExtras = totalConExtras;
+    }
+    
+    // ACTUALIZAR la tarifa en la pantalla principal
+    const tarifaElement = document.getElementById("tarifaValue");
+    if (tarifaElement) {
+        tarifaElement.innerHTML = `$${totalConExtras} MXN`;
+    }
+    
+    // También actualizar versión mobile si existe
+    const tarifaElementMobile = document.getElementById("tarifaValueMobile");
+    if (tarifaElementMobile) {
+        tarifaElementMobile.innerHTML = `$${totalConExtras} MXN`;
+    }
+    
+    // Guardar en pedidoPendiente si existe
+    if (pedidoPendiente) {
+        pedidoPendiente.tarifa = totalConExtras;
+        pedidoPendiente.extras = { ...extrasSeleccionados };
+    }
+    
+    // Mostrar mensaje de confirmación
+    if (extrasAplicados.length > 0) {
+        mostrarToast(`✅ Extras: ${extrasAplicados.join(", ")} (+$${extrasAplicados.length * 10}) - Total: $${totalConExtras}`);
+    } else {
+        mostrarToast(`✅ Total: $${totalConExtras} MXN`);
+    }
+    
+    // Cerrar modal de resumen
+    cerrarModalResumen();
+    
+    // Mostrar modal de pago
+    const modalPago = document.getElementById("modalPago");
+    if (modalPago) {
+        modalPago.classList.remove("hidden");
+        modalPago.classList.add("flex");
+    } else {
+        console.error("❌ No se encontró el modal de pago");
+        mostrarToast("❌ Error al abrir el método de pago", true);
+    }
+}
+
+function cerrarModalResumen() {
+    const modal = document.getElementById("modalResumenRuta");
+    if (modal) modal.remove();
+}
+
+// ==================== BÚSQUEDA DE DIRECCIONES ====================
+let busquedaTimeout = null;
+
 async function buscarDirecciones(query, tipo) {
     if (!query || query.length < 3) {
         document.getElementById(`${tipo}Sugerencias`).classList.add('hidden');
         return;
     }
     
-    let resultados = [];
-    
-    if (usandoMapbox && typeof geocodificarDireccion === 'function') {
-        resultados = await geocodificarDireccion(query);
-    }
-    
-    if (resultados.length === 0) {
-        try {
-            const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query + ', Ciudad del Carmen, Campeche')}&limit=5&addressdetails=1`);
-            const data = await response.json();
-            resultados = data.map(lugar => ({
-                nombre: lugar.display_name.split(',')[0],
-                direccion: lugar.display_name,
-                lat: parseFloat(lugar.lat),
-                lng: parseFloat(lugar.lon)
-            }));
-        } catch(e) {
-            console.error('Error buscando direcciones:', e);
+    try {
+        const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query + ', Ciudad del Carmen, Campeche')}&limit=5&addressdetails=1`);
+        const data = await response.json();
+        
+        const sugerenciasDiv = document.getElementById(`${tipo}Sugerencias`);
+        
+        if (data.length === 0) {
+            sugerenciasDiv.classList.add('hidden');
+            return;
         }
-    }
-    
-    const sugerenciasDiv = document.getElementById(`${tipo}Sugerencias`);
-    
-    if (resultados.length === 0) {
-        sugerenciasDiv.classList.add('hidden');
-        return;
-    }
-    
-    sugerenciasDiv.innerHTML = resultados.map(lugar => `
-        <div class="sugerencia-item p-3 hover:bg-gray-100 cursor-pointer border-b border-gray-100 flex items-start gap-2" 
-             onclick="seleccionarDireccion('${tipo}', ${lugar.lat}, ${lugar.lng}, '${lugar.nombre.replace(/'/g, "\\'")}')">
-            <i class="fas fa-map-marker-alt text-gray-400 mt-0.5 text-xs"></i>
-            <div class="flex-1">
-                <div class="text-sm font-medium text-gray-800">${lugar.nombre}</div>
-                <div class="text-xs text-gray-500">${lugar.direccion.substring(0, 60)}...</div>
+        
+        sugerenciasDiv.innerHTML = data.map(lugar => `
+            <div class="sugerencia-item p-3 hover:bg-gray-100 cursor-pointer border-b border-gray-100 flex items-start gap-2" 
+                 onclick="seleccionarDireccion('${tipo}', ${lugar.lat}, ${lugar.lon}, '${lugar.display_name.replace(/'/g, "\\'")}')">
+                <i class="fas fa-map-marker-alt text-gray-400 mt-0.5 text-xs"></i>
+                <div class="flex-1">
+                    <div class="text-sm font-medium text-gray-800">${lugar.display_name.split(',')[0]}</div>
+                    <div class="text-xs text-gray-500">${lugar.display_name.split(',').slice(1, 3).join(',')}</div>
+                </div>
             </div>
-        </div>
-    `).join('');
-    
-    sugerenciasDiv.classList.remove('hidden');
+        `).join('');
+        
+        sugerenciasDiv.classList.remove('hidden');
+        
+    } catch(e) {
+        console.error('Error buscando direcciones:', e);
+    }
 }
 
-window.seleccionarDireccion = function(tipo, lat, lng, direccion) {
+function seleccionarDireccion(tipo, lat, lng, direccion) {
     const coords = { lat: parseFloat(lat), lng: parseFloat(lng) };
     
     if (coords.lat < 18.58 || coords.lat > 18.70 || coords.lng < -91.88 || coords.lng > -91.75) {
-        window.mostrarToast("❌ Ubicación fuera de Ciudad del Carmen", true);
+        mostrarToast("❌ Ubicación fuera de Ciudad del Carmen", true);
         document.getElementById(`${tipo}Sugerencias`).classList.add('hidden');
         return;
     }
     
-    if (!usandoMapbox) {
-        if (tipo === 'origen') {
-            originMarker.setLatLng([coords.lat, coords.lng]);
-            originCoords = coords;
-            document.getElementById("origen").value = direccion.split(',')[0];
-        } else {
-            destMarker.setLatLng([coords.lat, coords.lng]);
-            destCoords = coords;
-            document.getElementById("destino").value = direccion.split(',')[0];
-        }
+    if (tipo === 'origen') {
+        originMarker.setLatLng([coords.lat, coords.lng]);
+        originCoords = coords;
+        document.getElementById("origen").value = direccion.split(',')[0];
     } else {
-        if (tipo === 'origen') {
-            if (originMarker) originMarker.setLngLat([coords.lng, coords.lat]);
-            originCoords = coords;
-            document.getElementById("origen").value = direccion.split(',')[0];
-        } else {
-            if (destMarker) destMarker.setLngLat([coords.lng, coords.lat]);
-            destCoords = coords;
-            document.getElementById("destino").value = direccion.split(',')[0];
-        }
+        destMarker.setLatLng([coords.lat, coords.lng]);
+        destCoords = coords;
+        document.getElementById("destino").value = direccion.split(',')[0];
     }
     
     document.getElementById(`${tipo}Sugerencias`).classList.add('hidden');
     actualizarRutaYTarifa();
-    window.mostrarToast(`📍 ${tipo === 'origen' ? 'Origen' : 'Destino'} actualizado`);
-};
-
-// ==================== INICIALIZACIÓN ====================
-document.addEventListener('DOMContentLoaded', () => {
-    loadUser();
-    initMap();
-});
-
-window.onload = () => {
-    console.log("Cliente app cargada");
-    if (currentUser && currentUser.rol === 'cliente') {
-        setTimeout(() => cargarDeliverysEnLinea(), 2000);
-        if (deliverysInterval) clearInterval(deliverysInterval);
-        deliverysInterval = setInterval(() => {
-            if (currentUser && currentUser.rol === 'cliente') {
-                cargarDeliverysEnLinea();
-            }
-        }, 15000);
-    }
-};
+    mostrarToast(`📍 ${tipo === 'origen' ? 'Origen' : 'Destino'} actualizado`);
+}
 
 // ==================== VER DELIVERYS EN LÍNEA ====================
 async function cargarDeliverysEnLinea() {
@@ -535,7 +1788,7 @@ async function cargarDeliverysEnLinea() {
         if (!ubicaciones || ubicaciones.length === 0) {
             // No hay deliverys online, limpiar marcadores existentes
             deliverysMarkers.forEach(marker => {
-                try { if (map && marker.remove) marker.remove(); } catch(e) {}
+                try { map.removeLayer(marker); } catch(e) {}
             });
             deliverysMarkers = [];
             console.log("📭 No hay deliverys en línea");
@@ -550,7 +1803,7 @@ async function cargarDeliverysEnLinea() {
         
         // ✅ 6. Limpiar marcadores antiguos
         deliverysMarkers.forEach(marker => {
-            try { if (map && marker.remove) marker.remove(); } catch(e) {}
+            try { map.removeLayer(marker); } catch(e) {}
         });
         deliverysMarkers = [];
         
@@ -584,7 +1837,7 @@ async function cargarDeliverysEnLinea() {
     }
 }
 
-// ==================== FUNCIÓN PARA VERIFICAR PEDIDO ACTIVO DEL DELIVERY ====================
+// ==================== FUNCIÓN FALTANTE ====================
 async function tienePedidoActivo(deliveryId) {
     const supabase = supabaseClient;
     if (!supabase) return false;
@@ -605,280 +1858,59 @@ async function tienePedidoActivo(deliveryId) {
     }
 }
 
-// ==================== FUNCIÓN LIMPIAR Y RESETEAR UI ====================
-function limpiarYResetearUI() {
-    pedidoActual = null;
-    const panelEstado = document.getElementById("panelEstadoPedido");
-    const panelEstadoMobile = document.getElementById("panelEstadoPedidoMobile");
+// ==================== EVENT LISTENERS ====================
+document.addEventListener('DOMContentLoaded', () => {
+    const origenInput = document.getElementById('origen');
+    const destinoInput = document.getElementById('destino');
+    const btnCancelarPedido = document.getElementById('btnCancelarPedido');
     
-    if (panelEstado) panelEstado.classList.add("hidden");
-    if (panelEstadoMobile) panelEstadoMobile.classList.add("hidden");
+    if (btnCancelarPedido) {
+        btnCancelarPedido.addEventListener('click', cancelarPedido);
+    }
     
-    document.getElementById("pedidoIdLabel").innerText = "---";
-    document.getElementById("pedidoIdLabelMobile").innerText = "---";
-}
+    if (origenInput) {
+        origenInput.addEventListener('input', (e) => {
+            if (busquedaTimeout) clearTimeout(busquedaTimeout);
+            busquedaTimeout = setTimeout(() => {
+                buscarDirecciones(e.target.value, 'origen');
+            }, 500);
+        });
+        
+        origenInput.addEventListener('blur', () => {
+            setTimeout(() => {
+                document.getElementById('origenSugerencias')?.classList.add('hidden');
+            }, 200);
+        });
+    }
+    
+    if (destinoInput) {
+        destinoInput.addEventListener('input', (e) => {
+            if (busquedaTimeout) clearTimeout(busquedaTimeout);
+            busquedaTimeout = setTimeout(() => {
+                buscarDirecciones(e.target.value, 'destino');
+            }, 500);
+        });
+        
+        destinoInput.addEventListener('blur', () => {
+            setTimeout(() => {
+                document.getElementById('destinoSugerencias')?.classList.add('hidden');
+            }, 200);
+        });
+    }
+});
 
-// ==================== FUNCIÓN CANCELAR PEDIDO ====================
-async function cancelarPedido() {
-    if (!pedidoActual || pedidoActual.estado !== 'pendiente') {
-        window.mostrarToast("❌ No se puede cancelar este pedido porque ya está en camino o completado", true);
-        return;
-    }
-    
-    const confirmar = confirm(`Cancelar pedido\n\n¿Estás seguro de cancelar el pedido #${pedidoActual.id}? Esta acción no se puede deshacer.`);
-    
-    if (!confirmar) return;
-    
-    const supabase = supabaseClient;
-    if (!supabase) {
-        window.mostrarToast("❌ Error de conexión", true);
-        return;
-    }
-    
-    try {
-        const { error } = await supabase
-            .from('pedidos')
-            .delete()
-            .eq('id', pedidoActual.id);
+window.onload = () => { 
+    loadUser(); 
+    initMap();
+    if (currentUser && currentUser.rol === 'cliente') {
+        setTimeout(() => cargarDeliverysEnLinea(), 2000);
         
-        if (error) throw error;
+        if (deliverysInterval) clearInterval(deliverysInterval);
         
-        window.mostrarToast(`✅ Pedido #${pedidoActual.id} cancelado correctamente`);
-        limpiarYResetearUI();
-        
-    } catch(e) {
-        console.error('Error cancelando pedido:', e);
-        window.mostrarToast("❌ Error al cancelar el pedido", true);
-    }
-}
-
-// ==================== ACTUALIZAR RUTA Y TARIFA ====================
-async function actualizarRutaYTarifa() {
-    if (originCoords && destCoords) {
-        const tarifaContainer = document.getElementById("tarifaContainer");
-        if (tarifaContainer) tarifaContainer.classList.remove("hidden");
-        
-        const tarifaValueSpan = document.getElementById("tarifaValue");
-        if (tarifaValueSpan) tarifaValueSpan.innerHTML = '<div class="loading-spinner"></div> Calculando...';
-        
-        if (routeLine) {
-            if (typeof routeLine.remove === 'function') {
-                routeLine.remove();
-            } else if (routeLine._map) {
-                try { map.removeControl(routeLine); } catch(e) {}
+        deliverysInterval = setInterval(() => {
+            if (currentUser && currentUser.rol === 'cliente') {
+                cargarDeliverysEnLinea();
             }
-            routeLine = null;
-        }
-        
-        const extrasGuardados = currentRouteData?.extras || null;
-        const tipoEnvio = document.getElementById("tipoEnvio")?.value || 'paquete';
-        
-        let routeResult = null;
-        
-        if (!usandoMapbox) {
-            routeResult = await drawRealRoute(map, originCoords, destCoords, '#FF6200', 5);
-        } else {
-            try {
-                const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${originCoords.lng},${originCoords.lat};${destCoords.lng},${destCoords.lat}?geometries=geojson&access_token=${MAPBOX_TOKEN}`;
-                const response = await fetch(url);
-                const data = await response.json();
-                
-                if (data.routes && data.routes[0]) {
-                    const route = data.routes[0];
-                    const distance = route.distance / 1000;
-                    const duration = route.duration / 60;
-                    
-                    if (mapboxMap && mapboxMap.getSource('route')) {
-                        if (mapboxMap.getLayer('route')) mapboxMap.removeLayer('route');
-                        mapboxMap.removeSource('route');
-                    }
-                    
-                    if (mapboxMap) {
-                        const geojson = { type: 'Feature', geometry: route.geometry };
-                        mapboxMap.addSource('route', { type: 'geojson', data: geojson });
-                        mapboxMap.addLayer({
-                            id: 'route',
-                            type: 'line',
-                            source: 'route',
-                            paint: { 'line-color': '#FF6200', 'line-width': 5, 'line-opacity': 0.8 }
-                        });
-                    }
-                    
-                    routeResult = { routeData: { distance, duration } };
-                }
-            } catch(e) {
-                console.error("Error en ruta Mapbox:", e);
-            }
-        }
-        
-        if (routeResult && routeResult.routeData) {
-            if (!usandoMapbox) routeLine = routeResult.line;
-            const distance = routeResult.routeData.distance;
-            const duration = routeResult.routeData.duration;
-            const rate = calculateShippingRate(distance, tipoEnvio);
-            
-            currentRouteData = { 
-                distance: distance, 
-                duration: duration,
-                extras: extrasGuardados || { lluvia: false, noche: false, espera: false }
-            };
-            
-            let tarifaMostrar = rate.total;
-            if (currentRouteData.extras) {
-                if (currentRouteData.extras.lluvia) tarifaMostrar += 10;
-                if (currentRouteData.extras.noche) tarifaMostrar += 10;
-                if (currentRouteData.extras.espera) tarifaMostrar += 10;
-            }
-            
-            const tarifaSpan = document.getElementById("tarifaValue");
-            if (tarifaSpan) tarifaSpan.innerHTML = `$${tarifaMostrar} MXN`;
-            
-            const tarifaSpanMobile = document.getElementById("tarifaValueMobile");
-            if (tarifaSpanMobile) tarifaSpanMobile.innerHTML = `$${tarifaMostrar} MXN`;
-            
-            window.mostrarToast(`📏 Distancia: ${distance.toFixed(2)} km • ⏱️ ${formatDuration(duration)}`);
-            
-        } else {
-            const distance = calcularDistancia();
-            const rate = calculateShippingRate(distance, tipoEnvio);
-            
-            currentRouteData = { 
-                distance: distance, 
-                duration: distance * 2,
-                extras: extrasGuardados || { lluvia: false, noche: false, espera: false }
-            };
-            
-            let tarifaMostrar = rate.total;
-            if (currentRouteData.extras) {
-                if (currentRouteData.extras.lluvia) tarifaMostrar += 10;
-                if (currentRouteData.extras.noche) tarifaMostrar += 10;
-                if (currentRouteData.extras.espera) tarifaMostrar += 10;
-            }
-            
-            const tarifaSpan = document.getElementById("tarifaValue");
-            if (tarifaSpan) tarifaSpan.innerHTML = `$${tarifaMostrar} MXN (estimado)`;
-            
-            const tarifaSpanMobile = document.getElementById("tarifaValueMobile");
-            if (tarifaSpanMobile) tarifaSpanMobile.innerHTML = `$${tarifaMostrar} MXN`;
-            
-            if (!usandoMapbox && map) {
-                routeLine = L.polyline([
-                    [originCoords.lat, originCoords.lng],
-                    [destCoords.lat, destCoords.lng]
-                ], { color: '#FF6200', weight: 5, opacity: 0.6, dashArray: '5, 10' }).addTo(map);
-            }
-        }
+        }, 15000); // 15 segundos
     }
-}
-
-// ==================== LIMPIAR RUTA CLIENTE ====================
-function limpiarRutaCliente() {
-    if (clienteRouteControl) {
-        try { 
-            if (!usandoMapbox && map && map.removeControl) {
-                map.removeControl(clienteRouteControl);
-            }
-        } catch(e) {}
-        clienteRouteControl = null;
-    }
-    
-    if (usandoMapbox && mapboxMap) {
-        try {
-            if (mapboxMap.getLayer('route')) mapboxMap.removeLayer('route');
-            if (mapboxMap.getSource('route')) mapboxMap.removeSource('route');
-        } catch(e) {}
-    }
-}
-
-// ==================== DIBUJAR RUTA DEL DELIVERY EN CLIENTE ====================
-async function dibujarRutaDeliveryEnCliente(ubicacionDelivery, destinoCoords, tipo) {
-    if (!ubicacionDelivery || !destinoCoords) {
-        console.log("❌ Faltan coordenadas para dibujar ruta:", { ubicacionDelivery, destinoCoords });
-        return;
-    }
-    
-    limpiarRutaCliente();
-    
-    if (!usandoMapbox) {
-        let waypoints = [];
-        let color = '#FF6200';
-        
-        if (tipo === 'recogida') {
-            waypoints = [
-                L.latLng(ubicacionDelivery.lat, ubicacionDelivery.lng),
-                L.latLng(destinoCoords.lat, destinoCoords.lng)
-            ];
-            color = '#10B981';
-        } else if (tipo === 'entrega') {
-            waypoints = [
-                L.latLng(ubicacionDelivery.lat, ubicacionDelivery.lng),
-                L.latLng(destinoCoords.lat, destinoCoords.lng)
-            ];
-            color = '#FF6200';
-        }
-        
-        clienteRouteControl = L.Routing.control({
-            waypoints: waypoints,
-            routeWhileDragging: false,
-            showAlternatives: false,
-            fitSelectedRoutes: true,
-            lineOptions: {
-                styles: [{ color: color, weight: 4, opacity: 0.8 }]
-            },
-            router: L.Routing.osrmv1({
-                serviceUrl: 'https://router.project-osrm.org/route/v1'
-            }),
-            show: false,
-            addWaypoints: false
-        }).addTo(map);
-        
-        setTimeout(() => {
-            map.fitBounds(waypoints, { padding: [50, 50] });
-            map.invalidateSize();
-        }, 300);
-    } else {
-        try {
-            const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${ubicacionDelivery.lng},${ubicacionDelivery.lat};${destinoCoords.lng},${destinoCoords.lat}?geometries=geojson&access_token=${MAPBOX_TOKEN}`;
-            const response = await fetch(url);
-            const data = await response.json();
-            
-            if (data.routes && data.routes[0] && mapboxMap) {
-                const geojson = {
-                    type: 'Feature',
-                    geometry: data.routes[0].geometry
-                };
-                
-                if (mapboxMap.getSource('route')) {
-                    if (mapboxMap.getLayer('route')) mapboxMap.removeLayer('route');
-                    mapboxMap.removeSource('route');
-                }
-                
-                mapboxMap.addSource('route', { type: 'geojson', data: geojson });
-                mapboxMap.addLayer({
-                    id: 'route',
-                    type: 'line',
-                    source: 'route',
-                    paint: {
-                        'line-color': tipo === 'recogida' ? '#10B981' : '#FF6200',
-                        'line-width': 4,
-                        'line-opacity': 0.8
-                    }
-                });
-                
-                const bounds = new mapboxgl.LngLatBounds()
-                    .extend([ubicacionDelivery.lng, ubicacionDelivery.lat])
-                    .extend([destinoCoords.lng, destinoCoords.lat]);
-                mapboxMap.fitBounds(bounds, { padding: 50 });
-            }
-        } catch(e) {
-            console.error("Error dibujando ruta con Mapbox:", e);
-        }
-    }
-}
-
-// ==================== EXPONER FUNCIONES GLOBALES ====================
-window.actualizarRutaYTarifa = actualizarRutaYTarifa;
-window.cancelarPedido = cancelarPedido;
-window.cargarDeliverysEnLinea = cargarDeliverysEnLinea;
-window.dibujarRutaDeliveryEnCliente = dibujarRutaDeliveryEnCliente;
-window.limpiarRutaCliente = limpiarRutaCliente;
+};

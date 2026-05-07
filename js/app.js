@@ -1,10 +1,8 @@
-import { loginSupabase, registrarUsuarioSupabase } from './config.js';
-
 // ==================== VARIABLES GLOBALES ====================
 let rolSeleccionado = 'cliente';
 
 // ==================== FUNCIONES DE UTILIDAD ====================
-window.mostrarToast = function(mensaje, esError = false) {
+function mostrarToast(mensaje, esError = false) {
     const toast = document.createElement('div');
     toast.className = 'toast-message';
     toast.style.cssText = `
@@ -23,9 +21,9 @@ window.mostrarToast = function(mensaje, esError = false) {
     toast.textContent = mensaje;
     document.body.appendChild(toast);
     setTimeout(() => toast.remove(), 2500);
-};
+}
 
-window.togglePassword = function() {
+function togglePassword() {
     const password = document.getElementById("password");
     const eyeIcon = document.getElementById("eyeIcon");
     if (password.type === "password") {
@@ -35,7 +33,7 @@ window.togglePassword = function() {
         password.type = "password";
         eyeIcon.classList.replace("fa-eye-slash", "fa-eye");
     }
-};
+}
 
 // ==================== LOGIN con Supabase ====================
 document.getElementById("loginForm").addEventListener("submit", async function(e) {
@@ -43,16 +41,17 @@ document.getElementById("loginForm").addEventListener("submit", async function(e
     const email = document.getElementById("email").value.trim();
     const password = document.getElementById("password").value;
     
-    window.mostrarToast("🔐 Verificando credenciales...");
+    mostrarToast("🔐 Verificando credenciales...");
     
     const resultado = await loginSupabase(email, password);
     
     if (resultado.error) {
-        window.mostrarToast(`❌ ${resultado.error}`, true);
+        mostrarToast(`❌ ${resultado.error}`, true);
     } else {
         const usuario = resultado.data;
-        window.mostrarToast(`✅ ¡Bienvenido ${usuario.nombre}!`);
+        mostrarToast(`✅ ¡Bienvenido ${usuario.nombre}!`);
         
+        // Guardar sesión activa
         localStorage.setItem('sesion_activa', JSON.stringify(usuario));
         
         setTimeout(() => {
@@ -65,21 +64,21 @@ document.getElementById("loginForm").addEventListener("submit", async function(e
     }
 });
 
-// ==================== REGISTRO ====================
-window.mostrarOpcionesRegistro = function() {
+// ==================== REGISTRO con Supabase ====================
+function mostrarOpcionesRegistro() {
     document.getElementById("modalRegistro").classList.remove("hidden");
     document.getElementById("modalRegistro").classList.add("flex");
-};
+}
 
-window.cerrarModal = function() {
+function cerrarModal() {
     const modal = document.getElementById("modalRegistro");
     modal.classList.add("hidden");
     modal.classList.remove("flex");
-};
+}
 
-window.abrirFormularioRegistro = function(rol) {
+function abrirFormularioRegistro(rol) {
     rolSeleccionado = rol;
-    window.cerrarModal();
+    cerrarModal();
     const modalForm = document.getElementById("modalFormRegistro");
     const title = document.getElementById("registroTitle");
     const subtitle = document.getElementById("registroSubtitle");
@@ -93,9 +92,9 @@ window.abrirFormularioRegistro = function(rol) {
     }
     modalForm.classList.remove("hidden");
     modalForm.classList.add("flex");
-};
+}
 
-window.cerrarModalRegistroForm = function() {
+function cerrarModalRegistroForm() {
     const modalForm = document.getElementById("modalFormRegistro");
     modalForm.classList.add("hidden");
     modalForm.classList.remove("flex");
@@ -104,7 +103,7 @@ window.cerrarModalRegistroForm = function() {
     document.getElementById("regTelefono").value = '';
     document.getElementById("regPassword").value = '';
     document.getElementById("regConfirmPassword").value = '';
-};
+}
 
 const registroForm = document.getElementById("registroForm");
 if (registroForm) {
@@ -118,28 +117,29 @@ if (registroForm) {
         const confirmPassword = document.getElementById("regConfirmPassword").value;
         
         if (!nombre || !email || !telefono || !password) {
-            window.mostrarToast("❌ Completa todos los campos", true);
+            mostrarToast("❌ Completa todos los campos", true);
             return;
         }
         if (password !== confirmPassword) {
-            window.mostrarToast("❌ Las contraseñas no coinciden", true);
+            mostrarToast("❌ Las contraseñas no coinciden", true);
             return;
         }
         if (password.length < 4) {
-            window.mostrarToast("❌ La contraseña debe tener al menos 4 caracteres", true);
+            mostrarToast("❌ La contraseña debe tener al menos 4 caracteres", true);
             return;
         }
         
-        window.mostrarToast("📝 Creando cuenta...");
+        mostrarToast("📝 Creando cuenta...");
         
         const resultado = await registrarUsuarioSupabase(nombre, email, telefono, password, rolSeleccionado);
         
         if (resultado.error) {
-            window.mostrarToast(`❌ ${resultado.error}`, true);
+            mostrarToast(`❌ ${resultado.error}`, true);
         } else {
-            window.mostrarToast(`✅ ¡Registro exitoso! Ahora inicia sesión con ${email}`);
-            window.cerrarModalRegistroForm();
+            mostrarToast(`✅ ¡Registro exitoso! Ahora inicia sesión con ${email}`);
+            cerrarModalRegistroForm();
             
+            // ✅ REDIRIGIR AL INDEX PARA QUE INICIE SESIÓN
             setTimeout(() => {
                 window.location.href = "index.html";
             }, 2000);
@@ -151,13 +151,13 @@ if (registroForm) {
 const modalRegistroElement = document.getElementById("modalRegistro");
 if (modalRegistroElement) {
     modalRegistroElement.addEventListener("click", function(e) {
-        if (e.target === this) window.cerrarModal();
+        if (e.target === this) cerrarModal();
     });
 }
 
 const modalFormRegistroElement = document.getElementById("modalFormRegistro");
 if (modalFormRegistroElement) {
     modalFormRegistroElement.addEventListener("click", function(e) {
-        if (e.target === this) window.cerrarModalRegistroForm();
+        if (e.target === this) cerrarModalRegistroForm();
     });
 }

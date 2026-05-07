@@ -8,21 +8,10 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     
-    <!-- Mapbox GL JS -->
-    <link href="https://api.mapbox.com/mapbox-gl-js/v3.5.0/mapbox-gl.css" rel="stylesheet">
-    <script src="https://api.mapbox.com/mapbox-gl-js/v3.5.0/mapbox-gl.js"></script>
-    
-    <!-- Mapbox GL Directions -->
-    <script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-directions/v4.1.0/mapbox-gl-directions.js"></script>
-    <link href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-directions/v4.1.0/mapbox-gl-directions.css" rel="stylesheet">
-    
-    <!-- Mapbox GL Geocoder -->
-    <script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.0/mapbox-gl-geocoder.min.js"></script>
-    <link href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.0/mapbox-gl-geocoder.css" rel="stylesheet">
-    
-    <!-- Leaflet (solo para compatibilidad con código existente) -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <!-- Leaflet Routing Machine -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
     <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
 
@@ -50,22 +39,6 @@
             height: 100vh; 
             width: 100%; 
             z-index: 1;
-        }
-        
-        /* Estilos para Mapbox */
-        .mapboxgl-map {
-            border-radius: 0;
-        }
-        
-        .mapboxgl-ctrl-geocoder {
-            min-width: 200px;
-            font-size: 14px;
-        }
-        
-        @media (max-width: 768px) {
-            .mapboxgl-ctrl-geocoder {
-                min-width: 150px;
-            }
         }
         
         .toast-message {
@@ -185,13 +158,6 @@
             background-color: #f3f4f6;
         }
 
-        /* Para los marcadores personalizados de delivery */
-        .delivery-marker {
-            background: transparent;
-            border: none;
-            cursor: pointer;
-        }
-
         /* Forzar sidebar desktop en PC sin romper móvil */
         @media (min-width: 1024px) {
             body {
@@ -235,6 +201,10 @@
         
         #modalHistorial, #modalConfirmacion {
             z-index: 10000 !important;
+        }
+        
+        .leaflet-control-container {
+            z-index: 10;
         }
         
         /* Responsive ajustes */
@@ -349,6 +319,7 @@
                         <i class="fas fa-circle text-[#FF6200] text-sm"></i>
                         <input type="text" id="origen" class="bg-transparent flex-1 outline-none text-sm" placeholder="Buscar dirección o arrastra el marcador" autocomplete="off">
                     </div>
+                    <!-- Sugerencias para origen -->
                     <div id="origenSugerencias" class="hidden bg-white border border-gray-200 rounded-xl mt-1 max-h-48 overflow-auto shadow-lg z-50"></div>
                 </div>
                 
@@ -358,6 +329,7 @@
                         <i class="fas fa-square text-blue-600 text-sm"></i>
                         <input type="text" id="destino" class="bg-transparent flex-1 outline-none text-sm" placeholder="Buscar dirección o arrastra el marcador" autocomplete="off">
                     </div>
+                    <!-- Sugerencias para destino -->
                     <div id="destinoSugerencias" class="hidden bg-white border border-gray-200 rounded-xl mt-1 max-h-48 overflow-auto shadow-lg z-50"></div>
                 </div>
                 
@@ -633,10 +605,10 @@
                 <div>
                     <label class="text-xs text-gray-600 font-medium mb-2 block">📦 Tipo de envío</label>
                    <div class="grid grid-cols-2 gap-2">
-                          <button type="button" onclick="seleccionarTipoMobile('comida', '🍔 Comida')" class="tipo-mobile-btn bg-gray-100 text-gray-800 px-3 py-2 rounded-lg text-sm">🍔 Comida</button>
-                          <button type="button" onclick="seleccionarTipoMobile('paquete', '📦 Paquete')" class="tipo-mobile-btn bg-gray-100 text-gray-800 px-3 py-2 rounded-lg text-sm">📦 Paquete</button>
-                          <button type="button" onclick="seleccionarTipoMobile('mercancia', '📦 Mercancía')" class="tipo-mobile-btn bg-gray-100 text-gray-800 px-3 py-2 rounded-lg text-sm">📦 Mercancía</button>
-                          <button type="button" onclick="seleccionarTipoMobile('farmacia', '💊 Farmacia')" class="tipo-mobile-btn bg-gray-100 text-gray-800 px-3 py-2 rounded-lg text-sm">💊 Farmacia</button>
+                          <button type="button" onclick="seleccionarTipoMobile('comida', '🍔 Comida')" class="tipo-mobile-btn ...">🍔 Comida</button>
+                          <button type="button" onclick="seleccionarTipoMobile('paquete', '📦 Paquete')" class="tipo-mobile-btn ...">📦 Paquete</button>
+                          <button type="button" onclick="seleccionarTipoMobile('mercancia', '📦 Mercancía')" class="tipo-mobile-btn ...">📦 Mercancía</button>
+                          <button type="button" onclick="seleccionarTipoMobile('farmacia', '💊 Farmacia')" class="tipo-mobile-btn ...">💊 Farmacia</button>
                     </div>
                     <input type="hidden" id="tipoEnvioMobile" value="">
                     <div id="tipoSeleccionadoMobile" class="text-xs text-green-600 mt-2 hidden">
@@ -676,9 +648,9 @@
         </div>
     </div>
 
-    <script type="module" src="js/config.js"></script>
-    <script type="module" src="js/map-utils.js"></script>
-    <script type="module" src="js/cliente.js"></script>
+    <script src="js/map-utils.js"></script>
+    <script src="js/config.js"></script>
+    <script src="js/cliente.js"></script>
     
     <script>
         let mobileSidebarOpen = true;
@@ -709,9 +681,14 @@
     if (origenDesktop && origenMobile) origenMobile.value = origenDesktop.value;
     if (destinoDesktop && destinoMobile) destinoMobile.value = destinoDesktop.value;
     
+    // ✅ CORREGIR: No forzar el valor del tipo de envío de escritorio desde móvil
+    // Solo sincronizar de escritorio a móvil, no al revés
     if (tipoEnvio && tipoEnvioMobile) {
+        // Solo actualizar móvil si el valor de escritorio cambió
         if (tipoEnvio.value !== tipoEnvioMobile.value) {
             tipoEnvioMobile.value = tipoEnvio.value;
+            
+            // Actualizar el texto del botón seleccionado en móvil
             const textoSeleccionado = tipoEnvio.options[tipoEnvio.selectedIndex]?.text || '';
             const mensajeDiv = document.getElementById('tipoSeleccionadoMobile');
             if (mensajeDiv && textoSeleccionado) {
@@ -744,8 +721,10 @@
                return;
            }
            
+           // ✅ MEJOR VALIDACIÓN para móvil
            if (!tipoMobile || tipoMobile === '') {
                mostrarToast("❌ Selecciona el tipo de envío (Comida, Paquete, etc.)", true);
+               // Resaltar los botones de tipo
                document.querySelectorAll('.tipo-mobile-btn').forEach(btn => {
                    btn.style.animation = 'shake 0.5s ease';
                    setTimeout(() => {
@@ -762,6 +741,7 @@
            solicitarEnvio();
        }
        
+       // Agregar animación shake para errores
        const style = document.createElement('style');
        style.textContent = `
            @keyframes shake {
@@ -773,6 +753,7 @@
        document.head.appendChild(style);
         
       function seleccionarTipoMobile(valor, texto) {
+    // Actualizar ambos selects
     const tipoDesktop = document.getElementById('tipoEnvio');
     const tipoMobile = document.getElementById('tipoEnvioMobile');
     const mensajeDiv = document.getElementById('tipoSeleccionadoMobile');
@@ -780,6 +761,7 @@
     if (tipoDesktop) tipoDesktop.value = valor;
     if (tipoMobile) tipoMobile.value = valor;
     
+    // Mostrar confirmación
     if (mensajeDiv) {
         mensajeDiv.innerHTML = `✅ ${texto} seleccionado`;
         mensajeDiv.classList.remove('hidden');
@@ -788,11 +770,13 @@
         }, 2000);
     }
     
+    // Cambiar estilo de los botones
     document.querySelectorAll('.tipo-mobile-btn').forEach(btn => {
         btn.classList.remove('bg-orange-500', 'text-white');
         btn.classList.add('bg-gray-100', 'text-gray-800');
     });
     
+    // Resaltar el botón clickeado
     const botones = document.querySelectorAll('.tipo-mobile-btn');
     for (let btn of botones) {
         if (btn.textContent.includes(texto.split(' ')[0])) {
@@ -805,12 +789,7 @@
     console.log(`✅ Tipo seleccionado: ${valor} - ${texto}`);
 }
         function centrarMapa() {
-            if (typeof map !== 'undefined' && map) {
-                map.setView([18.6456, -91.8249], 13);
-            } else if (typeof mapboxMap !== 'undefined' && mapboxMap) {
-                mapboxMap.setCenter([-91.8249, 18.6456]);
-                mapboxMap.setZoom(13);
-            }
+            if (map) map.setView([18.6456, -91.8249], 13);
             mostrarToast("📍 Mapa centrado en Ciudad del Carmen");
         }
         

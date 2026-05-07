@@ -1,42 +1,70 @@
-// ==================== FUNCIONES ORIGINALES DE LEAFLET ====================
-export function getMotoIcon() {
+// Utilidades para mapas y rutas
+
+function getMotoIcon() {
     return L.divIcon({
-        html: '<div style="background:#FF6200; width:32px; height:32px; border-radius:50%; border:2px solid white;"><i class="fas fa-motorcycle" style="color:white; font-size:16px;"></i></div>',
+        html: '<div style="background:#FF6200; width:32px; height:32px; border-radius:50%; border:2px solid white; box-shadow:0 2px 5px rgba(0,0,0,0.3); display:flex; align-items:center; justify-content:center;"><i class="fas fa-motorcycle" style="color:white; font-size:16px;"></i></div>',
         iconSize: [32, 32],
         className: 'moto-marker'
     });
 }
 
-export async function drawRealRoute(map, origin, dest, color, weight) {
+async function drawRealRoute(map, origin, dest, color, weight) {
     if (!map || !origin || !dest) return null;
+    
     try {
         const response = await fetch(`https://router.project-osrm.org/route/v1/driving/${origin.lng},${origin.lat};${dest.lng},${dest.lat}?overview=full&geometries=geojson`);
         const data = await response.json();
+        
         if (data.routes && data.routes[0]) {
             const route = data.routes[0];
             const line = L.geoJSON(route.geometry, {
                 style: { color: color, weight: weight, opacity: 0.8 }
             }).addTo(map);
-            return { line: line, routeData: { distance: route.distance / 1000, duration: route.duration / 60 } };
+            
+            const bounds = L.latLngBounds([origin, dest]);
+            map.fitBounds(bounds, { padding: [50, 50] });
+            
+            return {
+                line: line,
+                routeData: {
+                    distance: route.distance / 1000,
+                    duration: route.duration / 60
+                }
+            };
         }
-    } catch(e) { console.error('Error:', e); }
+    } catch(e) {
+        console.error('Error dibujando ruta:', e);
+    }
     return null;
 }
 
-export async function getRealDistanceAndTime(origin, dest) {
+async function getRealDistanceAndTime(origin, dest) {
     if (!origin || !dest) return null;
+    
     try {
         const response = await fetch(`https://router.project-osrm.org/route/v1/driving/${origin.lng},${origin.lat};${dest.lng},${dest.lat}?overview=false`);
         const data = await response.json();
+        
         if (data.routes && data.routes[0]) {
-            return { distance: data.routes[0].distance / 1000, duration: data.routes[0].duration / 60 };
+            const distance = data.routes[0].distance / 1000;
+            const duration = data.routes[0].duration / 60;
+            return {
+                distance: distance,
+                distanceKm: distance.toFixed(2),
+                duration: duration,
+                durationText: formatDuration(duration)
+            };
         }
-    } catch(e) { console.error('Error:', e); }
+    } catch(e) {
+        console.error('Error obteniendo distancia:', e);
+    }
     return null;
 }
 
-export function calculateShippingRate(distanceKm, tipo) {
+function calculateShippingRate(distanceKm, tipo) {
     const km = Math.round(distanceKm);
+    
+    // Tarifa base por kilómetro
     let baseRate = 0;
     if (km <= 1) baseRate = 30;
     else if (km <= 2) baseRate = 35;
@@ -45,33 +73,96 @@ export function calculateShippingRate(distanceKm, tipo) {
     else if (km <= 5) baseRate = 50;
     else if (km <= 6) baseRate = 60;
     else if (km <= 7) baseRate = 70;
-    else baseRate = 70 + ((km - 7) * 10);
-    return { total: baseRate, base: baseRate };
+    else baseRate = 70 + ((km - 7) * 10); // Más de 7 km: +$10 por km
+    
+    return { 
+        total: baseRate, 
+        base: baseRate, 
+        porKm: null 
+    };
 }
 
-export function obtenerPrimerNombre(nombreCompleto) {
+// ==================== EXTRAER SOLO EL PRIMER NOMBRE ====================
+function obtenerPrimerNombre(nombreCompleto) {
     if (!nombreCompleto) return 'Delivery';
-    return nombreCompleto.trim().split(' ')[0];
+    const primerNombre = nombreCompleto.trim().split(' ')[0];
+    return primerNombre.length > 12 ? primerNombre.substring(0, 10) + '..' : primerNombre;
 }
 
-export function formatDuration(minutes) {
+function formatDuration(minutes) {
     if (minutes < 60) return `${Math.round(minutes)} min`;
     const hours = Math.floor(minutes / 60);
     const mins = Math.round(minutes % 60);
     return `${hours}h ${mins}min`;
 }
 
-export function crearMarcadorDelivery(lat, lng, nombre, color) {
+// ==================== MARCADOR CON NOMBRE PARA DELIVERY ====================
+function crearMarcadorDelivery(lat, lng, nombre, color, tienePedido = null) {
+    let colorFinal = color;
+    let estadoTexto = '';
+    
+    if (tienePedido !== null) {
+        colorFinal = tienePedido ? '#FF6200' : '#10B981';
+        estadoTexto = tienePedido ? '🟠 En entrega' : '🟢 Disponible';
+    }
+    
+    // ✅ Obtener solo el primer nombre
     const nombreMostrar = obtenerPrimerNombre(nombre);
-    const icono = L.divIcon({
-        html: `<div style="text-align:center;"><div style="background:rgba(0,0,0,0.85); color:white; font-size:11px; padding:3px 8px; border-radius:14px;">${nombreMostrar}</div><div style="background:${color}; width:34px; height:34px; border-radius:50%; border:2px solid white; display:flex; align-items:center; justify-content:center;"><i class="fas fa-motorcycle" style="color:white; font-size:18px;"></i></div></div>`,
+    
+    const iconoConNombre = L.divIcon({
+        html: `
+            <div style="text-align: center;">
+                <!-- ✅ NOMBRE ARRIBA con mejor fondo -->
+                <div style="
+                    background: rgba(0, 0, 0, 0.85);
+                    color: white;
+                    font-size: 11px;
+                    font-weight: bold;
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                    padding: 3px 8px;
+                    border-radius: 14px;
+                    margin-bottom: 4px;
+                    white-space: nowrap;
+                    display: inline-block;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+                    border: 0.5px solid rgba(255,255,255,0.2);
+                ">
+                    ${nombreMostrar}
+                </div>
+                <!-- ✅ MOTO DEBAJO -->
+                <div style="
+                    background: ${colorFinal};
+                    width: 34px;
+                    height: 34px;
+                    border-radius: 50%;
+                    border: 2.5px solid white;
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    margin: 0 auto;
+                ">
+                    <i class="fas fa-motorcycle" style="color:white; font-size:18px;"></i>
+                </div>
+            </div>
+        `,
         iconSize: [50, 60],
-        className: 'delivery-marker'
+        className: 'delivery-marker',
+        popupAnchor: [0, -25]
     });
-    return L.marker([lat, lng], { icon: icono });
+    
+    const marker = L.marker([lat, lng], { icon: iconoConNombre });
+    
+    if (estadoTexto) {
+        marker.bindPopup(`<b>🏍️ ${nombre}</b><br>${estadoTexto}`);
+    } else {
+        marker.bindPopup(`<b>🏍️ ${nombre}</b>`);
+    }
+    
+    return marker;
 }
 
-export function convertirPedidoDeSupabase(pedidoSupabase) {
+function convertirPedidoDeSupabase(pedidoSupabase) {
     return {
         id: pedidoSupabase.id,
         clienteId: pedidoSupabase.cliente_id,
@@ -84,47 +175,40 @@ export function convertirPedidoDeSupabase(pedidoSupabase) {
         distanciaReal: pedidoSupabase.distancia_real,
         tarifa: pedidoSupabase.tarifa,
         estado: pedidoSupabase.estado,
-        fecha: pedidoSupabase.fecha
+        deliveryId: pedidoSupabase.delivery_id,
+        deliveryNombre: pedidoSupabase.delivery_nombre,
+        fecha: pedidoSupabase.fecha,
+        fechaCompletado: pedidoSupabase.fecha_completado
     };
 }
 
-export function limitarMapaACarmen(map) {
-    const bounds = L.latLngBounds(L.latLng(18.58, -91.88), L.latLng(18.70, -91.75));
+// ==================== LIMITAR MAPA A CD DEL CARMEN ====================
+function limitarMapaACarmen(map) {
+    // Límites exactos de Ciudad del Carmen
+    const southWest = L.latLng(18.58, -91.88);
+    const northEast = L.latLng(18.70, -91.75);
+    const bounds = L.latLngBounds(southWest, northEast);
+    
     map.setMaxBounds(bounds);
+    
+    // ✅ Ahora podemos usar zoom hasta 17 (Voyager tiene tiles)
     map.setMinZoom(12);
-    map.setMaxZoom(17);
-}
-
-export async function geocodificarDireccion(query) {
-    if (typeof MAPBOX_TOKEN === 'undefined' || !MAPBOX_TOKEN) return [];
-    try {
-        const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${MAPBOX_TOKEN}&limit=5&proximity=-91.8249,18.6456`;
-        const response = await fetch(url);
-        const data = await response.json();
-        return data.features.map(f => ({ nombre: f.place_name.split(',')[0], direccion: f.place_name, lat: f.center[1], lng: f.center[0] }));
-    } catch(e) { return []; }
-}
-
-export async function reverseGeocodingMapbox(lat, lng) {
-    if (typeof MAPBOX_TOKEN === 'undefined' || !MAPBOX_TOKEN) return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
-    try {
-        const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${MAPBOX_TOKEN}`;
-        const response = await fetch(url);
-        const data = await response.json();
-        return data.features[0]?.place_name.split(',')[0] || `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
-    } catch(e) { return `${lat.toFixed(4)}, ${lng.toFixed(4)}`; }
-}
-
-// ==================== FUNCIONES PARA MAPBOX ====================
-export function crearMarcadorArrastrable(lng, lat, color, popupTexto) {
-    if (typeof mapboxgl === 'undefined') return null;
+    map.setMaxZoom(18);   // Cambiado de 15 a 18
     
-    const marker = new mapboxgl.Marker({
-        draggable: true,
-        color: color
-    })
-        .setLngLat([lng, lat])
-        .setPopup(new mapboxgl.Popup().setHTML(popupTexto));
+    map.on('drag', function() {
+        if (!bounds.contains(map.getCenter())) {
+            map.panInsideBounds(bounds, { animate: true, duration: 0.5 });
+        }
+    });
     
-    return marker;
+    map.on('zoomend', function() {
+        if (map.getZoom() > 18) {
+            map.setZoom(18);
+        }
+        if (map.getZoom() < 12) {
+            map.setZoom(12);
+        }
+    });
+    
+    console.log('🗺️ Mapa limitado a Ciudad del Carmen (zoom 12-18)');
 }
