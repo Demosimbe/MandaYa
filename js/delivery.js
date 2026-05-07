@@ -13,6 +13,9 @@ let cargaPedidosInterval = null;
 let currentRoutingControl = null;  // Control de ruta actual
 let recogidaMarker = null;         // Marcador del punto de recogida (origen)
 let destinoMarker = null;          // Marcador del punto de destino
+let ultimoPedidoDibujado = null;
+let ultimaEtapa = null;
+let dibujandoRuta = false;
 
 // ==================== INICIALIZACIÓN ====================
 function initMap() {
@@ -35,7 +38,7 @@ function initMap() {
     
     cargaPedidosInterval = setInterval(() => { 
         if(isOnline) cargarPedidos(); 
-    }, 5000);
+    },  10000);
 }
 
 function loadUser() {
@@ -76,10 +79,26 @@ function limpiarRutasYMarcadores() {
 
 // ==================== RUTA DE RECOGIDA (delivery -> origen) ====================
 async function dibujarRutaRecogida(pedido) {
+    // ✅ Evitar redibujar si ya estamos en la misma ruta
+    if (ultimoPedidoDibujado === pedido.id && ultimaEtapa === 'recogida') {
+        console.log("🟢 Ruta de recogida ya activa, omitiendo redibujo");
+        return;
+    }
+    
+    if (dibujandoRuta) {
+        console.log("⏳ Ya dibujando una ruta, espera...");
+        return;
+    }
+    
+    dibujandoRuta = true;
+    
     limpiarRutasYMarcadores();
+    ultimoPedidoDibujado = pedido.id;
+    ultimaEtapa = 'recogida';
     
     if (!pedido.origenCoords) {
         mostrarToast("❌ No hay coordenadas de origen", true);
+        dibujandoRuta = false;
         return;
     }
     
@@ -101,15 +120,13 @@ async function dibujarRutaRecogida(pedido) {
         ];
     }
     
-    // ✅ Configuración mejorada para móvil
     currentRoutingControl = L.Routing.control({
         waypoints: waypoints,
         routeWhileDragging: false,
         showAlternatives: false,
         fitSelectedRoutes: true,
         lineOptions: {
-            styles: [{ color: '#10B981', weight: 6, opacity: 0.9 }],
-            addWaypoints: false
+            styles: [{ color: '#10B981', weight: 6, opacity: 0.9 }]
         },
         router: L.Routing.osrmv1({
             serviceUrl: 'https://router.project-osrm.org/route/v1'
@@ -119,19 +136,19 @@ async function dibujarRutaRecogida(pedido) {
         draggableWaypoints: false
     }).addTo(map);
     
-    // ✅ Forzar que se ajuste al bounds después de un pequeño retraso
     setTimeout(() => {
         if (ubicacionActual) {
             map.fitBounds([
                 [ubicacionActual.lat, ubicacionActual.lng],
                 [pedido.origenCoords.lat, pedido.origenCoords.lng]
-            ], { padding: [50, 50], maxZoom: 15 });
+            ], { padding: [50, 50] });
         } else {
             map.setView([pedido.origenCoords.lat, pedido.origenCoords.lng], 15);
         }
-    }, 200);
+        map.invalidateSize();
+        dibujandoRuta = false;
+    }, 300);
     
-    // Agregar marcador de recogida
     if (recogidaMarker) map.removeLayer(recogidaMarker);
     recogidaMarker = L.marker([pedido.origenCoords.lat, pedido.origenCoords.lng], {
         icon: L.divIcon({
@@ -146,10 +163,25 @@ async function dibujarRutaRecogida(pedido) {
 
 // ==================== RUTA DE ENTREGA (origen -> destino) ====================
 async function dibujarRutaEntrega(pedido) {
+    if (ultimoPedidoDibujado === pedido.id && ultimaEtapa === 'entrega') {
+        console.log("🟢 Ruta de entrega ya activa, omitiendo redibujo");
+        return;
+    }
+    
+    if (dibujandoRuta) {
+        console.log("⏳ Ya dibujando una ruta, espera...");
+        return;
+    }
+    
+    dibujandoRuta = true;
+    
     limpiarRutasYMarcadores();
+    ultimoPedidoDibujado = pedido.id;
+    ultimaEtapa = 'entrega';
     
     if (!pedido.origenCoords || !pedido.destinoCoords) {
         mostrarToast("❌ Faltan coordenadas", true);
+        dibujandoRuta = false;
         return;
     }
     
@@ -175,8 +207,10 @@ async function dibujarRutaEntrega(pedido) {
         map.fitBounds([
             [pedido.origenCoords.lat, pedido.origenCoords.lng],
             [pedido.destinoCoords.lat, pedido.destinoCoords.lng]
-        ], { padding: [50, 50], maxZoom: 15 });
-    }, 200);
+        ], { padding: [50, 50] });
+        map.invalidateSize();
+        dibujandoRuta = false;
+    }, 300);
     
     destinoMarker = L.marker([pedido.destinoCoords.lat, pedido.destinoCoords.lng], {
         icon: L.divIcon({
@@ -232,16 +266,9 @@ function startLocationTracking() {
                 const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
                 
                 if(userMarker) {
+                    // ✅ Solo actualizar la posición del marcador, NO redibujar la ruta
                     userMarker.setLatLng(coords);
-                    
-                    // Si hay un pedido activo en etapa de recogida, actualizar ruta en tiempo real
-                    if (misPedidosActivos.length > 0 && misPedidosActivos[0].estado === 'asignado') {
-                        const pedidoActivo = misPedidosActivos[0];
-                        if (pedidoActivo.origenCoords) {
-                            limpiarRutasYMarcadores();
-                            await dibujarRutaRecogida(pedidoActivo);
-                        }
-                    }
+                    // ❌ ELIMINADO: bloque que redibujaba la ruta constantemente
                 } else {
                     userMarker = crearMarcadorDelivery(
                         coords.lat, 
@@ -309,22 +336,40 @@ async function cargarPedidos() {
         
         if (errorAsignados) throw errorAsignados;
         
-        pedidosDisponibles = (pedidosPendientes || []).map(p => convertirPedidoDeSupabase(p));
-        misPedidosActivos = (pedidosAsignados || []).map(p => convertirPedidoDeSupabase(p));
+        const nuevosDisponibles = (pedidosPendientes || []).map(p => convertirPedidoDeSupabase(p));
+        const nuevosActivos = (pedidosAsignados || []).map(p => convertirPedidoDeSupabase(p));
         
-        actualizarListaPedidos();
+        // ✅ Solo actualizar si hay cambios
+        const disponiblesCambiaron = JSON.stringify(pedidosDisponibles) !== JSON.stringify(nuevosDisponibles);
+        const activosCambiaron = JSON.stringify(misPedidosActivos) !== JSON.stringify(nuevosActivos);
         
-        if (misPedidosActivos.length > 0) {
-            const pedidoActivo = misPedidosActivos[0];
-            if (pedidoActivo.estado === 'recogido') {
-                await dibujarRutaEntrega(pedidoActivo);
-            } else if (pedidoActivo.estado === 'asignado') {
-                await dibujarRutaRecogida(pedidoActivo);
-            }
-        } else {
-            limpiarRutasYMarcadores();
-            if (pedidoSeleccionado) {
-                dibujarRutaOptimaPedido(pedidoSeleccionado);
+        if (disponiblesCambiaron) {
+            pedidosDisponibles = nuevosDisponibles;
+        }
+        
+        if (activosCambiaron) {
+            misPedidosActivos = nuevosActivos;
+        }
+        
+        // ✅ Solo actualizar la lista si hubo cambios
+        if (disponiblesCambiaron || activosCambiaron) {
+            actualizarListaPedidos();
+        }
+        
+        // ✅ Solo dibujar ruta si el pedido activo cambió
+        if (activosCambiaron) {
+            if (misPedidosActivos.length > 0) {
+                const pedidoActivo = misPedidosActivos[0];
+                if (pedidoActivo.estado === 'recogido') {
+                    await dibujarRutaEntrega(pedidoActivo);
+                } else if (pedidoActivo.estado === 'asignado') {
+                    await dibujarRutaRecogida(pedidoActivo);
+                }
+            } else {
+                limpiarRutasYMarcadores();
+                if (pedidoSeleccionado) {
+                    dibujarRutaOptimaPedido(pedidoSeleccionado);
+                }
             }
         }
         
@@ -525,11 +570,6 @@ async function toggleOnline() {
             }
         }
         cargarPedidos();
-
-        if(cargaPedidosInterval) clearInterval(cargaPedidosInterval);
-        cargaPedidosInterval = setInterval(() => { 
-            if(isOnline) cargarPedidos(); 
-        }, 5000);
         
         if(ubicacionInterval) clearInterval(ubicacionInterval);
         ubicacionInterval = setInterval(async () => {
