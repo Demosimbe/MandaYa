@@ -1,5 +1,5 @@
 // Configuración de Mapbox
-const MAPBOX_TOKEN = process.env.MAPBOX_TOKEN || '';
+const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || '';
 
 // Configuración de Supabase
 const SUPABASE_URL = 'https://ewjljddexyajxuzzzssp.supabase.co';
