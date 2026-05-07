@@ -1289,21 +1289,18 @@ function mostrarResumenRuta() {
 }
 
 function mostrarModalResumen(distancia, tiempo, tarifaBase, tipo) {
-    // Eliminar modal existente si hay
     const modalExistente = document.getElementById("modalResumenRuta");
     if (modalExistente) modalExistente.remove();
     
-    // Guardar tarifa base globalmente para cálculos
     tarifaBaseSinExtras = tarifaBase;
     
-    // Recuperar extras guardados previamente (si existen)
     const extrasGuardados = currentRouteData?.extras || { 
         lluvia: false, 
         noche: false, 
         espera: false 
     };
     
-    // Calcular total inicial con extras guardados
+    // Calcular total inicial
     let totalInicial = tarifaBase;
     if (extrasGuardados.lluvia) totalInicial += 10;
     if (extrasGuardados.noche) totalInicial += 10;
@@ -1313,115 +1310,91 @@ function mostrarModalResumen(distancia, tiempo, tarifaBase, tipo) {
     modal.id = "modalResumenRuta";
     modal.className = "fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[10001] p-4";
     modal.innerHTML = `
-        <div class="bg-gray-800 rounded-3xl max-w-sm w-full modal-uber">
-            <div class="text-center pt-6 pb-3 border-b border-gray-700">
-                <div class="w-16 h-16 bg-orange-500 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <i class="fas fa-route text-white text-2xl"></i>
+        <div class="bg-gray-800 rounded-2xl max-w-sm w-full modal-uber">
+            <div class="text-center pt-4 pb-2 border-b border-gray-700">
+                <div class="w-12 h-12 bg-orange-500 rounded-full flex items-center justify-center mx-auto mb-2">
+                    <i class="fas fa-route text-white text-xl"></i>
                 </div>
-                <h2 class="text-xl font-bold text-white">Resumen de Ruta</h2>
-                <p class="text-gray-400 text-sm mt-1">Detalles de tu envío</p>
+                <h2 class="text-lg font-bold text-white">Resumen de Ruta</h2>
+                <p class="text-gray-400 text-xs mt-1">Detalles de tu envío</p>
             </div>
             
-            <div class="p-5 space-y-3">
-                <!-- Información de la ruta -->
-                <div class="bg-gray-700 rounded-xl p-3 flex justify-between items-center">
-                    <span class="text-gray-400">📍 Distancia real</span>
-                    <span class="text-white font-bold">${distancia} km</span>
+            <div class="p-3 space-y-2">
+                <div class="bg-gray-700 rounded-lg p-2 flex justify-between items-center">
+                    <span class="text-gray-400 text-xs">📍 Distancia real</span>
+                    <span class="text-white font-bold text-sm">${distancia} km</span>
                 </div>
-                <div class="bg-gray-700 rounded-xl p-3 flex justify-between items-center">
-                    <span class="text-gray-400">⏱️ Tiempo estimado</span>
-                    <span class="text-white font-bold">${tiempo}</span>
+                <div class="bg-gray-700 rounded-lg p-2 flex justify-between items-center">
+                    <span class="text-gray-400 text-xs">⏱️ Tiempo estimado</span>
+                    <span class="text-white font-bold text-sm">${tiempo}</span>
                 </div>
-                <div class="bg-gray-700 rounded-xl p-3 flex justify-between items-center">
-                    <span class="text-gray-400">📦 Tipo de envío</span>
-                    <span class="text-white font-bold capitalize">${tipo}</span>
+                <div class="bg-gray-700 rounded-lg p-2 flex justify-between items-center">
+                    <span class="text-gray-400 text-xs">📦 Tipo de envío</span>
+                    <span class="text-white font-bold text-sm capitalize">${tipo}</span>
                 </div>
                 
-                <!-- Sección de EXTRAS -->
-                <div class="bg-gray-700 rounded-xl p-3">
-                    <div class="text-gray-400 text-sm mb-3 flex items-center gap-2">
-                        <i class="fas fa-plus-circle text-orange-500"></i>
-                        Extras adicionales (+$10 c/u)
+                <!-- Extras horizontales -->
+                <div class="bg-gray-700 rounded-lg p-2">
+                    <div class="text-gray-400 text-xs mb-2 flex items-center gap-1">
+                        <i class="fas fa-plus-circle text-orange-500 text-xs"></i>
+                        Extras (+$10 c/u)
                     </div>
                     
-                    <!-- Extra Lluvia -->
-                    <div class="flex items-center justify-between py-2 cursor-pointer hover:bg-gray-600 rounded-lg px-2 transition-all" 
-                         onclick="toggleExtraCheckbox('lluvia')">
-                        <div class="flex items-center gap-3">
-                            <i class="fas fa-cloud-rain text-blue-400 text-lg"></i>
-                            <div>
-                                <span class="text-white text-sm">Lluvia 🌧️</span>
-                                <p class="text-xs text-gray-400">Clima adverso</p>
+                    <div class="flex flex-wrap gap-2 justify-center">
+                        <!-- Lluvia -->
+                        <div class="flex flex-col items-center bg-gray-600 rounded-lg p-2 w-16 cursor-pointer hover:bg-gray-500 transition-all" 
+                             onclick="toggleExtraEnResumen('lluvia')">
+                            <i class="fas fa-cloud-rain text-blue-400 text-lg mb-0.5"></i>
+                            <span class="text-white text-xs">Lluvia</span>
+                            <span class="text-orange-400 text-xs">+$10</span>
+                            <div id="checkLluviaResumen" class="mt-1 w-4 h-4 rounded-full border-2 ${extrasGuardados.lluvia ? 'bg-orange-500 border-orange-500' : 'border-gray-400'} flex items-center justify-center">
+                                ${extrasGuardados.lluvia ? '<i class="fas fa-check text-white text-[8px]"></i>' : ''}
                             </div>
                         </div>
-                        <div class="flex items-center gap-2">
-                            <span class="text-orange-400 text-sm font-bold">+$10</span>
-                            <input type="checkbox" id="checkLluviaExtras" 
-                                   class="w-5 h-5 rounded border-gray-500 accent-orange-500" 
-                                   onchange="actualizarTotalConExtras()"
-                                   ${extrasGuardados.lluvia ? 'checked' : ''}>
-                        </div>
-                    </div>
-                    
-                    <!-- Extra Noche -->
-                    <div class="flex items-center justify-between py-2 cursor-pointer hover:bg-gray-600 rounded-lg px-2 transition-all" 
-                         onclick="toggleExtraCheckbox('noche')">
-                        <div class="flex items-center gap-3">
-                            <i class="fas fa-moon text-yellow-400 text-lg"></i>
-                            <div>
-                                <span class="text-white text-sm">Noche 🌙</span>
-                                <p class="text-xs text-gray-400">Horario nocturno (8pm - 6am)</p>
+                        
+                        <!-- Noche -->
+                        <div class="flex flex-col items-center bg-gray-600 rounded-lg p-2 w-16 cursor-pointer hover:bg-gray-500 transition-all" 
+                             onclick="toggleExtraEnResumen('noche')">
+                            <i class="fas fa-moon text-yellow-400 text-lg mb-0.5"></i>
+                            <span class="text-white text-xs">Noche</span>
+                            <span class="text-orange-400 text-xs">+$10</span>
+                            <div id="checkNocheResumen" class="mt-1 w-4 h-4 rounded-full border-2 ${extrasGuardados.noche ? 'bg-orange-500 border-orange-500' : 'border-gray-400'} flex items-center justify-center">
+                                ${extrasGuardados.noche ? '<i class="fas fa-check text-white text-[8px]"></i>' : ''}
                             </div>
                         </div>
-                        <div class="flex items-center gap-2">
-                            <span class="text-orange-400 text-sm font-bold">+$10</span>
-                            <input type="checkbox" id="checkNocheExtras" 
-                                   class="w-5 h-5 rounded border-gray-500 accent-orange-500" 
-                                   onchange="actualizarTotalConExtras()"
-                                   ${extrasGuardados.noche ? 'checked' : ''}>
-                        </div>
-                    </div>
-                    
-                    <!-- Extra Espera -->
-                    <div class="flex items-center justify-between py-2 cursor-pointer hover:bg-gray-600 rounded-lg px-2 transition-all" 
-                         onclick="toggleExtraCheckbox('espera')">
-                        <div class="flex items-center gap-3">
-                            <i class="fas fa-clock text-purple-400 text-lg"></i>
-                            <div>
-                                <span class="text-white text-sm">Espera ⏱️</span>
-                                <p class="text-xs text-gray-400">Tiempo de espera adicional</p>
+                        
+                        <!-- Espera -->
+                        <div class="flex flex-col items-center bg-gray-600 rounded-lg p-2 w-16 cursor-pointer hover:bg-gray-500 transition-all" 
+                             onclick="toggleExtraEnResumen('espera')">
+                            <i class="fas fa-clock text-purple-400 text-lg mb-0.5"></i>
+                            <span class="text-white text-xs">Espera</span>
+                            <span class="text-orange-400 text-xs">+$10</span>
+                            <div id="checkEsperaResumen" class="mt-1 w-4 h-4 rounded-full border-2 ${extrasGuardados.espera ? 'bg-orange-500 border-orange-500' : 'border-gray-400'} flex items-center justify-center">
+                                ${extrasGuardados.espera ? '<i class="fas fa-check text-white text-[8px]"></i>' : ''}
                             </div>
-                        </div>
-                        <div class="flex items-center gap-2">
-                            <span class="text-orange-400 text-sm font-bold">+$10</span>
-                            <input type="checkbox" id="checkEsperaExtras" 
-                                   class="w-5 h-5 rounded border-gray-500 accent-orange-500" 
-                                   onchange="actualizarTotalConExtras()"
-                                   ${extrasGuardados.espera ? 'checked' : ''}>
                         </div>
                     </div>
                 </div>
                 
-                <!-- Total a pagar -->
-                <div class="bg-orange-500 rounded-xl p-3 flex justify-between items-center">
-                    <span class="text-white font-bold">💰 Total a pagar</span>
-                    <span class="text-white font-bold text-xl" id="totalConExtras">$${totalInicial} MXN</span>
+                <!-- Total a pagar (se actualiza en tiempo real) -->
+                <div class="bg-orange-500 rounded-lg p-2 flex justify-between items-center">
+                    <span class="text-white font-bold text-sm">💰 Total</span>
+                    <span class="text-white font-bold text-lg" id="totalConExtrasResumen">$${totalInicial} MXN</span>
                 </div>
                 
-                <!-- Nota informativa -->
-                <div class="text-center text-xs text-gray-400">
-                    <i class="fas fa-info-circle"></i> Los extras se pagan al delivery
+                <div class="text-center text-[10px] text-gray-400">
+                    <i class="fas fa-info-circle text-[8px]"></i> Los extras se pagan al delivery
                 </div>
             </div>
             
-            <div class="px-5 pb-5 flex gap-3">
+            <div class="px-3 pb-3 flex gap-2">
                 <button onclick="cerrarModalResumen()" 
-                        class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded-xl transition-all">
+                        class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 rounded-lg text-sm transition-all">
                     Cancelar
                 </button>
-                <button id="btnConfirmarExtras" 
-                        class="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl transition-all">
-                    Continuar al pago
+                <button id="btnAceptarExtrasResumen" 
+                        class="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-medium py-2 rounded-lg text-sm transition-all">
+                    ✅ Aceptar
                 </button>
             </div>
         </div>
@@ -1429,29 +1402,60 @@ function mostrarModalResumen(distancia, tiempo, tarifaBase, tipo) {
     
     document.body.appendChild(modal);
     
-    // Inicializar extrasSeleccionados con valores guardados
-    extrasSeleccionados = { ...extrasGuardados };
+    // Guardar estado temporal de extras (para selección en el modal)
+    window.extrasTemporales = { ...extrasGuardados };
+    window.tarifaBaseActual = tarifaBase;
     
-    // Evento para el botón confirmar
-    document.getElementById("btnConfirmarExtras").onclick = () => {
-        confirmarExtrasYPagar();
+    // Evento para el botón ACEPTAR
+    document.getElementById("btnAceptarExtrasResumen").onclick = () => {
+        confirmarExtrasDesdeResumen();
     };
 }
 
-function toggleExtraCheckbox(extra) {
-    const checkbox = document.getElementById(`check${extra.charAt(0).toUpperCase() + extra.slice(1)}Extras`);
-    if (checkbox) {
-        checkbox.checked = !checkbox.checked;
-        actualizarTotalConExtras();
-        
-        // Feedback visual
-        const label = checkbox.closest('.flex.items-center.justify-between');
-        if (label) {
-            label.style.backgroundColor = checkbox.checked ? 'rgba(249, 115, 22, 0.2)' : '';
-            setTimeout(() => {
-                label.style.backgroundColor = '';
-            }, 200);
+function toggleExtraEnResumen(extra) {
+    // Cambiar estado temporal
+    if (!window.extrasTemporales) {
+        window.extrasTemporales = { lluvia: false, noche: false, espera: false };
+    }
+    window.extrasTemporales[extra] = !window.extrasTemporales[extra];
+    
+    // Actualizar visual del check
+    const checkDiv = document.getElementById(`check${extra.charAt(0).toUpperCase() + extra.slice(1)}Resumen`);
+    if (checkDiv) {
+        if (window.extrasTemporales[extra]) {
+            checkDiv.classList.remove('border-gray-400');
+            checkDiv.classList.add('bg-orange-500', 'border-orange-500');
+            checkDiv.innerHTML = '<i class="fas fa-check text-white text-[8px]"></i>';
+        } else {
+            checkDiv.classList.remove('bg-orange-500', 'border-orange-500');
+            checkDiv.classList.add('border-gray-400');
+            checkDiv.innerHTML = '';
         }
+    }
+    
+    // ✅ ACTUALIZAR EL TOTAL EN TIEMPO REAL
+    let total = window.tarifaBaseActual;
+    if (window.extrasTemporales.lluvia) total += 10;
+    if (window.extrasTemporales.noche) total += 10;
+    if (window.extrasTemporales.espera) total += 10;
+    
+    const totalSpan = document.getElementById("totalConExtrasResumen");
+    if (totalSpan) {
+        totalSpan.innerHTML = `$${total} MXN`;
+        // Pequeña animación
+        totalSpan.style.transform = 'scale(1.05)';
+        setTimeout(() => {
+            totalSpan.style.transform = 'scale(1)';
+        }, 150);
+    }
+    
+    // Efecto visual en la tarjeta
+    const card = document.querySelector(`[onclick="toggleExtraEnResumen('${extra}')"]`);
+    if (card) {
+        card.style.transform = 'scale(0.95)';
+        setTimeout(() => {
+            card.style.transform = 'scale(1)';
+        }, 150);
     }
 }
 
@@ -1483,6 +1487,107 @@ function actualizarTotalConExtras() {
     }
     
     return total;
+}
+
+// Función para seleccionar/deseleccionar extras visualmente (sin afectar el total)
+function toggleExtraSeleccion(extra) {
+    // Obtener el estado actual temporal
+    const estadoActual = window.extrasTemporales ? window.extrasTemporales[extra] : false;
+    
+    // Cambiar estado
+    if (!window.extrasTemporales) window.extrasTemporales = { lluvia: false, noche: false, espera: false };
+    window.extrasTemporales[extra] = !estadoActual;
+    
+    // Actualizar visual del checkbox
+    const checkDiv = document.getElementById(`check${extra.charAt(0).toUpperCase() + extra.slice(1)}Resumen`);
+    if (checkDiv) {
+        if (window.extrasTemporales[extra]) {
+            checkDiv.classList.remove('border-gray-400');
+            checkDiv.classList.add('bg-orange-500', 'border-orange-500');
+            checkDiv.innerHTML = '<i class="fas fa-check text-white text-xs"></i>';
+        } else {
+            checkDiv.classList.remove('bg-orange-500', 'border-orange-500');
+            checkDiv.classList.add('border-gray-400');
+            checkDiv.innerHTML = '';
+        }
+    }
+    
+    // Efecto visual de clic
+    const card = document.querySelector(`.extra-card[data-extra="${extra}"]`);
+    if (card) {
+        card.style.transform = 'scale(0.95)';
+        setTimeout(() => {
+            card.style.transform = 'scale(1)';
+        }, 150);
+    }
+}
+
+// Función para confirmar extras SOLO cuando se presiona ACEPTAR
+function confirmarExtrasDesdeResumen() {
+    console.log("✅ Confirmando extras...");
+    
+    // Obtener valores temporales
+    const lluviaSeleccionada = window.extrasTemporales?.lluvia || false;
+    const nocheSeleccionada = window.extrasTemporales?.noche || false;
+    const esperaSeleccionada = window.extrasTemporales?.espera || false;
+    
+    // Actualizar extras globales
+    extrasSeleccionados = {
+        lluvia: lluviaSeleccionada,
+        noche: nocheSeleccionada,
+        espera: esperaSeleccionada
+    };
+    
+    // Calcular total final
+    let totalFinal = tarifaBaseSinExtras;
+    const extrasAplicados = [];
+    
+    if (extrasSeleccionados.lluvia) {
+        totalFinal += 10;
+        extrasAplicados.push("🌧️ Lluvia");
+    }
+    if (extrasSeleccionados.noche) {
+        totalFinal += 10;
+        extrasAplicados.push("🌙 Noche");
+    }
+    if (extrasSeleccionados.espera) {
+        totalFinal += 10;
+        extrasAplicados.push("⏱️ Espera");
+    }
+    
+    // Guardar en currentRouteData
+    if (currentRouteData) {
+        currentRouteData.extras = { ...extrasSeleccionados };
+        currentRouteData.totalConExtras = totalFinal;
+    }
+    
+    // ✅ ACTUALIZAR TARIFA EN PANTALLA PRINCIPAL
+    const tarifaElement = document.getElementById("tarifaValue");
+    if (tarifaElement) {
+        tarifaElement.innerHTML = `$${totalFinal} MXN`;
+    }
+    
+    const tarifaElementMobile = document.getElementById("tarifaValueMobile");
+    if (tarifaElementMobile) {
+        tarifaElementMobile.innerHTML = `$${totalFinal} MXN`;
+    }
+    
+    // Actualizar pedido pendiente
+    if (pedidoPendiente) {
+        pedidoPendiente.tarifa = totalFinal;
+        pedidoPendiente.extras = { ...extrasSeleccionados };
+    }
+    
+    // Mostrar mensaje
+    if (extrasAplicados.length > 0) {
+        mostrarToast(`✅ Extras: ${extrasAplicados.join(", ")} (+$${extrasAplicados.length * 10}) - Total: $${totalFinal}`);
+    } else {
+        mostrarToast(`✅ Total: $${totalFinal} MXN`);
+    }
+    
+    // Cerrar modal
+    cerrarModalResumen();
+    
 }
 
 function confirmarExtrasYPagar() {
