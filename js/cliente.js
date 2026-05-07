@@ -11,6 +11,8 @@ let currentRouteData = null;
 let deliverysMarkers = []; // Para los marcadores de deliverys en línea
 let deliverysInterval = null;  // Para el intervalo de deliverys en línea
 let pedidoPendiente = null; // Variable global para guardar pedido antes de pagar
+let clienteRouteControl = null;
+
 
 // ==================== INICIALIZACIÓN ====================
 function initMap() {
@@ -128,6 +130,59 @@ function setSelectMode(mode) {
         destMarker.openPopup();
         mostrarToast("🏁 Modo DESTINO - Haz clic en el mapa o arrastra el marcador azul");
     }
+}
+
+function limpiarRutaCliente() {
+    if (clienteRouteControl) {
+        try { map.removeControl(clienteRouteControl); } catch(e) {}
+        clienteRouteControl = null;
+    }
+}
+
+async function dibujarRutaDeliveryEnCliente(ubicacionDelivery, destinoCoords, tipo) {
+    if (!ubicacionDelivery || !destinoCoords) return;
+    
+    limpiarRutaCliente();
+    
+    // tipo: 'recogida' (delivery -> origen) o 'entrega' (origen -> destino)
+    let waypoints = [];
+    let color = '#FF6200';
+    
+    if (tipo === 'recogida') {
+        // Delivery yendo al origen (punto de recogida)
+        waypoints = [
+            L.latLng(ubicacionDelivery.lat, ubicacionDelivery.lng),
+            L.latLng(destinoCoords.lat, destinoCoords.lng)
+        ];
+        color = '#10B981';
+    } else if (tipo === 'entrega') {
+        // Delivery yendo al destino final (desde origen)
+        waypoints = [
+            L.latLng(destinoCoords.lat, destinoCoords.lng),
+            L.latLng(destinoCoords.lat, destinoCoords.lng) // Se actualizará con la ubicación real
+        ];
+        color = '#FF6200';
+    }
+    
+    clienteRouteControl = L.Routing.control({
+        waypoints: waypoints,
+        routeWhileDragging: false,
+        showAlternatives: false,
+        fitSelectedRoutes: true,
+        lineOptions: {
+            styles: [{ color: color, weight: 4, opacity: 0.8 }]
+        },
+        router: L.Routing.osrmv1({
+            serviceUrl: 'https://router.project-osrm.org/route/v1'
+        }),
+        show: false,
+        addWaypoints: false
+    }).addTo(map);
+    
+    setTimeout(() => {
+        map.fitBounds(waypoints, { padding: [50, 50] });
+        map.invalidateSize();
+    }, 300);
 }
 
 async function actualizarRutaYTarifa() {
@@ -743,10 +798,37 @@ function seguirUbicacionDelivery(deliveryId) {
                 '#FF6200'
             );
             deliveryMarker.addTo(map);
-            deliveryMarker.bindPopup(`<b>🏍️ ${deliveryNombre}</b><br>Tu pedido está siendo entregado`);
             
-            if (destCoords && ubicacion) {
-                const distanciaADestino = calcularDistanciaEntrePuntos(ubicacion, destCoords);
+            // ✅ Dibujar ruta según el estado del pedido
+            if (pedidoActual) {
+                if (pedidoActual.estado === 'asignado') {
+                    // Ruta: delivery -> origen
+                    await dibujarRutaDeliveryEnCliente(ubicacion, pedidoActual.origenCoords, 'recogida');
+                    deliveryMarker.bindPopup(`<b>🏍️ ${deliveryNombre}</b><br>🟠 En camino a recoger tu paquete`);
+                } else if (pedidoActual.estado === 'recogido') {
+                    // Ruta: delivery -> destino (actualizar constantemente)
+                    if (clienteRouteControl) {
+                        // Actualizar waypoint de origen a la ubicación actual del delivery
+                        try {
+                            clienteRouteControl.setWaypoints([
+                                L.latLng(ubicacion.lat, ubicacion.lng),
+                                L.latLng(pedidoActual.destino_lat, pedidoActual.destino_lng)
+                            ]);
+                        } catch(e) {
+                            // Si no se puede actualizar, redibujar
+                            limpiarRutaCliente();
+                            await dibujarRutaDeliveryEnCliente(ubicacion, pedidoActual.destinoCoords, 'entrega');
+                        }
+                    } else {
+                        await dibujarRutaDeliveryEnCliente(ubicacion, pedidoActual.destinoCoords, 'entrega');
+                    }
+                    deliveryMarker.bindPopup(`<b>🏍️ ${deliveryNombre}</b><br>📦 En camino a entregar tu paquete`);
+                }
+            }
+            
+            // Mostrar distancia al destino
+            if (pedidoActual && pedidoActual.destinoCoords && ubicacion) {
+                const distanciaADestino = calcularDistanciaEntrePuntos(ubicacion, pedidoActual.destinoCoords);
                 if (distanciaADestino < 0.5) {
                     document.getElementById("deliveryEstado").innerHTML = "🟢 Muy cerca de tu destino 🎯";
                 } else if (distanciaADestino < 1) {
@@ -769,16 +851,14 @@ function seguirUbicacionDelivery(deliveryId) {
                 clearInterval(ubicacionInterval);
                 ubicacionInterval = null;
                 
-                // Ocultar información del delivery
                 ocultarDeliveryInfo();
+                limpiarRutaCliente();
                 
-                // Ocultar panel de estado
                 const panel = document.getElementById("panelEstadoPedido");
                 const panelMobile = document.getElementById("panelEstadoPedidoMobile");
                 if(panel) panel.classList.add("hidden");
                 if(panelMobile) panelMobile.classList.add("hidden");
                 
-                // Eliminar marcador del delivery
                 if(deliveryMarker) {
                     map.removeLayer(deliveryMarker);
                     deliveryMarker = null;
@@ -1078,7 +1158,9 @@ async function mostrarDeliveryEnMapa(deliveryId, deliveryNombre = null) {
         if (nombreDelivery) {
             document.getElementById("deliveryInfo").classList.remove("hidden");
             document.getElementById("deliveryNombre").innerHTML = `<i class="fas fa-motorcycle"></i> ${nombreDelivery}`;
-            document.getElementById("deliveryEstado").innerHTML = "🟠 En camino a recoger tu paquete";
+            
+            // Limpiar ruta anterior
+            limpiarRutaCliente();
         }
     } catch(e) {
         console.error('Error mostrando delivery:', e);
