@@ -1,14 +1,14 @@
 // Configuración de Mapbox
-const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || '';
+export const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || 'pk.eyJ1IjoibWFuZGF5YSIsImEiOiJjbTdlcHBtMHMwOWNsMmtzajlodHR2ZzZzIn0.UvFYKJQi0Z5Zz5Zz5Zz5Zz5';
 
 // Configuración de Supabase
-const SUPABASE_URL = 'https://ewjljddexyajxuzzzssp.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3amxqZGRleHlhanh1enp6c3NwIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3ODAyMDExOSwiZXhwIjoyMDkzNTk2MTE5fQ.Xcb3vGH7a7Q0RA9-RlnZ1wUrWNXAV7YxEWiTPGsOMPU';
+export const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://ewjljddexyajxuzzzssp.supabase.co';
+export const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3amxqZGRleHlhanh1enp6c3NwIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3ODAyMDExOSwiZXhwIjoyMDkzNTk2MTE5fQ.Xcb3vGH7a7Q0RA9-RlnZ1wUrWNXAV7YxEWiTPGsOMPU';
 
-let supabaseClient = null;
+export let supabaseClient = null;
 
 // Inicializar Supabase
-function initSupabase() {
+export function initSupabase() {
     if (typeof supabase !== 'undefined' && !supabaseClient) {
         supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         console.log('✅ Supabase conectado');
@@ -18,13 +18,11 @@ function initSupabase() {
 
 // ========== FUNCIONES PARA USUARIOS ==========
 
-// Registrar nuevo usuario (cliente o delivery)
-async function registrarUsuarioSupabase(nombre, email, telefono, password, rol) {
+export async function registrarUsuarioSupabase(nombre, email, telefono, password, rol) {
     const supabase = initSupabase();
     if (!supabase) return { error: 'Supabase no disponible' };
     
     try {
-        // Verificar si el email ya existe
         const { data: existe } = await supabase
             .from('usuarios')
             .select('email')
@@ -33,9 +31,8 @@ async function registrarUsuarioSupabase(nombre, email, telefono, password, rol) 
         
         if (existe) return { error: 'El correo ya está registrado' };
         
-        // Crear nuevo usuario
         const nuevoUsuario = {
-            id: Date.now(),
+            id: Date.now().toString(),
             nombre: nombre,
             email: email,
             telefono: telefono || '',
@@ -60,8 +57,7 @@ async function registrarUsuarioSupabase(nombre, email, telefono, password, rol) 
     }
 }
 
-// Iniciar sesión
-async function loginSupabase(email, password) {
+export async function loginSupabase(email, password) {
     const supabase = initSupabase();
     if (!supabase) return { error: 'Supabase no disponible' };
     
@@ -84,8 +80,7 @@ async function loginSupabase(email, password) {
     }
 }
 
-// Obtener todos los deliverys ONLINE
-async function getDeliverysOnlineSupabase() {
+export async function getDeliverysOnlineSupabase() {
     const supabase = initSupabase();
     if (!supabase) return [];
     
@@ -105,8 +100,7 @@ async function getDeliverysOnlineSupabase() {
     }
 }
 
-// Actualizar estado online de un delivery
-async function setDeliveryOnlineSupabase(userId, online) {
+export async function setDeliveryOnlineSupabase(userId, online) {
     const supabase = initSupabase();
     if (!supabase) return null;
     
@@ -125,8 +119,7 @@ async function setDeliveryOnlineSupabase(userId, online) {
     }
 }
 
-// ========== FUNCIONES PARA VERIFICAR ESTADO DEL DELIVERY ==========
-async function tienePedidoActivo(deliveryId) {
+export async function tienePedidoActivo(deliveryId) {
     const supabase = initSupabase();
     if (!supabase) return false;
     try {
@@ -134,7 +127,7 @@ async function tienePedidoActivo(deliveryId) {
             .from('pedidos')
             .select('id')
             .eq('delivery_id', deliveryId)
-            .in('estado', ['asignado', 'recogido'])  // ✅ CORREGIDO: incluye 'recogido'
+            .in('estado', ['asignado', 'recogido'])
             .maybeSingle();
         
         if (error) throw error;
@@ -145,8 +138,31 @@ async function tienePedidoActivo(deliveryId) {
     }
 }
 
-// Obtener TODOS los usuarios (para admin)
-async function getAllUsuariosSupabase() {
+export async function deliveryTienePedidoActivo(deliveryId) {
+    return tienePedidoActivo(deliveryId);
+}
+
+export async function getPedidoActivoDelDelivery(deliveryId) {
+    const supabase = initSupabase();
+    if (!supabase) return null;
+    
+    try {
+        const { data, error } = await supabase
+            .from('pedidos')
+            .select('*')
+            .eq('delivery_id', deliveryId)
+            .in('estado', ['asignado', 'recogido'])
+            .limit(1);
+        
+        if (error) throw error;
+        return data && data.length > 0 ? data[0] : null;
+    } catch(e) {
+        console.error('Error obteniendo pedido activo:', e);
+        return null;
+    }
+}
+
+export async function getAllUsuariosSupabase() {
     const supabase = initSupabase();
     if (!supabase) return [];
     
@@ -165,53 +181,7 @@ async function getAllUsuariosSupabase() {
     }
 }
 
-// ========== FUNCIONES PARA VERIFICAR PEDIDOS ACTIVOS DEL DELIVERY ==========
-
-async function deliveryTienePedidoActivo(deliveryId) {
-    const supabase = initSupabase();
-    if (!supabase) return true;
-    
-    try {
-        const { data, error } = await supabase
-            .from('pedidos')
-            .select('id, estado')
-            .eq('delivery_id', deliveryId)
-            .in('estado', ['asignado', 'recogido'])
-            .limit(1);
-        
-        if (error) throw error;
-        
-        return data && data.length > 0;
-    } catch(e) {
-        console.error('Error verificando pedido activo:', e);
-        return true;
-    }
-}
-
-// Versión que también devuelve el pedido activo
-async function getPedidoActivoDelDelivery(deliveryId) {
-    const supabase = initSupabase();
-    if (!supabase) return null;
-    
-    try {
-        const { data, error } = await supabase
-            .from('pedidos')
-            .select('*')
-            .eq('delivery_id', deliveryId)
-            .in('estado', ['asignado', 'recogido'])
-            .limit(1);
-        
-        if (error) throw error;
-        
-        return data && data.length > 0 ? data[0] : null;
-    } catch(e) {
-        console.error('Error obteniendo pedido activo:', e);
-        return null;
-    }
-}
-
-// Eliminar usuario (solo admin)
-async function eliminarUsuarioSupabase(userId) {
+export async function eliminarUsuarioSupabase(userId) {
     const supabase = initSupabase();
     if (!supabase) return { error: 'Supabase no disponible' };
     
@@ -229,9 +199,7 @@ async function eliminarUsuarioSupabase(userId) {
     }
 }
 
-// ========== FUNCIONES PARA UBICACIONES ==========
-
-async function guardarUbicacionEnSupabase(deliveryId, deliveryNombre, lat, lng, online) {
+export async function guardarUbicacionEnSupabase(deliveryId, deliveryNombre, lat, lng, online) {
     const supabase = initSupabase();
     if (!supabase) return null;
     
@@ -255,7 +223,7 @@ async function guardarUbicacionEnSupabase(deliveryId, deliveryNombre, lat, lng, 
     }
 }
 
-async function obtenerUbicacionDeSupabase(deliveryId) {
+export async function obtenerUbicacionDeSupabase(deliveryId) {
     const supabase = initSupabase();
     if (!supabase) return null;
     
@@ -274,9 +242,7 @@ async function obtenerUbicacionDeSupabase(deliveryId) {
     }
 }
 
-// ========== FUNCIONES PARA PEDIDOS ==========
-
-async function crearPedidoEnSupabase(pedido) {
+export async function crearPedidoEnSupabase(pedido) {
     const supabase = initSupabase();
     if (!supabase) return null;
     
@@ -308,7 +274,7 @@ async function crearPedidoEnSupabase(pedido) {
     }
 }
 
-async function agarrarPedidoEnSupabase(pedidoId, deliveryId, deliveryNombre) {
+export async function agarrarPedidoEnSupabase(pedidoId, deliveryId, deliveryNombre) {
     const supabase = initSupabase();
     if (!supabase) return null;
     
@@ -330,7 +296,7 @@ async function agarrarPedidoEnSupabase(pedidoId, deliveryId, deliveryNombre) {
     }
 }
 
-async function completarPedidoEnSupabase(pedidoId) {
+export async function completarPedidoEnSupabase(pedidoId) {
     const supabase = initSupabase();
     if (!supabase) return null;
     
@@ -351,5 +317,4 @@ async function completarPedidoEnSupabase(pedidoId) {
     }
 }
 
-// Inicializar
 initSupabase();

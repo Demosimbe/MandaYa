@@ -1,60 +1,205 @@
-// Constantes y variables globales
-const BOUNDS = { north: 18.70, south: 18.58, east: -91.75, west: -91.88 };
+import { 
+    supabaseClient, 
+    crearPedidoEnSupabase,
+    guardarUbicacionEnSupabase,
+    tienePedidoActivo,
+    MAPBOX_TOKEN
+} from './config.js';
 
+import { 
+    drawRealRoute, 
+    calculateShippingRate, 
+    formatDuration,
+    convertirPedidoDeSupabase,
+    limitarMapaACarmen,
+    crearMarcadorDelivery,
+    obtenerPrimerNombre,
+    getRealDistanceAndTime,
+    geocodificarDireccion,
+    reverseGeocodingMapbox,
+    crearMarcadorArrastrable
+} from './map-utils.js';
+
+// ==================== VARIABLES GLOBALES ====================
 let map, originMarker, destMarker, routeLine, deliveryMarker;
 let originCoords = null, destCoords = null;
 let currentUser = null, pedidoActual = null;
 let selectMode = 'origen';
-let seguimientoInterval = null;
-let ubicacionInterval = null;
 let currentRouteData = null;
-let deliverysMarkers = []; // Para los marcadores de deliverys en línea
-let deliverysInterval = null;  // Para el intervalo de deliverys en línea
-let pedidoPendiente = null; // Variable global para guardar pedido antes de pagar
-let clienteRouteControl = null;
+let deliverysMarkers = [];
+let deliverysInterval = null;
 let busquedaTimeout = null;
-
-// ==================== VARIABLES PARA MAPBOX (COMPATIBILIDAD) ====================
 let mapboxMap = null;
-let usandoMapbox = false; // Detectar si se inicializó Mapbox
-
-// ==================== CONTROL DE PETICIONES INTELIGENTE ====================
-let ultimaPeticionTime = 0;
+let usandoMapbox = false;
 let paginaVisible = true;
-let ultimaPeticionDeliverys = 0;
+let clienteRouteControl = null;
+let ultimaPeticionDeliverys = 0;  // ← Variable faltante agregada
 
-// Detectar cuando la pestaña está visible
-document.addEventListener('visibilitychange', () => {
-    paginaVisible = !document.hidden;
-    if (paginaVisible) {
-        console.log("🟢 Página visible - Reactivando actualizaciones");
-        // Forzar una actualización al volver
-        if (typeof cargarPedidos === 'function') cargarPedidos();
-        if (typeof cargarDeliverysEnLinea === 'function') cargarDeliverysEnLinea();
+// ==================== FUNCIONES GLOBALES ====================
+window.mostrarToast = function(msg, err = false) {
+    const toast = document.createElement('div');
+    toast.className = 'toast-message';
+    toast.style.cssText = `
+        position: fixed;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%) translateY(20px);
+        background: ${err ? '#dc2626' : '#10b981'};
+        color: white;
+        padding: 14px 28px;
+        border-radius: 50px;
+        font-size: 14px;
+        font-weight: 500;
+        z-index: 10000;
+        opacity: 0;
+        transition: all 0.3s ease;
+    `;
+    toast.innerHTML = `<i class="fas ${err ? 'fa-exclamation-circle' : 'fa-check-circle'} mr-2"></i>${msg}`;
+    document.body.appendChild(toast);
+    setTimeout(() => {
+        toast.style.transform = 'translateX(-50%) translateY(0)';
+        toast.style.opacity = '1';
+    }, 10);
+    setTimeout(() => {
+        toast.style.transform = 'translateX(-50%) translateY(20px)';
+        toast.style.opacity = '0';
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+};
+
+window.mostrarModalConfirmacion = function(titulo, mensaje, onConfirm) {
+    const confirmar = confirm(`${titulo}\n\n${mensaje}`);
+    if (confirmar && onConfirm) onConfirm();
+};
+
+window.verPerfil = function() {
+    if (currentUser) {
+        alert(`👤 ${currentUser.nombre}\n📧 ${currentUser.email}\n📍 Cliente MandaYa`);
+    }
+};
+
+window.cerrarSesion = function() {
+    if (confirm("¿Cerrar sesión?")) {
+        if (deliverysInterval) clearInterval(deliverysInterval);
+        localStorage.removeItem('sesion_activa');
+        window.location.href = "index.html";
+    }
+};
+
+window.verHistorial = async function() {
+    const supabase = supabaseClient;
+    if (!supabase || !currentUser) {
+        window.mostrarToast("Error de conexión", true);
+        return;
+    }
+    
+    try {
+        const { data, error } = await supabase
+            .from('pedidos')
+            .select('*')
+            .eq('cliente_id', currentUser.id)
+            .order('fecha', { ascending: false });
+        
+        if (error) throw error;
+        
+        if (!data || data.length === 0) {
+            window.mostrarToast("No tienes envíos registrados");
+        } else {
+            let msg = "📦 MIS ENVÍOS:\n\n";
+            data.forEach(p => {
+                msg += `#${p.id}: ${p.origen} → ${p.destino}\n💰 $${p.tarifa}\n📅 ${new Date(p.fecha).toLocaleDateString()}\nEstado: ${p.estado}\n━━━━━━━━━━━━\n`;
+            });
+            alert(msg);
+        }
+    } catch(e) {
+        console.error('Error:', e);
+        window.mostrarToast("Error al cargar historial", true);
+    }
+};
+
+window.setSelectMode = function(mode) {
+    selectMode = mode;
+    document.getElementById('btnOrigen').className = mode === 'origen' ? 'mode-btn active' : 'mode-btn inactive';
+    document.getElementById('btnDestino').className = mode === 'destino' ? 'mode-btn active' : 'mode-btn inactive';
+    window.mostrarToast(mode === 'origen' ? "📍 Modo ORIGEN activado" : "🏁 Modo DESTINO activado");
+};
+
+window.solicitarEnvio = async function() {
+    const origen = document.getElementById("origen").value;
+    const destino = document.getElementById("destino").value;
+    const tipo = document.getElementById("tipoEnvio").value;
+    const tarifaTexto = document.getElementById("tarifaValue").innerText;
+    const tarifa = parseFloat(tarifaTexto.replace('$', '').replace(' MXN', '').replace('(estimado)', '').trim());
+    
+    if (!origen || !destino) {
+        window.mostrarToast("❌ Selecciona origen y destino", true);
+        return;
+    }
+    if (!tipo) {
+        window.mostrarToast("❌ Selecciona el tipo de envío", true);
+        return;
+    }
+    if (!originCoords || !destCoords) {
+        window.mostrarToast("❌ Coordenadas no disponibles", true);
+        return;
+    }
+    
+    const supabase = supabaseClient;
+    if (!supabase) {
+        window.mostrarToast("❌ Error de conexión", true);
+        return;
+    }
+    
+    const pedido = {
+        id: Date.now().toString(),
+        clienteId: currentUser.id,
+        clienteNombre: currentUser.nombre,
+        origen: origen,
+        destino: destino,
+        origenCoords: originCoords,
+        destinoCoords: destCoords,
+        tipo: tipo,
+        distanciaReal: currentRouteData?.distance?.toFixed(2) || calcularDistancia().toFixed(2),
+        tarifa: isNaN(tarifa) ? 50 : tarifa,
+        estado: 'pendiente',
+        fecha: new Date().toISOString()
+    };
+    
+    const resultado = await crearPedidoEnSupabase(pedido);
+    
+    if (resultado?.error) {
+        window.mostrarToast("❌ Error al crear pedido", true);
     } else {
-        console.log("🔴 Página oculta - Reduciendo actualizaciones");
+        window.mostrarToast(`✅ Pedido #${pedido.id} creado exitosamente`);
+        document.getElementById("panelEstadoPedido").classList.remove("hidden");
+        document.getElementById("pedidoIdLabel").innerText = pedido.id;
+        document.getElementById("pedidoIdLabelMobile").innerText = pedido.id;
+        document.getElementById("panelEstadoPedidoMobile")?.classList.remove("hidden");
+        setTimeout(() => window.location.reload(), 2000);
     }
-});
+};
 
-// Función para peticiones con throttling
-async function peticionConThrottling(funcion, nombre, intervaloMinimo = 3000) {
-    const ahora = Date.now();
-    if (!paginaVisible) {
-        console.log(`⏸️ Página oculta, omitiendo ${nombre}`);
-        return null;
-    }
-    if (ahora - ultimaPeticionTime < intervaloMinimo) {
-        console.log(`⏳ Throttling: ${nombre} - muy rápido`);
-        return null;
-    }
-    ultimaPeticionTime = ahora;
-    return await funcion();
+function calcularDistancia() {
+    if (!originCoords || !destCoords) return 0;
+    const R = 6371;
+    const dLat = (destCoords.lat - originCoords.lat) * Math.PI / 180;
+    const dLon = (destCoords.lng - originCoords.lng) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(originCoords.lat * Math.PI / 180) * Math.cos(destCoords.lat * Math.PI / 180) *
+              Math.sin(dLon/2) * Math.sin(dLon/2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
-// ==================== INICIALIZACIÓN ====================
+function loadUser() {
+    const sesion = localStorage.getItem('sesion_activa');
+    if (!sesion) { window.location.href = "index.html"; return; }
+    currentUser = JSON.parse(sesion);
+    if (currentUser.rol !== 'cliente') { window.location.href = "delivery.html"; return; }
+    document.getElementById("userInfo").innerHTML = `<div class="flex items-center gap-2"><i class="fas fa-user-circle text-[#FF6200] text-xl"></i><span class="font-medium">${currentUser.nombre}</span><span class="text-gray-400 text-xs">(Cliente)</span></div>`;
+}
+
 function initMap() {
-    // Intentar inicializar Mapbox primero (si está disponible y configurado)
-    if (typeof mapboxgl !== 'undefined' && typeof MAPBOX_TOKEN !== 'undefined' && MAPBOX_TOKEN && MAPBOX_TOKEN !== 'TU_TOKEN_AQUI') {
+    if (typeof mapboxgl !== 'undefined' && MAPBOX_TOKEN && MAPBOX_TOKEN !== 'TU_TOKEN_AQUI') {
         try {
             mapboxgl.accessToken = MAPBOX_TOKEN;
             mapboxMap = new mapboxgl.Map({
@@ -66,7 +211,6 @@ function initMap() {
                 minZoom: 12
             });
             
-            // Limitar mapa a Ciudad del Carmen
             mapboxMap.setMaxBounds([
                 [-91.88, 18.58],
                 [-91.75, 18.70]
@@ -76,21 +220,18 @@ function initMap() {
             usandoMapbox = true;
             console.log("✅ Usando Mapbox");
             
-            // Agregar control de geolocalización
             mapboxMap.addControl(new mapboxgl.GeolocateControl({
                 positionOptions: { enableHighAccuracy: true },
                 trackUserLocation: true,
                 showUserHeading: true
             }));
             
-            // Crear marcadores arrastrables de Mapbox
             originMarker = crearMarcadorArrastrable(-91.8249, 18.6456, '#FF6200', '📍 Origen');
             destMarker = crearMarcadorArrastrable(-91.8149, 18.6556, '#3B82F6', '🏁 Destino');
             
             if (originMarker) originMarker.addTo(mapboxMap);
             if (destMarker) destMarker.addTo(mapboxMap);
             
-            // Eventos de arrastre para Mapbox
             if (originMarker) {
                 originMarker.on('dragend', async () => {
                     const lngLat = originMarker.getLngLat();
@@ -111,7 +252,6 @@ function initMap() {
                 });
             }
             
-            // Click en el mapa para Mapbox
             mapboxMap.on('click', (e) => {
                 const { lng, lat } = e.lngLat;
                 if (selectMode === 'origen') {
@@ -130,7 +270,6 @@ function initMap() {
                 actualizarRutaYTarifa();
             });
             
-            // Coordenadas iniciales
             originCoords = { lat: 18.6456, lng: -91.8249 };
             destCoords = { lat: 18.6556, lng: -91.8149 };
             
@@ -158,14 +297,13 @@ function iniciarLeaflet() {
     map = L.map('map').setView([18.6456, -91.8249], 13);
     
     L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; CartoDB',
+        attribution: '&copy; OSM & CartoDB',
         maxZoom: 18,
         subdomains: 'abcd'
     }).addTo(map);
     
     limitarMapaACarmen(map);
     
-    // Marcador de origen ARRASTRABLE
     const originIcon = L.divIcon({
         html: '<div style="background:#FF6200; width:28px; height:28px; border-radius:50%; border:3px solid white; box-shadow:0 2px 5px rgba(0,0,0,0.3); display:flex; align-items:center; justify-content:center;"><i class="fas fa-circle" style="color:white; font-size:12px;"></i></div>',
         iconSize: [28, 28],
@@ -175,7 +313,6 @@ function iniciarLeaflet() {
     originMarker = L.marker([18.6456, -91.8249], { icon: originIcon, draggable: true }).addTo(map);
     originMarker.bindPopup('📍 <b>Origen</b><br>Arrástrame para cambiar');
     
-    // Marcador de destino ARRASTRABLE
     const destIcon = L.divIcon({
         html: '<div style="background:#3B82F6; width:28px; height:28px; border-radius:50%; border:3px solid white; box-shadow:0 2px 5px rgba(0,0,0,0.3); display:flex; align-items:center; justify-content:center;"><i class="fas fa-square" style="color:white; font-size:12px;"></i></div>',
         iconSize: [28, 28],
@@ -185,16 +322,15 @@ function iniciarLeaflet() {
     destMarker = L.marker([18.6556, -91.8149], { icon: destIcon, draggable: true }).addTo(map);
     destMarker.bindPopup('🏁 <b>Destino</b><br>Arrástrame para cambiar');
     
-    // Eventos de arrastre con validación de límites
     originMarker.on('dragend', function(e) {
         const coords = e.target.getLatLng();
         if (coords.lat >= 18.58 && coords.lat <= 18.70 && coords.lng >= -91.88 && coords.lng <= -91.75) {
             originCoords = { lat: coords.lat, lng: coords.lng };
             reverseGeocode(originCoords, (addr) => document.getElementById("origen").value = addr);
             actualizarRutaYTarifa();
-            mostrarToast("📍 Origen actualizado");
+            window.mostrarToast("📍 Origen actualizado");
         } else {
-            mostrarToast("❌ Ubicación fuera de Ciudad del Carmen", true);
+            window.mostrarToast("❌ Ubicación fuera de Ciudad del Carmen", true);
             if (originCoords) originMarker.setLatLng([originCoords.lat, originCoords.lng]);
         }
     });
@@ -205,14 +341,13 @@ function iniciarLeaflet() {
             destCoords = { lat: coords.lat, lng: coords.lng };
             reverseGeocode(destCoords, (addr) => document.getElementById("destino").value = addr);
             actualizarRutaYTarifa();
-            mostrarToast("🏁 Destino actualizado");
+            window.mostrarToast("🏁 Destino actualizado");
         } else {
-            mostrarToast("❌ Ubicación fuera de Ciudad del Carmen", true);
+            window.mostrarToast("❌ Ubicación fuera de Ciudad del Carmen", true);
             if (destCoords) destMarker.setLatLng([destCoords.lat, destCoords.lng]);
         }
     });
     
-    // Click en el mapa con validación
     map.on('click', (e) => {
         if (e.latlng.lat >= 18.58 && e.latlng.lat <= 18.70 && e.latlng.lng >= -91.88 && e.latlng.lng <= -91.75) {
             if (selectMode === 'origen') {
@@ -220,20 +355,19 @@ function iniciarLeaflet() {
                 originCoords = { lat: e.latlng.lat, lng: e.latlng.lng };
                 reverseGeocode(originCoords, (addr) => document.getElementById("origen").value = addr);
                 actualizarRutaYTarifa();
-                mostrarToast("📍 Origen actualizado");
+                window.mostrarToast("📍 Origen actualizado");
             } else {
                 destMarker.setLatLng(e.latlng);
                 destCoords = { lat: e.latlng.lat, lng: e.latlng.lng };
                 reverseGeocode(destCoords, (addr) => document.getElementById("destino").value = addr);
                 actualizarRutaYTarifa();
-                mostrarToast("🏁 Destino actualizado");
+                window.mostrarToast("🏁 Destino actualizado");
             }
         } else {
-            mostrarToast("❌ Solo dentro de Ciudad del Carmen", true);
+            window.mostrarToast("❌ Solo dentro de Ciudad del Carmen", true);
         }
     });
     
-    // Inicializar coordenadas
     originCoords = { lat: 18.6456, lng: -91.8249 };
     destCoords = { lat: 18.6556, lng: -91.8149 };
     
@@ -243,265 +377,14 @@ function iniciarLeaflet() {
     setTimeout(() => actualizarRutaYTarifa(), 500);
 }
 
-function loadUser() {
-    const sesion = localStorage.getItem('sesion_activa');
-    if (!sesion) { window.location.href = "index.html"; return; }
-    currentUser = JSON.parse(sesion);
-    if (currentUser.rol !== 'cliente') { window.location.href = "delivery.html"; return; }
-    document.getElementById("userInfo").innerHTML = `<div class="flex items-center gap-2"><i class="fas fa-user-circle text-[#FF6200] text-xl"></i><span class="font-medium">${currentUser.nombre}</span><span class="text-gray-400 text-xs">(Cliente)</span></div>`;
-}
-
-function centrarMapa() {
-    if (!usandoMapbox) {
-        if(map) map.setView([18.6456, -91.8249], 13);
-    } else {
-        if(mapboxMap) mapboxMap.setCenter([-91.8249, 18.6456]).setZoom(13);
+window.centrarMapa = function() {
+    if (mapboxMap) {
+        mapboxMap.setCenter([-91.8249, 18.6456]).setZoom(13);
+    } else if (map) {
+        map.setView([18.6456, -91.8249], 13);
     }
-    mostrarToast("📍 Mapa centrado en Ciudad del Carmen");
-}
-
-function setSelectMode(mode) {
-    selectMode = mode;
-    document.getElementById('btnOrigen').className = mode === 'origen' ? 'mode-btn active' : 'mode-btn inactive';
-    document.getElementById('btnDestino').className = mode === 'destino' ? 'mode-btn active' : 'mode-btn inactive';
-    
-    if (mode === 'origen') {
-        if (!usandoMapbox && originMarker) {
-            originMarker.openPopup();
-        }
-        mostrarToast("📍 Modo ORIGEN - Haz clic en el mapa o arrastra el marcador naranja");
-    } else {
-        if (!usandoMapbox && destMarker) {
-            destMarker.openPopup();
-        }
-        mostrarToast("🏁 Modo DESTINO - Haz clic en el mapa o arrastra el marcador azul");
-    }
-}
-
-function limpiarRutaCliente() {
-    if (clienteRouteControl) {
-        try { 
-            if (!usandoMapbox && map && map.removeControl) {
-                map.removeControl(clienteRouteControl);
-            }
-        } catch(e) {}
-        clienteRouteControl = null;
-    }
-    
-    // Limpiar ruta de Mapbox si existe
-    if (usandoMapbox && mapboxMap) {
-        try {
-            if (mapboxMap.getLayer('route')) mapboxMap.removeLayer('route');
-            if (mapboxMap.getSource('route')) mapboxMap.removeSource('route');
-        } catch(e) {}
-    }
-}
-
-async function dibujarRutaDeliveryEnCliente(ubicacionDelivery, destinoCoords, tipo) {
-    if (!ubicacionDelivery || !destinoCoords) {
-        console.log("❌ Faltan coordenadas para dibujar ruta:", { ubicacionDelivery, destinoCoords });
-        return;
-    }
-    
-    limpiarRutaCliente();
-    
-    if (!usandoMapbox) {
-        let waypoints = [];
-        let color = '#FF6200';
-        
-        if (tipo === 'recogida') {
-            waypoints = [
-                L.latLng(ubicacionDelivery.lat, ubicacionDelivery.lng),
-                L.latLng(destinoCoords.lat, destinoCoords.lng)
-            ];
-            color = '#10B981';
-            console.log("🟢 Waypoints RECOGIDA:", waypoints);
-        } else if (tipo === 'entrega') {
-            waypoints = [
-                L.latLng(ubicacionDelivery.lat, ubicacionDelivery.lng),
-                L.latLng(destinoCoords.lat, destinoCoords.lng)
-            ];
-            color = '#FF6200';
-            console.log("🟠 Waypoints ENTREGA:", waypoints);
-        }
-        
-        clienteRouteControl = L.Routing.control({
-            waypoints: waypoints,
-            routeWhileDragging: false,
-            showAlternatives: false,
-            fitSelectedRoutes: true,
-            lineOptions: {
-                styles: [{ color: color, weight: 4, opacity: 0.8 }]
-            },
-            router: L.Routing.osrmv1({
-                serviceUrl: 'https://router.project-osrm.org/route/v1'
-            }),
-            show: false,
-            addWaypoints: false
-        }).addTo(map);
-        
-        setTimeout(() => {
-            map.fitBounds(waypoints, { padding: [50, 50] });
-            map.invalidateSize();
-        }, 300);
-    } else {
-        // Usar Mapbox
-        try {
-            const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${ubicacionDelivery.lng},${ubicacionDelivery.lat};${destinoCoords.lng},${destinoCoords.lat}?geometries=geojson&access_token=${MAPBOX_TOKEN}`;
-            const response = await fetch(url);
-            const data = await response.json();
-            
-            if (data.routes && data.routes[0]) {
-                const geojson = {
-                    type: 'Feature',
-                    geometry: data.routes[0].geometry
-                };
-                
-                if (mapboxMap.getSource('route')) {
-                    if (mapboxMap.getLayer('route')) mapboxMap.removeLayer('route');
-                    mapboxMap.removeSource('route');
-                }
-                
-                mapboxMap.addSource('route', { type: 'geojson', data: geojson });
-                mapboxMap.addLayer({
-                    id: 'route',
-                    type: 'line',
-                    source: 'route',
-                    paint: {
-                        'line-color': tipo === 'recogida' ? '#10B981' : '#FF6200',
-                        'line-width': 4,
-                        'line-opacity': 0.8
-                    }
-                });
-                
-                const bounds = new mapboxgl.LngLatBounds()
-                    .extend([ubicacionDelivery.lng, ubicacionDelivery.lat])
-                    .extend([destinoCoords.lng, destinoCoords.lat]);
-                mapboxMap.fitBounds(bounds, { padding: 50 });
-            }
-        } catch(e) {
-            console.error("Error dibujando ruta con Mapbox:", e);
-        }
-    }
-}
-
-async function actualizarRutaYTarifa() {
-    if (originCoords && destCoords) {
-        const tarifaContainer = document.getElementById("tarifaContainer");
-        tarifaContainer.classList.remove("hidden");
-        document.getElementById("tarifaValue").innerHTML = '<div class="loading-spinner"></div> Calculando...';
-        
-        if (routeLine) {
-            if (typeof routeLine.remove === 'function') {
-                routeLine.remove();
-            } else if (routeLine._map) {
-                try { map.removeControl(routeLine); } catch(e) {}
-            }
-            routeLine = null;
-        }
-        
-        // ✅ Guardar los extras actuales antes de recalcular
-        const extrasGuardados = currentRouteData?.extras || null;
-        
-        const tipoEnvio = document.getElementById("tipoEnvio").value || 'paquete';
-        
-        let routeResult = null;
-        
-        if (!usandoMapbox) {
-            routeResult = await drawRealRoute(map, originCoords, destCoords, '#FF6200', 5);
-        } else {
-            // Usar Mapbox
-            try {
-                const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${originCoords.lng},${originCoords.lat};${destCoords.lng},${destCoords.lat}?geometries=geojson&access_token=${MAPBOX_TOKEN}`;
-                const response = await fetch(url);
-                const data = await response.json();
-                
-                if (data.routes && data.routes[0]) {
-                    const route = data.routes[0];
-                    const distance = route.distance / 1000;
-                    const duration = route.duration / 60;
-                    
-                    if (mapboxMap.getSource('route')) {
-                        if (mapboxMap.getLayer('route')) mapboxMap.removeLayer('route');
-                        mapboxMap.removeSource('route');
-                    }
-                    
-                    const geojson = { type: 'Feature', geometry: route.geometry };
-                    mapboxMap.addSource('route', { type: 'geojson', data: geojson });
-                    mapboxMap.addLayer({
-                        id: 'route',
-                        type: 'line',
-                        source: 'route',
-                        paint: { 'line-color': '#FF6200', 'line-width': 5, 'line-opacity': 0.8 }
-                    });
-                    
-                    routeResult = { routeData: { distance, duration } };
-                }
-            } catch(e) {
-                console.error("Error en ruta Mapbox:", e);
-            }
-        }
-        
-        if (routeResult && routeResult.routeData) {
-            if (!usandoMapbox) routeLine = routeResult.line;
-            const distance = routeResult.routeData.distance;
-            const duration = routeResult.routeData.duration;
-            const rate = calculateShippingRate(distance, tipoEnvio);
-            
-            currentRouteData = { 
-                distance: distance, 
-                duration: duration,
-                extras: extrasGuardados || { lluvia: false, noche: false, espera: false }
-            };
-            
-            let tarifaMostrar = rate.total;
-            if (currentRouteData.extras) {
-                if (currentRouteData.extras.lluvia) tarifaMostrar += 10;
-                if (currentRouteData.extras.noche) tarifaMostrar += 10;
-                if (currentRouteData.extras.espera) tarifaMostrar += 10;
-            }
-            
-            document.getElementById("tarifaValue").innerHTML = `$${tarifaMostrar} MXN`;
-            mostrarToast(`📏 Distancia: ${distance.toFixed(2)} km • ⏱️ ${formatDuration(duration)}`);
-            
-        } else {
-            const distance = calcularDistancia();
-            const rate = calculateShippingRate(distance, tipoEnvio);
-            
-            currentRouteData = { 
-                distance: distance, 
-                duration: distance * 2,
-                extras: extrasGuardados || { lluvia: false, noche: false, espera: false }
-            };
-            
-            let tarifaMostrar = rate.total;
-            if (currentRouteData.extras) {
-                if (currentRouteData.extras.lluvia) tarifaMostrar += 10;
-                if (currentRouteData.extras.noche) tarifaMostrar += 10;
-                if (currentRouteData.extras.espera) tarifaMostrar += 10;
-            }
-            
-            document.getElementById("tarifaValue").innerHTML = `$${tarifaMostrar} MXN (estimado)`;
-            
-            if (!usandoMapbox) {
-                routeLine = L.polyline([
-                    [originCoords.lat, originCoords.lng],
-                    [destCoords.lat, destCoords.lng]
-                ], { color: '#FF6200', weight: 5, opacity: 0.6, dashArray: '5, 10' }).addTo(map);
-            }
-        }
-    }
-}
-
-function calcularDistancia() {
-    const R = 6371;
-    const dLat = (destCoords.lat - originCoords.lat) * Math.PI / 180;
-    const dLon = (destCoords.lng - originCoords.lng) * Math.PI / 180;
-    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-              Math.cos(originCoords.lat * Math.PI / 180) * Math.cos(destCoords.lat * Math.PI / 180) *
-              Math.sin(dLon/2) * Math.sin(dLon/2);
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-}
+    window.mostrarToast("📍 Mapa centrado en Ciudad del Carmen");
+};
 
 function reverseGeocode(latlng, callback) {
     fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latlng.lat}&lon=${latlng.lng}&zoom=18`)
@@ -522,12 +405,10 @@ async function buscarDirecciones(query, tipo) {
     
     let resultados = [];
     
-    // Intentar con Mapbox primero si está disponible
     if (usandoMapbox && typeof geocodificarDireccion === 'function') {
         resultados = await geocodificarDireccion(query);
     }
     
-    // Si Mapbox no dio resultados o no está disponible, usar Nominatim
     if (resultados.length === 0) {
         try {
             const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query + ', Ciudad del Carmen, Campeche')}&limit=5&addressdetails=1`);
@@ -564,11 +445,11 @@ async function buscarDirecciones(query, tipo) {
     sugerenciasDiv.classList.remove('hidden');
 }
 
-function seleccionarDireccion(tipo, lat, lng, direccion) {
+window.seleccionarDireccion = function(tipo, lat, lng, direccion) {
     const coords = { lat: parseFloat(lat), lng: parseFloat(lng) };
     
     if (coords.lat < 18.58 || coords.lat > 18.70 || coords.lng < -91.88 || coords.lng > -91.75) {
-        mostrarToast("❌ Ubicación fuera de Ciudad del Carmen", true);
+        window.mostrarToast("❌ Ubicación fuera de Ciudad del Carmen", true);
         document.getElementById(`${tipo}Sugerencias`).classList.add('hidden');
         return;
     }
@@ -597,8 +478,27 @@ function seleccionarDireccion(tipo, lat, lng, direccion) {
     
     document.getElementById(`${tipo}Sugerencias`).classList.add('hidden');
     actualizarRutaYTarifa();
-    mostrarToast(`📍 ${tipo === 'origen' ? 'Origen' : 'Destino'} actualizado`);
-}
+    window.mostrarToast(`📍 ${tipo === 'origen' ? 'Origen' : 'Destino'} actualizado`);
+};
+
+// ==================== INICIALIZACIÓN ====================
+document.addEventListener('DOMContentLoaded', () => {
+    loadUser();
+    initMap();
+});
+
+window.onload = () => {
+    console.log("Cliente app cargada");
+    if (currentUser && currentUser.rol === 'cliente') {
+        setTimeout(() => cargarDeliverysEnLinea(), 2000);
+        if (deliverysInterval) clearInterval(deliverysInterval);
+        deliverysInterval = setInterval(() => {
+            if (currentUser && currentUser.rol === 'cliente') {
+                cargarDeliverysEnLinea();
+            }
+        }, 15000);
+    }
+};
 
 // ==================== VER DELIVERYS EN LÍNEA ====================
 async function cargarDeliverysEnLinea() {
@@ -635,7 +535,7 @@ async function cargarDeliverysEnLinea() {
         if (!ubicaciones || ubicaciones.length === 0) {
             // No hay deliverys online, limpiar marcadores existentes
             deliverysMarkers.forEach(marker => {
-                try { map.removeLayer(marker); } catch(e) {}
+                try { if (map && marker.remove) marker.remove(); } catch(e) {}
             });
             deliverysMarkers = [];
             console.log("📭 No hay deliverys en línea");
@@ -650,7 +550,7 @@ async function cargarDeliverysEnLinea() {
         
         // ✅ 6. Limpiar marcadores antiguos
         deliverysMarkers.forEach(marker => {
-            try { map.removeLayer(marker); } catch(e) {}
+            try { if (map && marker.remove) marker.remove(); } catch(e) {}
         });
         deliverysMarkers = [];
         
@@ -684,7 +584,7 @@ async function cargarDeliverysEnLinea() {
     }
 }
 
-// ==================== FUNCIÓN FALTANTE ====================
+// ==================== FUNCIÓN PARA VERIFICAR PEDIDO ACTIVO DEL DELIVERY ====================
 async function tienePedidoActivo(deliveryId) {
     const supabase = supabaseClient;
     if (!supabase) return false;
@@ -705,92 +605,280 @@ async function tienePedidoActivo(deliveryId) {
     }
 }
 
+// ==================== FUNCIÓN LIMPIAR Y RESETEAR UI ====================
+function limpiarYResetearUI() {
+    pedidoActual = null;
+    const panelEstado = document.getElementById("panelEstadoPedido");
+    const panelEstadoMobile = document.getElementById("panelEstadoPedidoMobile");
+    
+    if (panelEstado) panelEstado.classList.add("hidden");
+    if (panelEstadoMobile) panelEstadoMobile.classList.add("hidden");
+    
+    document.getElementById("pedidoIdLabel").innerText = "---";
+    document.getElementById("pedidoIdLabelMobile").innerText = "---";
+}
+
 // ==================== FUNCIÓN CANCELAR PEDIDO ====================
 async function cancelarPedido() {
     if (!pedidoActual || pedidoActual.estado !== 'pendiente') {
-        mostrarToast("❌ No se puede cancelar este pedido porque ya está en camino o completado", true);
+        window.mostrarToast("❌ No se puede cancelar este pedido porque ya está en camino o completado", true);
         return;
     }
     
-    mostrarModalConfirmacion(
-        "Cancelar pedido",
-        `¿Estás seguro de cancelar el pedido #${pedidoActual.id}? Esta acción no se puede deshacer.`,
-        async () => {
-            const supabase = supabaseClient;
-            if (!supabase) return;
-            
-            try {
-                const { error } = await supabase
-                    .from('pedidos')
-                    .delete()
-                    .eq('id', pedidoActual.id);
-                
-                if (error) throw error;
-                
-                mostrarToast(`✅ Pedido #${pedidoActual.id} cancelado correctamente`);
-                limpiarYResetearUI();
-                
-            } catch(e) {
-                console.error('Error cancelando pedido:', e);
-                mostrarToast("❌ Error al cancelar el pedido", true);
-            }
-        }
-    );
+    const confirmar = confirm(`Cancelar pedido\n\n¿Estás seguro de cancelar el pedido #${pedidoActual.id}? Esta acción no se puede deshacer.`);
+    
+    if (!confirmar) return;
+    
+    const supabase = supabaseClient;
+    if (!supabase) {
+        window.mostrarToast("❌ Error de conexión", true);
+        return;
+    }
+    
+    try {
+        const { error } = await supabase
+            .from('pedidos')
+            .delete()
+            .eq('id', pedidoActual.id);
+        
+        if (error) throw error;
+        
+        window.mostrarToast(`✅ Pedido #${pedidoActual.id} cancelado correctamente`);
+        limpiarYResetearUI();
+        
+    } catch(e) {
+        console.error('Error cancelando pedido:', e);
+        window.mostrarToast("❌ Error al cancelar el pedido", true);
+    }
 }
 
-// ==================== EVENT LISTENERS ====================
-document.addEventListener('DOMContentLoaded', () => {
-    const origenInput = document.getElementById('origen');
-    const destinoInput = document.getElementById('destino');
-    const btnCancelarPedido = document.getElementById('btnCancelarPedido');
-    
-    if (btnCancelarPedido) {
-        btnCancelarPedido.addEventListener('click', cancelarPedido);
-    }
-    
-    if (origenInput) {
-        origenInput.addEventListener('input', (e) => {
-            if (busquedaTimeout) clearTimeout(busquedaTimeout);
-            busquedaTimeout = setTimeout(() => {
-                buscarDirecciones(e.target.value, 'origen');
-            }, 500);
-        });
+// ==================== ACTUALIZAR RUTA Y TARIFA ====================
+async function actualizarRutaYTarifa() {
+    if (originCoords && destCoords) {
+        const tarifaContainer = document.getElementById("tarifaContainer");
+        if (tarifaContainer) tarifaContainer.classList.remove("hidden");
         
-        origenInput.addEventListener('blur', () => {
-            setTimeout(() => {
-                document.getElementById('origenSugerencias')?.classList.add('hidden');
-            }, 200);
-        });
-    }
-    
-    if (destinoInput) {
-        destinoInput.addEventListener('input', (e) => {
-            if (busquedaTimeout) clearTimeout(busquedaTimeout);
-            busquedaTimeout = setTimeout(() => {
-                buscarDirecciones(e.target.value, 'destino');
-            }, 500);
-        });
+        const tarifaValueSpan = document.getElementById("tarifaValue");
+        if (tarifaValueSpan) tarifaValueSpan.innerHTML = '<div class="loading-spinner"></div> Calculando...';
         
-        destinoInput.addEventListener('blur', () => {
-            setTimeout(() => {
-                document.getElementById('destinoSugerencias')?.classList.add('hidden');
-            }, 200);
-        });
-    }
-});
-
-window.onload = () => { 
-    loadUser(); 
-    initMap();
-    if (currentUser && currentUser.rol === 'cliente') {
-        setTimeout(() => cargarDeliverysEnLinea(), 2000);
-        
-        if (deliverysInterval) clearInterval(deliverysInterval);
-        
-        deliverysInterval = setInterval(() => {
-            if (currentUser && currentUser.rol === 'cliente') {
-                cargarDeliverysEnLinea();
+        if (routeLine) {
+            if (typeof routeLine.remove === 'function') {
+                routeLine.remove();
+            } else if (routeLine._map) {
+                try { map.removeControl(routeLine); } catch(e) {}
             }
-        }, 15000); // 15 segundos
+            routeLine = null;
+        }
+        
+        const extrasGuardados = currentRouteData?.extras || null;
+        const tipoEnvio = document.getElementById("tipoEnvio")?.value || 'paquete';
+        
+        let routeResult = null;
+        
+        if (!usandoMapbox) {
+            routeResult = await drawRealRoute(map, originCoords, destCoords, '#FF6200', 5);
+        } else {
+            try {
+                const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${originCoords.lng},${originCoords.lat};${destCoords.lng},${destCoords.lat}?geometries=geojson&access_token=${MAPBOX_TOKEN}`;
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (data.routes && data.routes[0]) {
+                    const route = data.routes[0];
+                    const distance = route.distance / 1000;
+                    const duration = route.duration / 60;
+                    
+                    if (mapboxMap && mapboxMap.getSource('route')) {
+                        if (mapboxMap.getLayer('route')) mapboxMap.removeLayer('route');
+                        mapboxMap.removeSource('route');
+                    }
+                    
+                    if (mapboxMap) {
+                        const geojson = { type: 'Feature', geometry: route.geometry };
+                        mapboxMap.addSource('route', { type: 'geojson', data: geojson });
+                        mapboxMap.addLayer({
+                            id: 'route',
+                            type: 'line',
+                            source: 'route',
+                            paint: { 'line-color': '#FF6200', 'line-width': 5, 'line-opacity': 0.8 }
+                        });
+                    }
+                    
+                    routeResult = { routeData: { distance, duration } };
+                }
+            } catch(e) {
+                console.error("Error en ruta Mapbox:", e);
+            }
+        }
+        
+        if (routeResult && routeResult.routeData) {
+            if (!usandoMapbox) routeLine = routeResult.line;
+            const distance = routeResult.routeData.distance;
+            const duration = routeResult.routeData.duration;
+            const rate = calculateShippingRate(distance, tipoEnvio);
+            
+            currentRouteData = { 
+                distance: distance, 
+                duration: duration,
+                extras: extrasGuardados || { lluvia: false, noche: false, espera: false }
+            };
+            
+            let tarifaMostrar = rate.total;
+            if (currentRouteData.extras) {
+                if (currentRouteData.extras.lluvia) tarifaMostrar += 10;
+                if (currentRouteData.extras.noche) tarifaMostrar += 10;
+                if (currentRouteData.extras.espera) tarifaMostrar += 10;
+            }
+            
+            const tarifaSpan = document.getElementById("tarifaValue");
+            if (tarifaSpan) tarifaSpan.innerHTML = `$${tarifaMostrar} MXN`;
+            
+            const tarifaSpanMobile = document.getElementById("tarifaValueMobile");
+            if (tarifaSpanMobile) tarifaSpanMobile.innerHTML = `$${tarifaMostrar} MXN`;
+            
+            window.mostrarToast(`📏 Distancia: ${distance.toFixed(2)} km • ⏱️ ${formatDuration(duration)}`);
+            
+        } else {
+            const distance = calcularDistancia();
+            const rate = calculateShippingRate(distance, tipoEnvio);
+            
+            currentRouteData = { 
+                distance: distance, 
+                duration: distance * 2,
+                extras: extrasGuardados || { lluvia: false, noche: false, espera: false }
+            };
+            
+            let tarifaMostrar = rate.total;
+            if (currentRouteData.extras) {
+                if (currentRouteData.extras.lluvia) tarifaMostrar += 10;
+                if (currentRouteData.extras.noche) tarifaMostrar += 10;
+                if (currentRouteData.extras.espera) tarifaMostrar += 10;
+            }
+            
+            const tarifaSpan = document.getElementById("tarifaValue");
+            if (tarifaSpan) tarifaSpan.innerHTML = `$${tarifaMostrar} MXN (estimado)`;
+            
+            const tarifaSpanMobile = document.getElementById("tarifaValueMobile");
+            if (tarifaSpanMobile) tarifaSpanMobile.innerHTML = `$${tarifaMostrar} MXN`;
+            
+            if (!usandoMapbox && map) {
+                routeLine = L.polyline([
+                    [originCoords.lat, originCoords.lng],
+                    [destCoords.lat, destCoords.lng]
+                ], { color: '#FF6200', weight: 5, opacity: 0.6, dashArray: '5, 10' }).addTo(map);
+            }
+        }
     }
-};
+}
+
+// ==================== LIMPIAR RUTA CLIENTE ====================
+function limpiarRutaCliente() {
+    if (clienteRouteControl) {
+        try { 
+            if (!usandoMapbox && map && map.removeControl) {
+                map.removeControl(clienteRouteControl);
+            }
+        } catch(e) {}
+        clienteRouteControl = null;
+    }
+    
+    if (usandoMapbox && mapboxMap) {
+        try {
+            if (mapboxMap.getLayer('route')) mapboxMap.removeLayer('route');
+            if (mapboxMap.getSource('route')) mapboxMap.removeSource('route');
+        } catch(e) {}
+    }
+}
+
+// ==================== DIBUJAR RUTA DEL DELIVERY EN CLIENTE ====================
+async function dibujarRutaDeliveryEnCliente(ubicacionDelivery, destinoCoords, tipo) {
+    if (!ubicacionDelivery || !destinoCoords) {
+        console.log("❌ Faltan coordenadas para dibujar ruta:", { ubicacionDelivery, destinoCoords });
+        return;
+    }
+    
+    limpiarRutaCliente();
+    
+    if (!usandoMapbox) {
+        let waypoints = [];
+        let color = '#FF6200';
+        
+        if (tipo === 'recogida') {
+            waypoints = [
+                L.latLng(ubicacionDelivery.lat, ubicacionDelivery.lng),
+                L.latLng(destinoCoords.lat, destinoCoords.lng)
+            ];
+            color = '#10B981';
+        } else if (tipo === 'entrega') {
+            waypoints = [
+                L.latLng(ubicacionDelivery.lat, ubicacionDelivery.lng),
+                L.latLng(destinoCoords.lat, destinoCoords.lng)
+            ];
+            color = '#FF6200';
+        }
+        
+        clienteRouteControl = L.Routing.control({
+            waypoints: waypoints,
+            routeWhileDragging: false,
+            showAlternatives: false,
+            fitSelectedRoutes: true,
+            lineOptions: {
+                styles: [{ color: color, weight: 4, opacity: 0.8 }]
+            },
+            router: L.Routing.osrmv1({
+                serviceUrl: 'https://router.project-osrm.org/route/v1'
+            }),
+            show: false,
+            addWaypoints: false
+        }).addTo(map);
+        
+        setTimeout(() => {
+            map.fitBounds(waypoints, { padding: [50, 50] });
+            map.invalidateSize();
+        }, 300);
+    } else {
+        try {
+            const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${ubicacionDelivery.lng},${ubicacionDelivery.lat};${destinoCoords.lng},${destinoCoords.lat}?geometries=geojson&access_token=${MAPBOX_TOKEN}`;
+            const response = await fetch(url);
+            const data = await response.json();
+            
+            if (data.routes && data.routes[0] && mapboxMap) {
+                const geojson = {
+                    type: 'Feature',
+                    geometry: data.routes[0].geometry
+                };
+                
+                if (mapboxMap.getSource('route')) {
+                    if (mapboxMap.getLayer('route')) mapboxMap.removeLayer('route');
+                    mapboxMap.removeSource('route');
+                }
+                
+                mapboxMap.addSource('route', { type: 'geojson', data: geojson });
+                mapboxMap.addLayer({
+                    id: 'route',
+                    type: 'line',
+                    source: 'route',
+                    paint: {
+                        'line-color': tipo === 'recogida' ? '#10B981' : '#FF6200',
+                        'line-width': 4,
+                        'line-opacity': 0.8
+                    }
+                });
+                
+                const bounds = new mapboxgl.LngLatBounds()
+                    .extend([ubicacionDelivery.lng, ubicacionDelivery.lat])
+                    .extend([destinoCoords.lng, destinoCoords.lat]);
+                mapboxMap.fitBounds(bounds, { padding: 50 });
+            }
+        } catch(e) {
+            console.error("Error dibujando ruta con Mapbox:", e);
+        }
+    }
+}
+
+// ==================== EXPONER FUNCIONES GLOBALES ====================
+window.actualizarRutaYTarifa = actualizarRutaYTarifa;
+window.cancelarPedido = cancelarPedido;
+window.cargarDeliverysEnLinea = cargarDeliverysEnLinea;
+window.dibujarRutaDeliveryEnCliente = dibujarRutaDeliveryEnCliente;
+window.limpiarRutaCliente = limpiarRutaCliente;
