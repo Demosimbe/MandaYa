@@ -151,12 +151,12 @@
         }
 
         .sugerencia-item {
-    transition: all 0.2s ease;
-}
+            transition: all 0.2s ease;
+        }
 
-.sugerencia-item:hover {
-    background-color: #f3f4f6;
-}
+        .sugerencia-item:hover {
+            background-color: #f3f4f6;
+        }
 
         /* Forzar sidebar desktop en PC sin romper móvil */
         @media (min-width: 1024px) {
@@ -281,53 +281,57 @@
             padding: 12px;
             margin: 8px 0;
         }
+
+        /* Panel de estado del pedido */
+        .estado-panel {
+            transition: all 0.3s ease;
+        }
     </style>
 </head>
 <body class="h-screen overflow-hidden flex">
 
     <!-- SIDEBAR DESKTOP (visible en lg) -->
-   <div class="hidden lg:flex w-80 bg-white sidebar flex-col h-full overflow-y-hidden z-10 relative shadow-xl">
+    <div class="hidden lg:flex w-80 bg-white sidebar flex-col h-full overflow-y-hidden z-10 relative shadow-xl">
         <div class="bg-black text-white p-5 flex items-center justify-between sticky top-0 z-20">
             <div class="flex items-center gap-3">
                 <div class="w-12 h-12 bg-black rounded-full flex items-center justify-center">
-                   <img src="img/logo.png" class="w-12 h-12 object-cover" alt="Logo">
+                    <img src="img/logo.png" class="w-12 h-12 object-cover" alt="Logo">
                 </div>
-            <div>
-               <h1 class="font-bold text-2xl">MandaYa</h1>
-               <p class="text-xs opacity-90">Envíos rápidos y seguros</p>
-         </div>
-    </div>
-          
+                <div>
+                    <h1 class="font-bold text-2xl">MandaYa</h1>
+                    <p class="text-xs opacity-90">Envíos rápidos y seguros</p>
+                </div>
+            </div>
             <button onclick="verPerfil()" class="text-white hover:bg-white/20 rounded-full p-2 transition-all">
                 <i class="fas fa-user-circle text-3xl"></i>
             </button>
         </div>
 
-       <div id="userInfo" class="bg-gray-50 p-1 border-b"></div>
+        <div id="userInfo" class="bg-gray-50 p-1 border-b"></div>
 
         <div class="p-5 flex-1 overflow-auto">
-           <h2 class="text-2xl font-semibold mb-2 mt-0">Solicita un envío</h2>
+            <h2 class="text-2xl font-semibold mb-2 mt-0">Solicita un envío</h2>
 
             <div class="space-y-4">
-               <div>
-                   <label class="text-sm text-gray-600 font-medium">📍 Punto de partida</label>
-                   <div class="mt-1 bg-gray-100 border border-gray-300 rounded-2xl py-2 px-3 flex items-center gap-3">
-                       <i class="fas fa-circle text-[#FF6200] text-sm"></i>
-                       <input type="text" id="origen" class="bg-transparent flex-1 outline-none text-sm" placeholder="Buscar dirección o arrastra el marcador" autocomplete="off">
-                   </div>
-                   <!-- Sugerencias para origen -->
-                   <div id="origenSugerencias" class="hidden bg-white border border-gray-200 rounded-xl mt-1 max-h-48 overflow-auto shadow-lg z-50"></div>
-               </div>
-               
-               <div class="mt-3">
-                   <label class="text-sm text-gray-600 font-medium">🏁 Destino</label>
-                  <div class="mt-1 bg-gray-100 border border-gray-300 rounded-2xl py-2 px-3 flex items-center gap-3">
-                       <i class="fas fa-square text-blue-600 text-sm"></i>
-                       <input type="text" id="destino" class="bg-transparent flex-1 outline-none text-sm" placeholder="Buscar dirección o arrastra el marcador" autocomplete="off">
-                   </div>
-                   <!-- Sugerencias para destino -->
-                   <div id="destinoSugerencias" class="hidden bg-white border border-gray-200 rounded-xl mt-1 max-h-48 overflow-auto shadow-lg z-50"></div>
-               </div>
+                <div>
+                    <label class="text-sm text-gray-600 font-medium">📍 Punto de partida</label>
+                    <div class="mt-1 bg-gray-100 border border-gray-300 rounded-2xl py-2 px-3 flex items-center gap-3">
+                        <i class="fas fa-circle text-[#FF6200] text-sm"></i>
+                        <input type="text" id="origen" class="bg-transparent flex-1 outline-none text-sm" placeholder="Buscar dirección o arrastra el marcador" autocomplete="off">
+                    </div>
+                    <!-- Sugerencias para origen -->
+                    <div id="origenSugerencias" class="hidden bg-white border border-gray-200 rounded-xl mt-1 max-h-48 overflow-auto shadow-lg z-50"></div>
+                </div>
+                
+                <div class="mt-3">
+                    <label class="text-sm text-gray-600 font-medium">🏁 Destino</label>
+                    <div class="mt-1 bg-gray-100 border border-gray-300 rounded-2xl py-2 px-3 flex items-center gap-3">
+                        <i class="fas fa-square text-blue-600 text-sm"></i>
+                        <input type="text" id="destino" class="bg-transparent flex-1 outline-none text-sm" placeholder="Buscar dirección o arrastra el marcador" autocomplete="off">
+                    </div>
+                    <!-- Sugerencias para destino -->
+                    <div id="destinoSugerencias" class="hidden bg-white border border-gray-200 rounded-xl mt-1 max-h-48 overflow-auto shadow-lg z-50"></div>
+                </div>
                 
                 <div id="tarifaContainer" class="hidden p-3 rounded-2xl text-center" style="background: linear-gradient(135deg, #FF6200, #FF8C00); color: white;">
                     <i class="fas fa-tag mr-2"></i>
@@ -348,10 +352,29 @@
                     </select>
                 </div>
 
-               <button onclick="solicitarEnvio()" 
-    class="w-full bg-black hover:bg-gray-800 text-white font-bold py-3 rounded-2xl text-base mt-4 transition-all flex items-center justify-center gap-2">
-    <i class="fas fa-paper-plane"></i> SOLICITAR ENVÍO
-</button>
+                <!-- Panel de estado del pedido (DESKTOP) -->
+                <div id="panelEstadoPedido" class="hidden mt-4 p-3 rounded-xl bg-gray-100 border border-gray-300 estado-panel">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <i id="estadoIcono" class="fas fa-clock text-yellow-500"></i>
+                                <span id="estadoTexto" class="font-semibold text-gray-800">Pedido pendiente</span>
+                            </div>
+                            <p class="text-xs text-gray-500 mt-1">ID: <span id="pedidoIdLabel">---</span></p>
+                        </div>
+                        <button id="btnCancelarPedido" class="bg-red-500 hover:bg-red-600 text-white text-sm px-3 py-1 rounded-lg transition-all">
+                            <i class="fas fa-times mr-1"></i> Cancelar
+                        </button>
+                    </div>
+                    <div class="text-xs text-gray-600 mt-2" id="estadoDetalle">
+                        Esperando a que un delivery tome tu pedido...
+                    </div>
+                </div>
+
+                <button onclick="solicitarEnvio()" 
+                    class="w-full bg-black hover:bg-gray-800 text-white font-bold py-3 rounded-2xl text-base mt-4 transition-all flex items-center justify-center gap-2">
+                    <i class="fas fa-paper-plane"></i> SOLICITAR ENVÍO
+                </button>
             </div>
         </div>
 
@@ -366,79 +389,79 @@
     </div>
 
     <!-- MODAL EXTRAS (antes del pago) -->
-<div id="modalExtras" class="hidden fixed inset-0 bg-black bg-opacity-95 flex items-center justify-center z-[10001] p-4">
-    <div class="bg-gray-800 rounded-3xl max-w-md w-full modal-uber">
-        <div class="text-center pt-6 pb-3 border-b border-gray-700">
-            <div class="w-16 h-16 bg-orange-500 rounded-full flex items-center justify-center mx-auto mb-3">
-                <i class="fas fa-plus-circle text-white text-2xl"></i>
-            </div>
-            <h2 class="text-xl font-bold text-white">Extras adicionales</h2>
-            <p class="text-gray-400 text-sm mt-1">Selecciona servicios adicionales si los necesitas</p>
-        </div>
-
-        <div class="p-5 space-y-3">
-            <!-- Extra Lluvia -->
-            <div class="bg-gray-700 rounded-xl p-3 flex items-center justify-between cursor-pointer hover:bg-gray-600 transition-all" onclick="toggleExtra('lluvia')">
-                <div class="flex items-center gap-3">
-                    <i class="fas fa-cloud-rain text-blue-400 text-xl"></i>
-                    <div>
-                        <div class="font-bold text-white">Lluvia 🌧️</div>
-                        <div class="text-xs text-gray-400">Clima adverso</div>
-                    </div>
+    <div id="modalExtras" class="hidden fixed inset-0 bg-black bg-opacity-95 flex items-center justify-center z-[10001] p-4">
+        <div class="bg-gray-800 rounded-3xl max-w-md w-full modal-uber">
+            <div class="text-center pt-6 pb-3 border-b border-gray-700">
+                <div class="w-16 h-16 bg-orange-500 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <i class="fas fa-plus-circle text-white text-2xl"></i>
                 </div>
-                <div class="flex items-center gap-2">
-                    <span class="text-orange-400 font-bold">+$10</span>
-                    <div id="checkLluvia" class="w-6 h-6 rounded-full border-2 border-gray-500 flex items-center justify-center">
-                        <i class="fas fa-check text-green-500 text-xs hidden"></i>
-                    </div>
-                </div>
+                <h2 class="text-xl font-bold text-white">Extras adicionales</h2>
+                <p class="text-gray-400 text-sm mt-1">Selecciona servicios adicionales si los necesitas</p>
             </div>
 
-            <!-- Extra Noche -->
-            <div class="bg-gray-700 rounded-xl p-3 flex items-center justify-between cursor-pointer hover:bg-gray-600 transition-all" onclick="toggleExtra('noche')">
-                <div class="flex items-center gap-3">
-                    <i class="fas fa-moon text-yellow-400 text-xl"></i>
-                    <div>
-                        <div class="font-bold text-white">Noche 🌙</div>
-                        <div class="text-xs text-gray-400">Horario nocturno (8pm - 6am)</div>
+            <div class="p-5 space-y-3">
+                <!-- Extra Lluvia -->
+                <div class="bg-gray-700 rounded-xl p-3 flex items-center justify-between cursor-pointer hover:bg-gray-600 transition-all" onclick="toggleExtra('lluvia')">
+                    <div class="flex items-center gap-3">
+                        <i class="fas fa-cloud-rain text-blue-400 text-xl"></i>
+                        <div>
+                            <div class="font-bold text-white">Lluvia 🌧️</div>
+                            <div class="text-xs text-gray-400">Clima adverso</div>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-orange-400 font-bold">+$10</span>
+                        <div id="checkLluvia" class="w-6 h-6 rounded-full border-2 border-gray-500 flex items-center justify-center">
+                            <i class="fas fa-check text-green-500 text-xs hidden"></i>
+                        </div>
                     </div>
                 </div>
-                <div class="flex items-center gap-2">
-                    <span class="text-orange-400 font-bold">+$10</span>
-                    <div id="checkNoche" class="w-6 h-6 rounded-full border-2 border-gray-500 flex items-center justify-center">
-                        <i class="fas fa-check text-green-500 text-xs hidden"></i>
+
+                <!-- Extra Noche -->
+                <div class="bg-gray-700 rounded-xl p-3 flex items-center justify-between cursor-pointer hover:bg-gray-600 transition-all" onclick="toggleExtra('noche')">
+                    <div class="flex items-center gap-3">
+                        <i class="fas fa-moon text-yellow-400 text-xl"></i>
+                        <div>
+                            <div class="font-bold text-white">Noche 🌙</div>
+                            <div class="text-xs text-gray-400">Horario nocturno (8pm - 6am)</div>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-orange-400 font-bold">+$10</span>
+                        <div id="checkNoche" class="w-6 h-6 rounded-full border-2 border-gray-500 flex items-center justify-center">
+                            <i class="fas fa-check text-green-500 text-xs hidden"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Extra Espera -->
+                <div class="bg-gray-700 rounded-xl p-3 flex items-center justify-between cursor-pointer hover:bg-gray-600 transition-all" onclick="toggleExtra('espera')">
+                    <div class="flex items-center gap-3">
+                        <i class="fas fa-clock text-purple-400 text-xl"></i>
+                        <div>
+                            <div class="font-bold text-white">Espera ⏱️</div>
+                            <div class="text-xs text-gray-400">Tiempo de espera adicional</div>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-orange-400 font-bold">+$10</span>
+                        <div id="checkEspera" class="w-6 h-6 rounded-full border-2 border-gray-500 flex items-center justify-center">
+                            <i class="fas fa-check text-green-500 text-xs hidden"></i>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Extra Espera -->
-            <div class="bg-gray-700 rounded-xl p-3 flex items-center justify-between cursor-pointer hover:bg-gray-600 transition-all" onclick="toggleExtra('espera')">
-                <div class="flex items-center gap-3">
-                    <i class="fas fa-clock text-purple-400 text-xl"></i>
-                    <div>
-                        <div class="font-bold text-white">Espera ⏱️</div>
-                        <div class="text-xs text-gray-400">Tiempo de espera adicional</div>
-                    </div>
-                </div>
-                <div class="flex items-center gap-2">
-                    <span class="text-orange-400 font-bold">+$10</span>
-                    <div id="checkEspera" class="w-6 h-6 rounded-full border-2 border-gray-500 flex items-center justify-center">
-                        <i class="fas fa-check text-green-500 text-xs hidden"></i>
-                    </div>
-                </div>
+            <div class="px-5 pb-5 flex gap-3">
+                <button onclick="cerrarModalExtras()" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded-xl transition-all">
+                    Cancelar
+                </button>
+                <button onclick="confirmarExtras()" class="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl transition-all">
+                    Continuar
+                </button>
             </div>
-        </div>
-
-        <div class="px-5 pb-5 flex gap-3">
-            <button onclick="cerrarModalExtras()" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded-xl transition-all">
-                Cancelar
-            </button>
-            <button onclick="confirmarExtras()" class="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl transition-all">
-                Continuar
-            </button>
         </div>
     </div>
-</div>
 
     <!-- MODAL DE PAGO -->
     <div id="modalPago" class="hidden fixed inset-0 bg-black bg-opacity-95 flex items-center justify-center z-[10001] p-4">
@@ -454,7 +477,7 @@
             <div class="p-5 space-y-4">
                 <div id="btnEfectivo" class="bg-gray-700 rounded-xl p-4 cursor-pointer hover:bg-gray-600 transition-all" onclick="seleccionarPago('efectivo')">
                     <div class="flex items-center gap-3">
-                       <img src="img/logo.png" class="w-8 h-8 rounded-full object-cover" alt="Logo">
+                        <img src="img/logo.png" class="w-8 h-8 rounded-full object-cover" alt="Logo">
                         <div class="flex-1">
                             <div class="font-bold text-white">Efectivo</div>
                             <div class="text-xs text-gray-400">Paga al delivery al momento de la entrega</div>
@@ -673,6 +696,25 @@
                     <input type="hidden" id="tipoEnvioMobile" value="">
                     <div id="tipoSeleccionadoMobile" class="text-xs text-green-600 mt-2 hidden">
                         ✅ Tipo seleccionado
+                    </div>
+                </div>
+
+                <!-- Panel de estado del pedido (MOBILE) -->
+                <div id="panelEstadoPedidoMobile" class="hidden mt-3 p-3 rounded-xl bg-gray-100 border border-gray-300 estado-panel">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <i id="estadoIconoMobile" class="fas fa-clock text-yellow-500 text-xs"></i>
+                                <span id="estadoTextoMobile" class="font-semibold text-gray-800 text-sm">Pedido pendiente</span>
+                            </div>
+                            <p class="text-xs text-gray-500 mt-1">ID: <span id="pedidoIdLabelMobile">---</span></p>
+                        </div>
+                        <button id="btnCancelarPedidoMobile" class="bg-red-500 hover:bg-red-600 text-white text-xs px-2 py-1 rounded-lg transition-all">
+                            <i class="fas fa-times mr-1"></i> Cancelar
+                        </button>
+                    </div>
+                    <div class="text-xs text-gray-600 mt-2" id="estadoDetalleMobile">
+                        Esperando a que un delivery tome tu pedido...
                     </div>
                 </div>
 

@@ -145,6 +145,9 @@ async function actualizarRutaYTarifa() {
             routeLine = null;
         }
         
+        // ✅ Guardar los extras actuales antes de recalcular
+        const extrasGuardados = currentRouteData?.extras || null;
+        
         const tipoEnvio = document.getElementById("tipoEnvio").value || 'paquete';
         const routeResult = await drawRealRoute(map, originCoords, destCoords, '#FF6200', 5);
         
@@ -154,15 +157,43 @@ async function actualizarRutaYTarifa() {
             const duration = routeResult.routeData.duration;
             const rate = calculateShippingRate(distance, tipoEnvio);
             
-            document.getElementById("tarifaValue").innerHTML = `$${rate.total} MXN`;
+            // ✅ Crear currentRouteData manteniendo los extras si existían
+            currentRouteData = { 
+                distance: distance, 
+                duration: duration,
+                extras: extrasGuardados || { lluvia: false, noche: false, espera: false }
+            };
+            
+            // ✅ Calcular tarifa base y aplicar extras si existen
+            let tarifaMostrar = rate.total;
+            if (currentRouteData.extras) {
+                if (currentRouteData.extras.lluvia) tarifaMostrar += 10;
+                if (currentRouteData.extras.noche) tarifaMostrar += 10;
+                if (currentRouteData.extras.espera) tarifaMostrar += 10;
+            }
+            
+            document.getElementById("tarifaValue").innerHTML = `$${tarifaMostrar} MXN`;
             mostrarToast(`📏 Distancia: ${distance.toFixed(2)} km • ⏱️ ${formatDuration(duration)}`);
             
-            currentRouteData = { distance: distance, duration: duration };
         } else {
             const distance = calcularDistancia();
             const rate = calculateShippingRate(distance, tipoEnvio);
-            document.getElementById("tarifaValue").innerHTML = `$${rate.total} MXN (estimado)`;
-            currentRouteData = null;
+            
+            // ✅ Crear currentRouteData manteniendo los extras si existían
+            currentRouteData = { 
+                distance: distance, 
+                duration: distance * 2,
+                extras: extrasGuardados || { lluvia: false, noche: false, espera: false }
+            };
+            
+            let tarifaMostrar = rate.total;
+            if (currentRouteData.extras) {
+                if (currentRouteData.extras.lluvia) tarifaMostrar += 10;
+                if (currentRouteData.extras.noche) tarifaMostrar += 10;
+                if (currentRouteData.extras.espera) tarifaMostrar += 10;
+            }
+            
+            document.getElementById("tarifaValue").innerHTML = `$${tarifaMostrar} MXN (estimado)`;
             
             routeLine = L.polyline([
                 [originCoords.lat, originCoords.lng],
@@ -209,9 +240,18 @@ async function solicitarEnvio() {
     
     let distancia = currentRouteData ? currentRouteData.distance : calcularDistancia();
     const rate = calculateShippingRate(distancia, tipo);
-    const tarifaBase = rate.total;
+    let tarifaBase = rate.total;
     
-    // Guardar pedido temporalmente (sin extras aún)
+    // ✅ Verificar si hay extras guardados del resumen
+    let tarifaFinal = tarifaBase;
+    if (currentRouteData && currentRouteData.extras) {
+        tarifaFinal = tarifaBase;
+        if (currentRouteData.extras.lluvia) tarifaFinal += 10;
+        if (currentRouteData.extras.noche) tarifaFinal += 10;
+        if (currentRouteData.extras.espera) tarifaFinal += 10;
+    }
+    
+    // Guardar pedido temporalmente CON los extras si ya los seleccionó
     pedidoPendiente = {
         id: Date.now(),
         cliente_id: currentUser.id,
@@ -224,14 +264,15 @@ async function solicitarEnvio() {
         destino_lng: destCoords.lng,
         tipo: tipo,
         distancia_real: distancia.toFixed(2),
-        tarifa: tarifaBase,
-        extras: { lluvia: false, noche: false, espera: false },
+        tarifa: tarifaFinal,  // ✅ Usar tarifa con extras si existen
+        extras: currentRouteData?.extras || { lluvia: false, noche: false, espera: false },
         estado: 'pendiente',
         fecha: new Date().toISOString()
     };
     
-    // Mostrar resumen de ruta con extras
-    mostrarResumenRuta();
+    // ✅ IR DIRECTAMENTE AL PAGO
+    document.getElementById("modalPago").classList.remove("hidden");
+    document.getElementById("modalPago").classList.add("flex");
 }
 
 function seleccionarPago(metodo) {
@@ -289,7 +330,7 @@ function toggleExtra(extra) {
     extrasSeleccionados[extra] = !extrasSeleccionados[extra];
     
     const checkDiv = document.getElementById(`check${extra.charAt(0).toUpperCase() + extra.slice(1)}`);
-     if (!checkDiv) return; // ✅ Agrega esta línea
+     if (!checkDiv) return;
     const checkIcon = checkDiv.querySelector('i');
     
     if (extrasSeleccionados[extra]) {
@@ -345,12 +386,136 @@ function confirmarExtras() {
         pedidoPendiente.extras = { ...extrasSeleccionados };
     }
     
-    // Mostrar modal de pago
+    // Mostrar modal de pago directamente
     document.getElementById("modalPago").classList.remove("hidden");
     document.getElementById("modalPago").classList.add("flex");
 }
 
+// ==================== PANEL DE ESTADO DEL PEDIDO (NUEVO) ====================
+function mostrarPanelEstado(pedido) {
+    const panel = document.getElementById("panelEstadoPedido");
+    if (!panel) return;
+    
+    document.getElementById("pedidoIdLabel").innerText = pedido.id;
+    actualizarEstadoPanel(pedido.estado);
+    panel.classList.remove("hidden");
+}
 
+function actualizarEstadoPanel(estado) {
+    const estadoTexto = document.getElementById("estadoTexto");
+    const estadoIcono = document.getElementById("estadoIcono");
+    const estadoDetalle = document.getElementById("estadoDetalle");
+    
+    switch(estado) {
+        case 'pendiente':
+            estadoTexto.innerText = "⏳ Pedido pendiente";
+            estadoIcono.className = "fas fa-clock text-yellow-500";
+            estadoDetalle.innerText = "Esperando a que un delivery tome tu pedido...";
+            break;
+        case 'asignado':
+            estadoTexto.innerText = "🚚 En camino";
+            estadoIcono.className = "fas fa-motorcycle text-orange-500";
+            estadoDetalle.innerText = "Un delivery ya se dirige a recoger tu paquete.";
+            break;
+        case 'completado':
+            estadoTexto.innerText = "✅ Completado";
+            estadoIcono.className = "fas fa-check-circle text-green-500";
+            estadoDetalle.innerText = "¡Envío entregado! Gracias por usar MandaYa.";
+            break;
+    }
+}
+
+async function cancelarPedido() {
+    if (!pedidoActual || pedidoActual.estado !== 'pendiente') {
+        mostrarToast("❌ No se puede cancelar este pedido porque ya está en camino o completado", true);
+        return;
+    }
+    
+    mostrarModalConfirmacion(
+        "Cancelar pedido",
+        `¿Estás seguro de cancelar el pedido #${pedidoActual.id}? Esta acción no se puede deshacer.`,
+        async () => {
+            const supabase = supabaseClient;
+            if (!supabase) return;
+            
+            try {
+                const { error } = await supabase
+                    .from('pedidos')
+                    .delete()
+                    .eq('id', pedidoActual.id);
+                
+                if (error) throw error;
+                
+                mostrarToast(`✅ Pedido #${pedidoActual.id} cancelado correctamente`);
+                limpiarYResetearUI();
+                
+            } catch(e) {
+                console.error('Error cancelando pedido:', e);
+                mostrarToast("❌ Error al cancelar el pedido", true);
+            }
+        }
+    );
+}
+
+function limpiarYResetearUI() {
+    // Detener intervalos
+    if (seguimientoInterval) {
+        clearInterval(seguimientoInterval);
+        seguimientoInterval = null;
+    }
+    if (ubicacionInterval) {
+        clearInterval(ubicacionInterval);
+        ubicacionInterval = null;
+    }
+    if (deliverysInterval) {
+        clearInterval(deliverysInterval);
+        deliverysInterval = null;
+    }
+    
+    // Limpiar campos del formulario
+    document.getElementById("origen").value = "";
+    document.getElementById("destino").value = "";
+    document.getElementById("tipoEnvio").value = "";
+    document.getElementById("tarifaContainer").classList.add("hidden");
+    
+    // Restablecer marcadores a posición por defecto
+    if (originMarker && destMarker) {
+        originCoords = { lat: 18.6456, lng: -91.8249 };
+        destCoords = { lat: 18.6556, lng: -91.8149 };
+        originMarker.setLatLng([originCoords.lat, originCoords.lng]);
+        destMarker.setLatLng([destCoords.lat, destCoords.lng]);
+        reverseGeocode(originCoords, (addr) => document.getElementById("origen").value = addr);
+        reverseGeocode(destCoords, (addr) => document.getElementById("destino").value = addr);
+    }
+    
+    // Eliminar ruta y marcador de delivery
+    if (routeLine) {
+        if (typeof routeLine.remove === 'function') routeLine.remove();
+        routeLine = null;
+    }
+    if (deliveryMarker) {
+        map.removeLayer(deliveryMarker);
+        deliveryMarker = null;
+    }
+    
+    // Ocultar panel de estado
+    document.getElementById("panelEstadoPedido").classList.add("hidden");
+    
+    // Resetear variables
+    pedidoActual = null;
+    pedidoPendiente = null;
+    
+    // Reactivar la carga de deliverys en línea
+    if (currentUser && currentUser.rol === 'cliente') {
+        if (deliverysInterval) clearInterval(deliverysInterval);
+        deliverysInterval = setInterval(() => cargarDeliverysEnLinea(), 5000);
+        cargarDeliverysEnLinea();
+    }
+    
+    mostrarToast("🔄 Todo listo. Puedes hacer un nuevo envío.");
+}
+
+// ==================== FUNCIONES DE PEDIDO MODIFICADAS ====================
 async function guardarPedidoEnSupabase() {
     const supabase = supabaseClient;
     if (!supabase) {
@@ -366,7 +531,16 @@ async function guardarPedidoEnSupabase() {
         if (error) throw error;
         
         pedidoActual = pedidoPendiente;
-        mostrarToast(`✅ ¡Envío solicitado! Tarifa: $${pedidoPendiente.tarifa} MXN`);
+        
+        // ✅ Cerrar cualquier modal de pago que esté abierto
+        cerrarModalPago();
+        cerrarModalEfectivo();
+        cerrarModalTransferencia();
+        
+        // ✅ Mostrar panel de estado con el pedido pendiente
+        mostrarPanelEstado(pedidoActual);
+        
+        mostrarToast(`✅ ¡Envío solicitado! ID: #${pedidoActual.id} - Esperando delivery`);
         iniciarSeguimientoDelivery();
         
     } catch(e) {
@@ -414,7 +588,7 @@ function copiarDatosBancarios() {
     mostrarToast("✅ Datos bancarios copiados");
 }
 
-// En cliente.js - reemplaza la función iniciarSeguimientoDelivery()
+// ==================== SEGUIMIENTO DE DELIVERY ====================
 function iniciarSeguimientoDelivery() {
     if (!pedidoActual || !pedidoActual.id) {
         console.error("No hay pedido actual para seguir");
@@ -433,7 +607,6 @@ function iniciarSeguimientoDelivery() {
         if (!supabase) return;
         
         try {
-            // ✅ Obtener el pedido ACTUALIZADO desde Supabase
             const { data: pedidoActualizado, error } = await supabase
                 .from('pedidos')
                 .select('*')
@@ -442,12 +615,12 @@ function iniciarSeguimientoDelivery() {
             
             if (error) throw error;
             
-            // ✅ ACTUALIZAR la variable global con los datos más recientes
             if (pedidoActualizado) {
                 pedidoActual = pedidoActualizado;
+                // ✅ Actualizar el panel de estado
+                actualizarEstadoPanel(pedidoActualizado.estado);
             }
             
-            // Estado: asignado - delivery en camino
             if (pedidoActualizado && pedidoActualizado.estado === 'asignado' && pedidoActualizado.delivery_id) {
                 clearInterval(seguimientoInterval);
                 seguimientoInterval = null;
@@ -455,7 +628,6 @@ function iniciarSeguimientoDelivery() {
                 mostrarDeliveryEnMapa(pedidoActualizado.delivery_id);
                 seguirUbicacionDelivery(pedidoActualizado.delivery_id);
             } 
-            // Estado: completado
             else if (pedidoActualizado && pedidoActualizado.estado === 'completado') {
                 clearInterval(seguimientoInterval);
                 seguimientoInterval = null;
@@ -484,7 +656,6 @@ function seguirUbicacionDelivery(deliveryId) {
             }
         }
         
-        // También obtener el nombre del delivery
         let deliveryNombre = 'Delivery';
         const supabase = supabaseClient;
         if (supabase && deliveryId) {
@@ -499,7 +670,6 @@ function seguirUbicacionDelivery(deliveryId) {
         if (ubicacion) {
             if (deliveryMarker) map.removeLayer(deliveryMarker);
             
-            // ✅ Usar marcador con nombre (naranja porque está ocupado)
             deliveryMarker = crearMarcadorDelivery(
                 ubicacion.lat, 
                 ubicacion.lng, 
@@ -521,7 +691,6 @@ function seguirUbicacionDelivery(deliveryId) {
             }
         }
         
-        // Verificar estado completado...
         if (supabase && pedidoActual) {
             const { data: pedidoActualizado } = await supabase
                 .from('pedidos')
@@ -553,6 +722,7 @@ function ocultarDeliveryInfo() {
     if (deliveryMarker) map.removeLayer(deliveryMarker);
 }
 
+// ==================== HISTORIAL Y PERFIL ====================
 async function mostrarHistorialCompleto() {
     const supabase = supabaseClient;
     if (!supabase) {
@@ -561,7 +731,6 @@ async function mostrarHistorialCompleto() {
     }
     
     try {
-        // ✅ Cargar historial desde Supabase
         const { data: misPedidos, error } = await supabase
             .from('pedidos')
             .select('*')
@@ -655,7 +824,6 @@ async function eliminarEnvio(pedidoId) {
         return;
     }
     
-    // Primero obtener el pedido para ver su estado
     const { data: pedido } = await supabase
         .from('pedidos')
         .select('*')
@@ -681,7 +849,6 @@ async function eliminarEnvio(pedidoId) {
         mensaje,
         async () => {
             try {
-                // ✅ Eliminar de Supabase
                 const { error } = await supabase
                     .from('pedidos')
                     .delete()
@@ -691,7 +858,6 @@ async function eliminarEnvio(pedidoId) {
                 
                 mostrarToast(`🗑️ Envío #${pedidoId} eliminado correctamente`);
                 
-                // Recargar historial si está abierto
                 if (document.getElementById("modalHistorial")) {
                     mostrarHistorialCompleto();
                 }
@@ -746,7 +912,6 @@ function verHistorial() {
 }
 
 function verPerfil() {
-    // Eliminar modal existente si hay
     const modalExistente = document.getElementById("modalPerfil");
     if (modalExistente) modalExistente.remove();
     
@@ -825,7 +990,6 @@ async function mostrarDeliveryEnMapa(deliveryId) {
             document.getElementById("deliveryNombre").innerHTML = `<i class="fas fa-motorcycle"></i> ${delivery.nombre}`;
             document.getElementById("deliveryEstado").innerHTML = "🟠 En camino a recoger tu paquete";
             
-            // El marcador del delivery asignado será NARANJA
             const naranjaIcon = L.divIcon({
                 html: '<div style="background:#FF6200; width:32px; height:32px; border-radius:50%; border:2px solid white; display:flex; align-items:center; justify-content:center;"><i class="fas fa-motorcycle" style="color:white; font-size:16px;"></i></div>',
                 iconSize: [32, 32],
@@ -841,7 +1005,6 @@ async function mostrarDeliveryEnMapa(deliveryId) {
     }
 }
 
-// En cliente.js - función cerrarSesion()
 function cerrarSesion() { 
     mostrarModalConfirmacion(
         "Cerrar Sesión",
@@ -926,14 +1089,23 @@ function mostrarResumenRuta() {
 }
 
 function mostrarModalResumen(distancia, tiempo, tarifa, tipo) {
-    // Eliminar modal existente si hay
     const modalExistente = document.getElementById("modalResumenRuta");
     if (modalExistente) modalExistente.remove();
     
-    // Resetear extras seleccionados para este modal
-    extrasSeleccionados = { lluvia: false, noche: false, espera: false };
-    tarifaBaseSinExtras = tarifa;
+    // ✅ Obtener tarifa actual (podría tener extras previos)
+    let tarifaActual = tarifa;
+    if (currentRouteData && currentRouteData.extras) {
+        if (currentRouteData.extras.lluvia) tarifaActual += 10;
+        if (currentRouteData.extras.noche) tarifaActual += 10;
+        if (currentRouteData.extras.espera) tarifaActual += 10;
+    }
     
+    // ✅ Preseleccionar los extras que ya estaban guardados
+    const extrasPrevios = currentRouteData?.extras || { lluvia: false, noche: false, espera: false };
+    
+    tarifaBaseSinExtras = tarifa;
+    console.log("📌 tarifaBaseSinExtras guardada:", tarifaBaseSinExtras);
+
     const modal = document.createElement('div');
     modal.id = "modalResumenRuta";
     modal.className = "fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[10001] p-4";
@@ -961,11 +1133,9 @@ function mostrarModalResumen(distancia, tiempo, tarifa, tipo) {
                     <span class="text-white font-bold">${tipo}</span>
                 </div>
                 
-                <!-- SECCIÓN DE EXTRAS CON CHECKBOXES -->
                 <div class="bg-gray-700 rounded-xl p-3">
-                    <div class="text-gray-400 text-sm mb-2">🎯 Extras adicionales</div>
+                    <div class="text-gray-400 text-sm mb-2">🎯 Extras adicionales (+$10 c/u)</div>
                     
-                    <!-- Extra Lluvia -->
                     <div class="flex items-center justify-between py-2 cursor-pointer" onclick="toggleExtraCheckbox('lluvia')">
                         <div class="flex items-center gap-2">
                             <i class="fas fa-cloud-rain text-blue-400"></i>
@@ -973,11 +1143,10 @@ function mostrarModalResumen(distancia, tiempo, tarifa, tipo) {
                         </div>
                         <div class="flex items-center gap-2">
                             <span class="text-orange-400 text-sm">+$10</span>
-                            <input type="checkbox" id="checkLluviaExtras" class="w-5 h-5 rounded border-gray-500 accent-orange-500" onchange="actualizarTotalConExtras()">
+                            <input type="checkbox" id="checkLluviaExtras" class="w-5 h-5 rounded border-gray-500 accent-orange-500" onchange="actualizarTotalConExtras()" ${extrasPrevios.lluvia ? 'checked' : ''}>
                         </div>
                     </div>
                     
-                    <!-- Extra Noche -->
                     <div class="flex items-center justify-between py-2 cursor-pointer" onclick="toggleExtraCheckbox('noche')">
                         <div class="flex items-center gap-2">
                             <i class="fas fa-moon text-yellow-400"></i>
@@ -985,11 +1154,10 @@ function mostrarModalResumen(distancia, tiempo, tarifa, tipo) {
                         </div>
                         <div class="flex items-center gap-2">
                             <span class="text-orange-400 text-sm">+$10</span>
-                            <input type="checkbox" id="checkNocheExtras" class="w-5 h-5 rounded border-gray-500 accent-orange-500" onchange="actualizarTotalConExtras()">
+                            <input type="checkbox" id="checkNocheExtras" class="w-5 h-5 rounded border-gray-500 accent-orange-500" onchange="actualizarTotalConExtras()" ${extrasPrevios.noche ? 'checked' : ''}>
                         </div>
                     </div>
                     
-                    <!-- Extra Espera -->
                     <div class="flex items-center justify-between py-2 cursor-pointer" onclick="toggleExtraCheckbox('espera')">
                         <div class="flex items-center gap-2">
                             <i class="fas fa-clock text-purple-400"></i>
@@ -997,24 +1165,23 @@ function mostrarModalResumen(distancia, tiempo, tarifa, tipo) {
                         </div>
                         <div class="flex items-center gap-2">
                             <span class="text-orange-400 text-sm">+$10</span>
-                            <input type="checkbox" id="checkEsperaExtras" class="w-5 h-5 rounded border-gray-500 accent-orange-500" onchange="actualizarTotalConExtras()">
+                            <input type="checkbox" id="checkEsperaExtras" class="w-5 h-5 rounded border-gray-500 accent-orange-500" onchange="actualizarTotalConExtras()" ${extrasPrevios.espera ? 'checked' : ''}>
                         </div>
                     </div>
                 </div>
                 
-                <!-- TOTAL ACTUALIZADO -->
                 <div class="bg-orange-500 rounded-xl p-3 flex justify-between items-center">
                     <span class="text-white font-bold">💰 Total a pagar</span>
-                    <span class="text-white font-bold text-xl" id="totalConExtras">$${tarifa} MXN</span>
+                    <span class="text-white font-bold text-xl" id="totalConExtras">$${tarifaActual} MXN</span>
                 </div>
             </div>
             
             <div class="px-5 pb-5 flex gap-3">
                 <button onclick="cerrarModalResumen()" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded-xl transition-all">
-                    Cerrar
+                    Cancelar
                 </button>
-                <button id="btnSolicitarConExtras" class="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl transition-all">
-                    Solicitar Envío
+                <button id="btnAceptarExtras" class="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl transition-all">
+                    ✅ Aceptar
                 </button>
             </div>
         </div>
@@ -1022,11 +1189,99 @@ function mostrarModalResumen(distancia, tiempo, tarifa, tipo) {
     
     document.body.appendChild(modal);
     
-    // Event listener para el botón de solicitar
-    document.getElementById("btnSolicitarConExtras").onclick = () => {
-        cerrarModalResumen();
-        confirmarExtrasDesdeResumen();
+    // ✅ Inicializar extrasSeleccionados con los valores previos
+    extrasSeleccionados = { ...extrasPrevios };
+    
+    document.getElementById("btnAceptarExtras").onclick = () => {
+        confirmarExtrasYContinuar();
     };
+}
+
+function confirmarExtrasYContinuar() {
+    console.log("🔍 confirmarExtrasYContinuar EJECUTADA");
+    
+    // ✅ Obtener valores actuales de los checkboxes (ANTES de cerrar el modal)
+    const checkLluvia = document.getElementById("checkLluviaExtras");
+    const checkNoche = document.getElementById("checkNocheExtras");
+    const checkEspera = document.getElementById("checkEsperaExtras");
+    
+    // ✅ Verificar si los checkboxes existen
+    if (!checkLluvia || !checkNoche || !checkEspera) {
+        console.error("❌ No se encontraron los checkboxes de extras");
+        mostrarToast("❌ Error al leer los extras", true);
+        cerrarModalResumen();
+        return;
+    }
+    
+    const lluviaSeleccionada = checkLluvia.checked;
+    const nocheSeleccionada = checkNoche.checked;
+    const esperaSeleccionada = checkEspera.checked;
+    
+    console.log("Checkboxes:", { 
+        lluvia: lluviaSeleccionada, 
+        noche: nocheSeleccionada, 
+        espera: esperaSeleccionada 
+    });
+    
+    // Actualizar extrasSeleccionados global
+    extrasSeleccionados = {
+        lluvia: lluviaSeleccionada,
+        noche: nocheSeleccionada,
+        espera: esperaSeleccionada
+    };
+    
+    // Calcular total con extras
+    let totalConExtras = tarifaBaseSinExtras;
+    let extrasAplicados = [];
+    
+    if (extrasSeleccionados.lluvia) {
+        totalConExtras += 10;
+        extrasAplicados.push("🌧️ Lluvia");
+    }
+    if (extrasSeleccionados.noche) {
+        totalConExtras += 10;
+        extrasAplicados.push("🌙 Noche");
+    }
+    if (extrasSeleccionados.espera) {
+        totalConExtras += 10;
+        extrasAplicados.push("⏱️ Espera");
+    }
+    
+    console.log("Tarifa base:", tarifaBaseSinExtras);
+    console.log("Total con extras:", totalConExtras);
+    console.log("Extras aplicados:", extrasAplicados);
+    
+    // ✅ Guardar los extras en currentRouteData
+    if (currentRouteData) {
+        currentRouteData.extras = { ...extrasSeleccionados };
+        currentRouteData.totalConExtras = totalConExtras;
+        console.log("✅ currentRouteData.extras actualizado:", currentRouteData.extras);
+    }
+    
+    // ✅ ACTUALIZAR LA TARIFA EN LA PANTALLA PRINCIPAL
+    const tarifaElement = document.getElementById("tarifaValue");
+    if (tarifaElement) {
+        tarifaElement.innerHTML = `$${totalConExtras} MXN`;
+        console.log("✅ Tarifa actualizada en pantalla a: $", totalConExtras);
+    } else {
+        console.error("❌ No se encontró el elemento tarifaValue");
+    }
+    
+    // ✅ También actualizar pedidoPendiente si existe
+    if (pedidoPendiente) {
+        pedidoPendiente.tarifa = totalConExtras;
+        pedidoPendiente.extras = { ...extrasSeleccionados };
+    }
+    
+    // ✅ Mostrar mensaje correcto según los extras seleccionados
+    if (extrasAplicados.length > 0) {
+        mostrarToast(`✅ Extras aplicados: ${extrasAplicados.join(", ")} (+$${extrasAplicados.length * 10} MXN) - Total: $${totalConExtras} MXN`);
+    } else {
+        mostrarToast(`✅ Sin extras seleccionados - Total: $${totalConExtras} MXN`);
+    }
+    
+    // ✅ CERRAR EL MODAL
+    cerrarModalResumen();
 }
 
 function toggleExtraCheckbox(extra) {
@@ -1048,30 +1303,59 @@ function actualizarTotalConExtras() {
     if (checkNoche && checkNoche.checked) total += 10;
     if (checkEspera && checkEspera.checked) total += 10;
     
-    document.getElementById("totalConExtras").innerHTML = `$${total} MXN`;
+    // ✅ Mostrar total actualizado en el resumen
+    const totalSpan = document.getElementById("totalConExtras");
+    if (totalSpan) {
+        totalSpan.innerHTML = `$${total} MXN`;
+        
+        // Animación sutil cuando cambia el total
+        totalSpan.style.transform = 'scale(1.05)';
+        setTimeout(() => {
+            totalSpan.style.transform = 'scale(1)';
+        }, 200);
+    }
     
-    // Guardar extras seleccionados
+    return total;
+}
+
+function confirmarExtrasDesdeResumen() {
+    // Obtener valores actuales de los checkboxes
+    const checkLluvia = document.getElementById("checkLluviaExtras");
+    const checkNoche = document.getElementById("checkNocheExtras");
+    const checkEspera = document.getElementById("checkEsperaExtras");
+    
+    // Actualizar extrasSeleccionados
     extrasSeleccionados = {
         lluvia: checkLluvia?.checked || false,
         noche: checkNoche?.checked || false,
         espera: checkEspera?.checked || false
     };
-}
-
-function confirmarExtrasDesdeResumen() {
-    const totalConExtras = tarifaBaseSinExtras + 
-        (extrasSeleccionados.lluvia ? 10 : 0) +
-        (extrasSeleccionados.noche ? 10 : 0) +
-        (extrasSeleccionados.espera ? 10 : 0);
     
-    // Actualizar pedido pendiente con la tarifa final y extras
+    // Calcular total con extras
+    let totalConExtras = tarifaBaseSinExtras;
+    if (extrasSeleccionados.lluvia) totalConExtras += 10;
+    if (extrasSeleccionados.noche) totalConExtras += 10;
+    if (extrasSeleccionados.espera) totalConExtras += 10;
+    
+    // ✅ ACTUALIZAR pedidoPendiente con la tarifa final
     if (pedidoPendiente) {
         pedidoPendiente.tarifa = totalConExtras;
         pedidoPendiente.extras = { ...extrasSeleccionados };
-        // Mostrar modal de pago directamente
-        document.getElementById("modalPago").classList.remove("hidden");
-        document.getElementById("modalPago").classList.add("flex");
+        
+        // ✅ También mostrar en consola para verificar
+        console.log("Tarifa actualizada con extras:", {
+            base: tarifaBaseSinExtras,
+            extras: extrasSeleccionados,
+            total: totalConExtras
+        });
     }
+    
+    // Cerrar modal de resumen
+    cerrarModalResumen();
+    
+    // ✅ Mostrar modal de pago con la tarifa ACTUALIZADA
+    document.getElementById("modalPago").classList.remove("hidden");
+    document.getElementById("modalPago").classList.add("flex");
 }
 
 function cerrarModalResumen() {
@@ -1120,7 +1404,6 @@ async function buscarDirecciones(query, tipo) {
 function seleccionarDireccion(tipo, lat, lng, direccion) {
     const coords = { lat: parseFloat(lat), lng: parseFloat(lng) };
     
-    // Limitar a Ciudad del Carmen
     if (coords.lat < 18.58 || coords.lat > 18.70 || coords.lng < -91.88 || coords.lng > -91.75) {
         mostrarToast("❌ Ubicación fuera de Ciudad del Carmen", true);
         document.getElementById(`${tipo}Sugerencias`).classList.add('hidden');
@@ -1155,23 +1438,19 @@ async function cargarDeliverysEnLinea() {
         
         if (error) throw error;
         
-        // Para cada delivery, verificar si tiene pedido activo
         const deliverysConEstado = await Promise.all(ubicaciones.map(async (delivery) => {
             const tienePedido = await tienePedidoActivo(delivery.delivery_id);
             return { ...delivery, tienePedido };
         }));
         
-        // Limpiar marcadores anteriores
         deliverysMarkers.forEach(marker => map.removeLayer(marker));
         deliverysMarkers = [];
         
-        // Mostrar cada delivery con su nombre arriba
         deliverysConEstado.forEach(delivery => {
             const tienePedido = delivery.tienePedido;
             const color = tienePedido ? '#FF6200' : '#10B981';
             const estadoTexto = tienePedido ? '🟠 En entrega' : '🟢 Disponible';
             
-            // ✅ Usar marcador con nombre
             const marker = crearMarcadorDelivery(
                 delivery.lat, 
                 delivery.lng, 
@@ -1191,10 +1470,15 @@ async function cargarDeliverysEnLinea() {
     }
 }
 
-// Event listeners para búsqueda
+// ==================== EVENT LISTENERS ====================
 document.addEventListener('DOMContentLoaded', () => {
     const origenInput = document.getElementById('origen');
     const destinoInput = document.getElementById('destino');
+    const btnCancelarPedido = document.getElementById('btnCancelarPedido');
+    
+    if (btnCancelarPedido) {
+        btnCancelarPedido.addEventListener('click', cancelarPedido);
+    }
     
     if (origenInput) {
         origenInput.addEventListener('input', (e) => {
@@ -1233,10 +1517,8 @@ window.onload = () => {
     if (currentUser && currentUser.rol === 'cliente') {
         setTimeout(() => cargarDeliverysEnLinea(), 2000);
         
-        // ✅ Limpiar intervalo anterior si existe
         if (deliverysInterval) clearInterval(deliverysInterval);
         
-        // ✅ Guardar referencia del intervalo
         deliverysInterval = setInterval(() => {
             if (currentUser && currentUser.rol === 'cliente') {
                 cargarDeliverysEnLinea();
