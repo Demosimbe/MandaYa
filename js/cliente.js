@@ -140,28 +140,30 @@ function limpiarRutaCliente() {
 }
 
 async function dibujarRutaDeliveryEnCliente(ubicacionDelivery, destinoCoords, tipo) {
-    if (!ubicacionDelivery || !destinoCoords) return;
+    if (!ubicacionDelivery || !destinoCoords) {
+        console.log("❌ Faltan coordenadas para dibujar ruta:", { ubicacionDelivery, destinoCoords });
+        return;
+    }
     
     limpiarRutaCliente();
     
-    // tipo: 'recogida' (delivery -> origen) o 'entrega' (origen -> destino)
     let waypoints = [];
     let color = '#FF6200';
     
     if (tipo === 'recogida') {
-        // Delivery yendo al origen (punto de recogida)
         waypoints = [
             L.latLng(ubicacionDelivery.lat, ubicacionDelivery.lng),
             L.latLng(destinoCoords.lat, destinoCoords.lng)
         ];
         color = '#10B981';
+        console.log("🟢 Waypoints RECOGIDA:", waypoints);
     } else if (tipo === 'entrega') {
-        // Delivery yendo al destino final (desde origen)
         waypoints = [
-            L.latLng(destinoCoords.lat, destinoCoords.lng),
-            L.latLng(destinoCoords.lat, destinoCoords.lng) // Se actualizará con la ubicación real
+            L.latLng(ubicacionDelivery.lat, ubicacionDelivery.lng),
+            L.latLng(destinoCoords.lat, destinoCoords.lng)
         ];
         color = '#FF6200';
+        console.log("🟠 Waypoints ENTREGA:", waypoints);
     }
     
     clienteRouteControl = L.Routing.control({
@@ -772,6 +774,7 @@ function seguirUbicacionDelivery(deliveryId) {
             const supabaseUbicacion = await obtenerUbicacionDeSupabase(deliveryId);
             if (supabaseUbicacion) {
                 ubicacion = { lat: supabaseUbicacion.lat, lng: supabaseUbicacion.lng };
+                console.log("📍 Ubicación delivery obtenida:", ubicacion);
             }
         }
         
@@ -801,34 +804,36 @@ function seguirUbicacionDelivery(deliveryId) {
             
             // ✅ Dibujar ruta según el estado del pedido
             if (pedidoActual) {
+                console.log("📌 Estado pedido:", pedidoActual.estado);
+                
                 if (pedidoActual.estado === 'asignado') {
-                    // Ruta: delivery -> origen
-                    await dibujarRutaDeliveryEnCliente(ubicacion, pedidoActual.origenCoords, 'recogida');
-                    deliveryMarker.bindPopup(`<b>🏍️ ${deliveryNombre}</b><br>🟠 En camino a recoger tu paquete`);
-                } else if (pedidoActual.estado === 'recogido') {
-                    // Ruta: delivery -> destino (actualizar constantemente)
-                    if (clienteRouteControl) {
-                        // Actualizar waypoint de origen a la ubicación actual del delivery
-                        try {
-                            clienteRouteControl.setWaypoints([
-                                L.latLng(ubicacion.lat, ubicacion.lng),
-                                L.latLng(pedidoActual.destino_lat, pedidoActual.destino_lng)
-                            ]);
-                        } catch(e) {
-                            // Si no se puede actualizar, redibujar
-                            limpiarRutaCliente();
-                            await dibujarRutaDeliveryEnCliente(ubicacion, pedidoActual.destinoCoords, 'entrega');
-                        }
+                    // Ruta: delivery -> origen (usando origen_lat, origen_lng)
+                    if (pedidoActual.origen_lat && pedidoActual.origen_lng) {
+                        const origenCoords = { lat: pedidoActual.origen_lat, lng: pedidoActual.origen_lng };
+                        console.log("🟢 Dibujando ruta RECOGIDA hacia:", origenCoords);
+                        await dibujarRutaDeliveryEnCliente(ubicacion, origenCoords, 'recogida');
+                        deliveryMarker.bindPopup(`<b>🏍️ ${deliveryNombre}</b><br>🟠 En camino a recoger tu paquete`);
                     } else {
-                        await dibujarRutaDeliveryEnCliente(ubicacion, pedidoActual.destinoCoords, 'entrega');
+                        console.log("❌ No hay coordenadas de origen");
                     }
-                    deliveryMarker.bindPopup(`<b>🏍️ ${deliveryNombre}</b><br>📦 En camino a entregar tu paquete`);
+                    
+                } else if (pedidoActual.estado === 'recogido') {
+                    // Ruta: delivery -> destino (usando destino_lat, destino_lng)
+                    if (pedidoActual.destino_lat && pedidoActual.destino_lng) {
+                        const destinoCoords = { lat: pedidoActual.destino_lat, lng: pedidoActual.destino_lng };
+                        console.log("🟠 Dibujando ruta ENTREGA hacia:", destinoCoords);
+                        await dibujarRutaDeliveryEnCliente(ubicacion, destinoCoords, 'entrega');
+                        deliveryMarker.bindPopup(`<b>🏍️ ${deliveryNombre}</b><br>📦 En camino a entregar tu paquete`);
+                    } else {
+                        console.log("❌ No hay coordenadas de destino");
+                    }
                 }
             }
             
             // Mostrar distancia al destino
-            if (pedidoActual && pedidoActual.destinoCoords && ubicacion) {
-                const distanciaADestino = calcularDistanciaEntrePuntos(ubicacion, pedidoActual.destinoCoords);
+            if (pedidoActual && pedidoActual.destino_lat && ubicacion) {
+                const destinoCoords = { lat: pedidoActual.destino_lat, lng: pedidoActual.destino_lng };
+                const distanciaADestino = calcularDistanciaEntrePuntos(ubicacion, destinoCoords);
                 if (distanciaADestino < 0.5) {
                     document.getElementById("deliveryEstado").innerHTML = "🟢 Muy cerca de tu destino 🎯";
                 } else if (distanciaADestino < 1) {
@@ -1161,6 +1166,20 @@ async function mostrarDeliveryEnMapa(deliveryId, deliveryNombre = null) {
             
             // Limpiar ruta anterior
             limpiarRutaCliente();
+            
+            // ✅ Asegurar que destinoCoords esté disponible en pedidoActual
+            if (pedidoActual && !pedidoActual.destinoCoords && pedidoActual.destino_lat) {
+                pedidoActual.destinoCoords = {
+                    lat: pedidoActual.destino_lat,
+                    lng: pedidoActual.destino_lng
+                };
+            }
+            if (pedidoActual && !pedidoActual.origenCoords && pedidoActual.origen_lat) {
+                pedidoActual.origenCoords = {
+                    lat: pedidoActual.origen_lat,
+                    lng: pedidoActual.origen_lng
+                };
+            }
         }
     } catch(e) {
         console.error('Error mostrando delivery:', e);
