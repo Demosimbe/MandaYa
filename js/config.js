@@ -129,7 +129,6 @@ async function setDeliveryOnlineSupabase(userId, online) {
 async function tienePedidoActivo(deliveryId) {
     const supabase = initSupabase();
     if (!supabase) return false;
-    
     try {
         const { data, error } = await supabase
             .from('pedidos')
