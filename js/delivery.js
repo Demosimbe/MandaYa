@@ -9,6 +9,10 @@ let watchId = null;
 let ubicacionInterval = null;
 let cargaPedidosInterval = null;
 
+// ==================== VARIABLES PARA MAPBOX (COMPATIBilidad) ====================
+let mapboxMap = null;
+let usandoMapbox = false; // Detectar si se inicializó Mapbox
+
 // ==================== NUEVAS VARIABLES PARA RUTAS ====================
 let currentRoutingControl = null;  // Control de ruta actual
 let recogidaMarker = null;         // Marcador del punto de recogida (origen)
@@ -17,6 +21,7 @@ let ultimoPedidoDibujado = null;
 let ultimaEtapa = null;
 let dibujandoRuta = false;
 let ultimaPeticionPedidos = 0;
+
 // ==================== CONTROL DE PETICIONES INTELIGENTE ====================
 let paginaVisible = true;
 
@@ -29,10 +34,51 @@ document.addEventListener('visibilitychange', () => {
         console.log("🔴 Página oculta - Reduciendo actualizaciones");
     }
 });
-// ==================== FIN OPTIMIZACIÓN ====================
 
 // ==================== INICIALIZACIÓN ====================
 function initMap() {
+    // Intentar inicializar Mapbox primero (si está disponible)
+    if (typeof mapboxgl !== 'undefined' && MAPBOX_TOKEN && MAPBOX_TOKEN !== 'TU_TOKEN_AQUI') {
+        try {
+            mapboxgl.accessToken = MAPBOX_TOKEN;
+            mapboxMap = new mapboxgl.Map({
+                container: 'map',
+                style: 'mapbox://styles/mapbox/streets-v12',
+                center: [-91.8249, 18.6456],
+                zoom: 13,
+                maxZoom: 17,
+                minZoom: 12
+            });
+            
+            // Limitar mapa a Ciudad del Carmen
+            mapboxMap.setMaxBounds([
+                [-91.88, 18.58],
+                [-91.75, 18.70]
+            ]);
+            
+            map = mapboxMap;
+            usandoMapbox = true;
+            console.log("✅ Usando Mapbox");
+            
+            // Agregar control de geolocalización
+            mapboxMap.addControl(new mapboxgl.GeolocateControl({
+                positionOptions: { enableHighAccuracy: true },
+                trackUserLocation: true,
+                showUserHeading: true
+            }));
+            
+        } catch(e) {
+            console.log("Error cargando Mapbox, usando Leaflet:", e);
+            iniciarLeaflet();
+        }
+    } else {
+        console.log("Mapbox no configurado, usando Leaflet");
+        iniciarLeaflet();
+    }
+}
+
+function iniciarLeaflet() {
+    usandoMapbox = false;
     const cdDelCarmen = { lat: 18.6456, lng: -91.8249 };
     
     map = L.map('map').setView([cdDelCarmen.lat, cdDelCarmen.lng], 13);
@@ -45,14 +91,7 @@ function initMap() {
     
     limitarMapaACarmen(map);
     
-    startLocationTracking();
-    cargarPedidos();
-    
-    if(cargaPedidosInterval) clearInterval(cargaPedidosInterval);
-    
-    cargaPedidosInterval = setInterval(() => { 
-        if(isOnline) cargarPedidos(); 
-    },  5000);
+    console.log("✅ Usando Leaflet");
 }
 
 function loadUser() {
@@ -81,12 +120,13 @@ function loadUser() {
         document.getElementById("onlineStatusText").innerHTML = '<i class="fas fa-circle online-dot mr-1"></i> En línea';
         setTimeout(() => actualizarColorMarcador(), 1000);
     }
+    startLocationTracking();
     cargarPedidos();
 }
 
 async function actualizarBadgeEstado() {
     if (!currentUser) return;
-    if (!paginaVisible) return; // ✅ No actualizar si página oculta
+    if (!paginaVisible) return;
     
     const tienePedido = await deliveryTienePedidoActivo(currentUser.id);
     const badge = document.getElementById("estadoDeliveryBadge");
@@ -104,25 +144,26 @@ async function actualizarBadgeEstado() {
 function limpiarRutasYMarcadores() {
     if (currentRoutingControl) {
         try { 
-            map.removeControl(currentRoutingControl); 
+            if (!usandoMapbox && map && map.removeControl) {
+                map.removeControl(currentRoutingControl); 
+            }
         } catch(e) {}
         currentRoutingControl = null;
     }
     
     if (recogidaMarker) {
-        map.removeLayer(recogidaMarker);
+        if (map && map.removeLayer) map.removeLayer(recogidaMarker);
         recogidaMarker = null;
     }
     
     if (destinoMarker) {
-        map.removeLayer(destinoMarker);
+        if (map && map.removeLayer) map.removeLayer(destinoMarker);
         destinoMarker = null;
     }
 }
 
 // ==================== RUTA DE RECOGIDA (delivery -> origen) ====================
 async function dibujarRutaRecogida(pedido) {
-    // ✅ Evitar redibujar si ya estamos en la misma ruta
     if (ultimoPedidoDibujado === pedido.id && ultimaEtapa === 'recogida') {
         console.log("🟢 Ruta de recogida ya activa, omitiendo redibujo");
         return;
@@ -134,7 +175,6 @@ async function dibujarRutaRecogida(pedido) {
     }
     
     dibujandoRuta = true;
-    
     limpiarRutasYMarcadores();
     ultimoPedidoDibujado = pedido.id;
     ultimaEtapa = 'recogida';
@@ -147,8 +187,13 @@ async function dibujarRutaRecogida(pedido) {
     
     let ubicacionActual = null;
     if (userMarker) {
-        const latLng = userMarker.getLatLng();
-        ubicacionActual = { lat: latLng.lat, lng: latLng.lng };
+        if (usandoMapbox) {
+            const lngLat = userMarker.getLngLat();
+            ubicacionActual = { lat: lngLat.lat, lng: lngLat.lng };
+        } else {
+            const latLng = userMarker.getLatLng();
+            ubicacionActual = { lat: latLng.lat, lng: latLng.lng };
+        }
     }
     
     let waypoints = [];
@@ -163,34 +208,68 @@ async function dibujarRutaRecogida(pedido) {
         ];
     }
     
-    currentRoutingControl = L.Routing.control({
-        waypoints: waypoints,
-        routeWhileDragging: false,
-        showAlternatives: false,
-        fitSelectedRoutes: true,
-        lineOptions: {
-            styles: [{ color: '#10B981', weight: 6, opacity: 0.9 }]
-        },
-        router: L.Routing.osrmv1({
-            serviceUrl: 'https://router.project-osrm.org/route/v1'
-        }),
-        show: false,
-        addWaypoints: false,
-        draggableWaypoints: false
-    }).addTo(map);
-    
-    setTimeout(() => {
-        if (ubicacionActual) {
-            map.fitBounds([
-                [ubicacionActual.lat, ubicacionActual.lng],
-                [pedido.origenCoords.lat, pedido.origenCoords.lng]
-            ], { padding: [50, 50] });
-        } else {
-            map.setView([pedido.origenCoords.lat, pedido.origenCoords.lng], 15);
+    if (!usandoMapbox) {
+        currentRoutingControl = L.Routing.control({
+            waypoints: waypoints,
+            routeWhileDragging: false,
+            showAlternatives: false,
+            fitSelectedRoutes: true,
+            lineOptions: {
+                styles: [{ color: '#10B981', weight: 6, opacity: 0.9 }]
+            },
+            router: L.Routing.osrmv1({
+                serviceUrl: 'https://router.project-osrm.org/route/v1'
+            }),
+            show: false,
+            addWaypoints: false,
+            draggableWaypoints: false
+        }).addTo(map);
+        
+        setTimeout(() => {
+            if (ubicacionActual) {
+                map.fitBounds([
+                    [ubicacionActual.lat, ubicacionActual.lng],
+                    [pedido.origenCoords.lat, pedido.origenCoords.lng]
+                ], { padding: [50, 50] });
+            } else {
+                map.setView([pedido.origenCoords.lat, pedido.origenCoords.lng], 15);
+            }
+            map.invalidateSize();
+            dibujandoRuta = false;
+        }, 300);
+    } else {
+        // Mapbox: Usar Directions API
+        try {
+            const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${ubicacionActual.lng},${ubicacionActual.lat};${pedido.origenCoords.lng},${pedido.origenCoords.lat}?geometries=geojson&access_token=${MAPBOX_TOKEN}`;
+            const response = await fetch(url);
+            const data = await response.json();
+            
+            if (data.routes && data.routes[0]) {
+                const geojson = {
+                    type: 'Feature',
+                    geometry: data.routes[0].geometry
+                };
+                
+                if (map.getSource('route')) map.removeLayer('route').removeSource('route');
+                map.addSource('route', { type: 'geojson', data: geojson });
+                map.addLayer({
+                    id: 'route',
+                    type: 'line',
+                    source: 'route',
+                    paint: { 'line-color': '#10B981', 'line-width': 6, 'line-opacity': 0.9 }
+                });
+                
+                const bounds = new mapboxgl.LngLatBounds()
+                    .extend([ubicacionActual.lng, ubicacionActual.lat])
+                    .extend([pedido.origenCoords.lng, pedido.origenCoords.lat]);
+                map.fitBounds(bounds, { padding: 50 });
+            }
+            dibujandoRuta = false;
+        } catch(e) {
+            console.error("Error en ruta Mapbox:", e);
+            dibujandoRuta = false;
         }
-        map.invalidateSize();
-        dibujandoRuta = false;
-    }, 300);
+    }
     
     if (recogidaMarker) map.removeLayer(recogidaMarker);
     recogidaMarker = L.marker([pedido.origenCoords.lat, pedido.origenCoords.lng], {
@@ -206,7 +285,6 @@ async function dibujarRutaRecogida(pedido) {
 
 // ==================== RUTA DE ENTREGA (origen -> destino) ====================
 async function dibujarRutaEntrega(pedido) {
-    // ✅ Validar que estamos en el pedido correcto
     if (ultimoPedidoDibujado === pedido.id && ultimaEtapa === 'entrega') {
         console.log("🟢 Ruta de entrega ya activa, omitiendo redibujo");
         return;
@@ -218,13 +296,10 @@ async function dibujarRutaEntrega(pedido) {
     }
     
     dibujandoRuta = true;
-    
-    // ✅ Limpiar rutas anteriores
     limpiarRutasYMarcadores();
     ultimoPedidoDibujado = pedido.id;
     ultimaEtapa = 'entrega';
     
-    // ✅ Validar coordenadas del origen (recogida) y destino
     if (!pedido.origenCoords || !pedido.destinoCoords) {
         console.error("❌ Faltan coordenadas para ruta de entrega:", {
             origen: pedido.origenCoords,
@@ -240,44 +315,74 @@ async function dibujarRutaEntrega(pedido) {
         hasta: pedido.destinoCoords
     });
     
-    // ✅ Crear la ruta desde origen (recogida) hasta destino
-    try {
-        currentRoutingControl = L.Routing.control({
-            waypoints: [
-                L.latLng(pedido.origenCoords.lat, pedido.origenCoords.lng),
-                L.latLng(pedido.destinoCoords.lat, pedido.destinoCoords.lng)
-            ],
-            routeWhileDragging: false,
-            showAlternatives: false,
-            fitSelectedRoutes: true,
-            lineOptions: {
-                styles: [{ color: '#FF6200', weight: 6, opacity: 0.9 }]
-            },
-            router: L.Routing.osrmv1({
-                serviceUrl: 'https://router.project-osrm.org/route/v1'
-            }),
-            show: false,
-            addWaypoints: false,
-            draggableWaypoints: false
-        }).addTo(map);
-        
-        // ✅ Ajustar el mapa para ver toda la ruta
-        setTimeout(() => {
-            map.fitBounds([
-                [pedido.origenCoords.lat, pedido.origenCoords.lng],
-                [pedido.destinoCoords.lat, pedido.destinoCoords.lng]
-            ], { padding: [50, 50] });
-            map.invalidateSize();
+    if (!usandoMapbox) {
+        try {
+            currentRoutingControl = L.Routing.control({
+                waypoints: [
+                    L.latLng(pedido.origenCoords.lat, pedido.origenCoords.lng),
+                    L.latLng(pedido.destinoCoords.lat, pedido.destinoCoords.lng)
+                ],
+                routeWhileDragging: false,
+                showAlternatives: false,
+                fitSelectedRoutes: true,
+                lineOptions: {
+                    styles: [{ color: '#FF6200', weight: 6, opacity: 0.9 }]
+                },
+                router: L.Routing.osrmv1({
+                    serviceUrl: 'https://router.project-osrm.org/route/v1'
+                }),
+                show: false,
+                addWaypoints: false,
+                draggableWaypoints: false
+            }).addTo(map);
+            
+            setTimeout(() => {
+                map.fitBounds([
+                    [pedido.origenCoords.lat, pedido.origenCoords.lng],
+                    [pedido.destinoCoords.lat, pedido.destinoCoords.lng]
+                ], { padding: [50, 50] });
+                map.invalidateSize();
+                dibujandoRuta = false;
+            }, 300);
+        } catch(e) {
+            console.error("❌ Error dibujando ruta de entrega:", e);
+            mostrarToast("❌ Error al dibujar la ruta", true);
             dibujandoRuta = false;
-        }, 300);
-        
-    } catch(e) {
-        console.error("❌ Error dibujando ruta de entrega:", e);
-        mostrarToast("❌ Error al dibujar la ruta", true);
-        dibujandoRuta = false;
+        }
+    } else {
+        try {
+            const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${pedido.origenCoords.lng},${pedido.origenCoords.lat};${pedido.destinoCoords.lng},${pedido.destinoCoords.lat}?geometries=geojson&access_token=${MAPBOX_TOKEN}`;
+            const response = await fetch(url);
+            const data = await response.json();
+            
+            if (data.routes && data.routes[0]) {
+                const geojson = {
+                    type: 'Feature',
+                    geometry: data.routes[0].geometry
+                };
+                
+                if (map.getSource('route')) map.removeLayer('route').removeSource('route');
+                map.addSource('route', { type: 'geojson', data: geojson });
+                map.addLayer({
+                    id: 'route',
+                    type: 'line',
+                    source: 'route',
+                    paint: { 'line-color': '#FF6200', 'line-width': 6, 'line-opacity': 0.9 }
+                });
+                
+                const bounds = new mapboxgl.LngLatBounds()
+                    .extend([pedido.origenCoords.lng, pedido.origenCoords.lat])
+                    .extend([pedido.destinoCoords.lng, pedido.destinoCoords.lat]);
+                map.fitBounds(bounds, { padding: 50 });
+            }
+            dibujandoRuta = false;
+        } catch(e) {
+            console.error("❌ Error dibujando ruta de entrega:", e);
+            mostrarToast("❌ Error al dibujar la ruta", true);
+            dibujandoRuta = false;
+        }
     }
     
-    // ✅ Crear marcador de destino si no existe
     if (destinoMarker) map.removeLayer(destinoMarker);
     destinoMarker = L.marker([pedido.destinoCoords.lat, pedido.destinoCoords.lng], {
         icon: L.divIcon({
@@ -289,7 +394,6 @@ async function dibujarRutaEntrega(pedido) {
     
     mostrarToast(`🚚 Ruta de ENTREGA - Desde ${pedido.origen} hasta ${pedido.destino}`);
     
-    // ✅ Opcional: cerrar popup después de 5 segundos
     setTimeout(() => {
         if (destinoMarker) destinoMarker.closePopup();
     }, 5000);
@@ -303,11 +407,9 @@ async function marcarPaqueteRecogido(pedidoId) {
         return;
     }
     
-    // ✅ 1. Mostrar loading feedback
     mostrarToast("📦 Actualizando estado del paquete...");
     
     try {
-        // ✅ 2. Actualizar en Supabase
         const { error } = await supabase
             .from('pedidos')
             .update({
@@ -320,25 +422,22 @@ async function marcarPaqueteRecogido(pedidoId) {
         
         mostrarToast(`✅ ¡Paquete #${pedidoId} RECOGIDO! Ahora dirígete al destino.`);
         
-        // ✅ 3. Recargar pedidos y ESPERAR a que termine
         await cargarPedidos();
         
-        // ✅ 4. Buscar el pedido actualizado en misPedidosActivos
-        // Pequeño delay para asegurar que el estado se actualizó
         setTimeout(async () => {
             const pedidoActualizado = misPedidosActivos.find(p => p.id === pedidoId);
             
             if (pedidoActualizado && pedidoActualizado.estado === 'recogido') {
-                // ✅ 5. Dibujar ruta de ENTREGA
                 await dibujarRutaEntrega(pedidoActualizado);
-                
-                // ✅ 6. Actualizar color del marcador del delivery (ahora ocupado)
                 await actualizarColorMarcador();
                 
-                // ✅ 7. Mostrar popup con instrucciones
                 if (userMarker) {
-                    userMarker.bindPopup(`🏍️ <b>${currentUser.nombre}</b><br>📦 En camino a ENTREGAR`).openPopup();
-                    setTimeout(() => userMarker.closePopup(), 3000);
+                    if (usandoMapbox) {
+                        userMarker.setPopup(new mapboxgl.Popup().setHTML(`🏍️ <b>${currentUser.nombre}</b><br>📦 En camino a ENTREGAR`)).togglePopup();
+                    } else {
+                        userMarker.bindPopup(`🏍️ <b>${currentUser.nombre}</b><br>📦 En camino a ENTREGAR`).openPopup();
+                    }
+                    setTimeout(() => { if (userMarker) userMarker.closePopup(); }, 3000);
                 }
             } else {
                 console.error("❌ No se encontró el pedido actualizado", pedidoId);
@@ -353,65 +452,118 @@ async function marcarPaqueteRecogido(pedidoId) {
 }
 
 function startLocationTracking() {
-    if("geolocation" in navigator) {
-        watchId = navigator.geolocation.watchPosition(
-            async (pos) => {
-                const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-                
-                if(userMarker) {
-                    // ✅ Solo actualizar la posición del marcador, NO redibujar la ruta
-                    userMarker.setLatLng(coords);
-                    // ❌ ELIMINADO: bloque que redibujaba la ruta constantemente
-                } else {
-                    userMarker = crearMarcadorDelivery(
-                        coords.lat, 
-                        coords.lng, 
-                        currentUser.nombre, 
-                        '#10B981'
-                    );
-                    userMarker.addTo(map);
-                    userMarker.bindPopup(`🏍️ <b>${currentUser.nombre}</b><br>🟢 Disponible`);
-                }
-                
-                if(currentUser && isOnline) {
-                    localStorage.setItem(`ubicacion_${currentUser.id}`, JSON.stringify(coords));
+    if(!usandoMapbox) {
+        if("geolocation" in navigator) {
+            watchId = navigator.geolocation.watchPosition(
+                async (pos) => {
+                    const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
                     
-                    if (typeof guardarUbicacionEnSupabase !== 'undefined') {
-                        await guardarUbicacionEnSupabase(
-                            currentUser.id,
-                            currentUser.nombre,
-                            coords.lat,
-                            coords.lng,
-                            true
+                    if(userMarker) {
+                        userMarker.setLatLng(coords);
+                    } else {
+                        userMarker = crearMarcadorDelivery(
+                            coords.lat, 
+                            coords.lng, 
+                            currentUser.nombre, 
+                            '#10B981'
                         );
-                        console.log('✅ Ubicación guardada en Supabase:', coords);
+                        userMarker.addTo(map);
+                        userMarker.bindPopup(`🏍️ <b>${currentUser.nombre}</b><br>🟢 Disponible`);
                     }
-                }
-            },
-            (err) => {
-                console.error(err);
-                mostrarToast("⚠️ No se pudo obtener tu ubicación", true);
-            },
-            { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }
-        );
+                    
+                    if(currentUser && isOnline) {
+                        localStorage.setItem(`ubicacion_${currentUser.id}`, JSON.stringify(coords));
+                        
+                        if (typeof guardarUbicacionEnSupabase !== 'undefined') {
+                            await guardarUbicacionEnSupabase(
+                                currentUser.id,
+                                currentUser.nombre,
+                                coords.lat,
+                                coords.lng,
+                                true
+                            );
+                            console.log('✅ Ubicación guardada en Supabase:', coords);
+                        }
+                    }
+                },
+                (err) => {
+                    console.error(err);
+                    mostrarToast("⚠️ No se pudo obtener tu ubicación", true);
+                },
+                { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }
+            );
+        } else {
+            mostrarToast("⚠️ Tu navegador no soporta geolocalización", true);
+        }
     } else {
-        mostrarToast("⚠️ Tu navegador no soporta geolocalización", true);
+        if("geolocation" in navigator) {
+            watchId = navigator.geolocation.watchPosition(
+                async (pos) => {
+                    const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                    
+                    if(userMarker) {
+                        userMarker.setLngLat([coords.lng, coords.lat]);
+                    } else {
+                        const el = document.createElement('div');
+                        el.className = 'delivery-marker';
+                        el.innerHTML = `
+                            <div style="text-align: center;">
+                                <div style="background: rgba(0,0,0,0.85); color: white; font-size: 10px; padding: 2px 6px; border-radius: 12px; white-space: nowrap;">
+                                    ${obtenerPrimerNombre(currentUser.nombre)}
+                                </div>
+                                <div style="background: #10B981; width: 28px; height: 28px; border-radius: 50%; border: 2px solid white; display: flex; align-items: center; justify-content: center; margin-top: 2px;">
+                                    <i class="fas fa-motorcycle" style="color: white; font-size: 14px;"></i>
+                                </div>
+                            </div>
+                        `;
+                        userMarker = new mapboxgl.Marker(el)
+                            .setLngLat([coords.lng, coords.lat])
+                            .setPopup(new mapboxgl.Popup().setHTML(`🏍️ <b>${currentUser.nombre}</b><br>🟢 Disponible`))
+                            .addTo(map);
+                    }
+                    
+                    if(currentUser && isOnline) {
+                        localStorage.setItem(`ubicacion_${currentUser.id}`, JSON.stringify(coords));
+                        
+                        if (typeof guardarUbicacionEnSupabase !== 'undefined') {
+                            await guardarUbicacionEnSupabase(
+                                currentUser.id,
+                                currentUser.nombre,
+                                coords.lat,
+                                coords.lng,
+                                true
+                            );
+                            console.log('✅ Ubicación guardada en Supabase:', coords);
+                        }
+                    }
+                },
+                (err) => {
+                    console.error(err);
+                    mostrarToast("⚠️ No se pudo obtener tu ubicación", true);
+                },
+                { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }
+            );
+        } else {
+            mostrarToast("⚠️ Tu navegador no soporta geolocalización", true);
+        }
     }
 }
 
 function centrarMapa() {
-    if(map) map.setView([18.6456, -91.8249], 13);
+    if(!usandoMapbox) {
+        if(map) map.setView([18.6456, -91.8249], 13);
+    } else {
+        if(map) map.setCenter([-91.8249, 18.6456]).setZoom(13);
+    }
     mostrarToast("📍 Mapa centrado en Ciudad del Carmen");
 }
 
 async function cargarPedidos() {
-    // ✅ THROTTLING: Verificar visibilidad
     if (!paginaVisible) {
         console.log("📴 Página oculta, no se cargan pedidos");
         return;
     }
     
-    // ✅ THROTTLING: Mínimo 5 segundos entre peticiones
     const ahora = Date.now();
     if (ahora - ultimaPeticionPedidos < 5000) {
         console.log(`⏳ Throttling: cargarPedidos - demasiado rápido (${ahora - ultimaPeticionPedidos}ms desde última)`);
@@ -426,7 +578,6 @@ async function cargarPedidos() {
     }
     
     try {
-        // ✅ Cargar pedidos pendientes
         const { data: pedidosPendientes, error: errorPendientes } = await supabase
             .from('pedidos')
             .select('*')
@@ -435,7 +586,6 @@ async function cargarPedidos() {
         
         if (errorPendientes) throw errorPendientes;
         
-        // ✅ Cargar pedidos asignados a este delivery
         const { data: pedidosAsignados, error: errorAsignados } = await supabase
             .from('pedidos')
             .select('*')
@@ -445,20 +595,16 @@ async function cargarPedidos() {
         
         if (errorAsignados) throw errorAsignados;
         
-        // ✅ Convertir pedidos
         const nuevosDisponibles = (pedidosPendientes || []).map(p => convertirPedidoDeSupabase(p));
         const nuevosActivos = (pedidosAsignados || []).map(p => convertirPedidoDeSupabase(p));
         
-        // ✅ Guardar estado anterior para detectar cambios
         const estadoAnteriorActivo = misPedidosActivos.length > 0 ? misPedidosActivos[0]?.estado : null;
         
         pedidosDisponibles = nuevosDisponibles;
         misPedidosActivos = nuevosActivos;
         
-        // ✅ Actualizar UI
         actualizarListaPedidos();
         
-        // ✅ Manejar cambios de estado para rutas
         if (misPedidosActivos.length > 0) {
             const pedidoActivo = misPedidosActivos[0];
             const estadoActual = pedidoActivo.estado;
@@ -482,7 +628,6 @@ async function cargarPedidos() {
             }
         }
         
-        // ✅ Actualizar color del marcador y badge
         await actualizarColorMarcador();
         await actualizarBadgeEstado();
         
@@ -505,28 +650,59 @@ async function dibujarRutaOptimaPedido(pedido) {
     limpiarRutasYMarcadores();
     
     if (pedido.origenCoords && pedido.destinoCoords) {
-        currentRoutingControl = L.Routing.control({
-            waypoints: [
-                L.latLng(pedido.origenCoords.lat, pedido.origenCoords.lng),
-                L.latLng(pedido.destinoCoords.lat, pedido.destinoCoords.lng)
-            ],
-            routeWhileDragging: false,
-            showAlternatives: false,
-            lineOptions: {
-                styles: [{ color: '#FF6200', weight: 5, opacity: 0.8 }]
-            },
-            router: L.Routing.osrmv1({
-                serviceUrl: 'https://router.project-osrm.org/route/v1'
-            }),
-            show: false,
-            addWaypoints: false,
-            draggableWaypoints: false
-        }).addTo(map);
-        
-        map.fitBounds([
-            [pedido.origenCoords.lat, pedido.origenCoords.lng],
-            [pedido.destinoCoords.lat, pedido.destinoCoords.lng]
-        ], { padding: [50, 50] });
+        if (!usandoMapbox) {
+            currentRoutingControl = L.Routing.control({
+                waypoints: [
+                    L.latLng(pedido.origenCoords.lat, pedido.origenCoords.lng),
+                    L.latLng(pedido.destinoCoords.lat, pedido.destinoCoords.lng)
+                ],
+                routeWhileDragging: false,
+                showAlternatives: false,
+                lineOptions: {
+                    styles: [{ color: '#FF6200', weight: 5, opacity: 0.8 }]
+                },
+                router: L.Routing.osrmv1({
+                    serviceUrl: 'https://router.project-osrm.org/route/v1'
+                }),
+                show: false,
+                addWaypoints: false,
+                draggableWaypoints: false
+            }).addTo(map);
+            
+            map.fitBounds([
+                [pedido.origenCoords.lat, pedido.origenCoords.lng],
+                [pedido.destinoCoords.lat, pedido.destinoCoords.lng]
+            ], { padding: [50, 50] });
+        } else {
+            try {
+                const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${pedido.origenCoords.lng},${pedido.origenCoords.lat};${pedido.destinoCoords.lng},${pedido.destinoCoords.lat}?geometries=geojson&access_token=${MAPBOX_TOKEN}`;
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (data.routes && data.routes[0]) {
+                    const geojson = {
+                        type: 'Feature',
+                        geometry: data.routes[0].geometry
+                    };
+                    
+                    if (map.getSource('route')) map.removeLayer('route').removeSource('route');
+                    map.addSource('route', { type: 'geojson', data: geojson });
+                    map.addLayer({
+                        id: 'route',
+                        type: 'line',
+                        source: 'route',
+                        paint: { 'line-color': '#FF6200', 'line-width': 5, 'line-opacity': 0.8 }
+                    });
+                    
+                    const bounds = new mapboxgl.LngLatBounds()
+                        .extend([pedido.origenCoords.lng, pedido.origenCoords.lat])
+                        .extend([pedido.destinoCoords.lng, pedido.destinoCoords.lat]);
+                    map.fitBounds(bounds, { padding: 50 });
+                }
+            } catch(e) {
+                console.error("Error dibujando ruta:", e);
+            }
+        }
         
         mostrarToast(`📏 Distancia: ${pedido.distanciaReal} km • 💰 $${pedido.tarifa}`);
     }
@@ -545,18 +721,15 @@ async function agarrarPedido(pedidoId) {
         return;
     }
     
-    // ✅ VERIFICACIÓN 1: ¿El delivery ya tiene un pedido activo?
     mostrarToast("🔍 Verificando disponibilidad...");
     
     try {
-        // Usar la función de config.js
         const tienePedidoActivo = await deliveryTienePedidoActivo(currentUser.id);
         
         if (tienePedidoActivo) {
             const pedidoActivo = await getPedidoActivoDelDelivery(currentUser.id);
             mostrarToast(`❌ Ya tienes un pedido activo (#${pedidoActivo?.id}). Complétalo primero.`, true);
             
-            // Resaltar el pedido activo en la lista
             if (pedidoActivo) {
                 const elementoActivo = document.querySelector(`[data-pedido-id="${pedidoActivo.id}"]`);
                 if (elementoActivo) {
@@ -570,7 +743,6 @@ async function agarrarPedido(pedidoId) {
             return;
         }
         
-        // ✅ VERIFICACIÓN 2: ¿El pedido sigue disponible (estado pendiente)?
         const { data: pedidoActual, error: errorPedido } = await supabase
             .from('pedidos')
             .select('estado')
@@ -581,18 +753,16 @@ async function agarrarPedido(pedidoId) {
         
         if (pedidoActual.estado !== 'pendiente') {
             mostrarToast(`❌ El pedido #${pedidoId} ya no está disponible (fue agarrado por otro delivery)`, true);
-            await cargarPedidos(); // Recargar lista
+            await cargarPedidos();
             return;
         }
         
-        // ✅ VERIFICACIÓN 3: Confirmar con el usuario (opcional pero recomendado)
         const confirmar = confirm(`¿Seguro que quieres AGARRAR el pedido #${pedidoId}?`);
         if (!confirmar) {
             mostrarToast("❌ Acción cancelada");
             return;
         }
         
-        // ✅ AGARRAR EL PEDIDO
         const { error } = await supabase
             .from('pedidos')
             .update({
@@ -602,25 +772,27 @@ async function agarrarPedido(pedidoId) {
                 fecha_asignado: new Date().toISOString()
             })
             .eq('id', pedidoId)
-            .eq('estado', 'pendiente'); // Doble verificación: solo si sigue pendiente
+            .eq('estado', 'pendiente');
         
         if (error) throw error;
         
         mostrarToast(`✅ Pedido #${pedidoId} AGARRADO! Dirígete al origen para recoger.`);
         
-        // ✅ Limpiar selección y recargar
         pedidoSeleccionado = null;
         await cargarPedidos();
         await actualizarColorMarcador();
         
-        // ✅ Mostrar ruta de recogida inmediatamente
         const pedidoAsignado = misPedidosActivos.find(p => p.id === pedidoId);
         if (pedidoAsignado) {
             await dibujarRutaRecogida(pedidoAsignado);
-            // Centrar mapa en la ruta
             setTimeout(() => {
                 if (pedidoAsignado.origenCoords) {
-                    map.setView([pedidoAsignado.origenCoords.lat, pedidoAsignado.origenCoords.lng], 14);
+                    if (!usandoMapbox) {
+                        map.setView([pedidoAsignado.origenCoords.lat, pedidoAsignado.origenCoords.lng], 14);
+                    } else {
+                        map.setCenter([pedidoAsignado.origenCoords.lng, pedidoAsignado.origenCoords.lat]);
+                        map.setZoom(14);
+                    }
                 }
             }, 500);
         }
@@ -670,8 +842,6 @@ async function completarPedido(pedidoId) {
 
 function actualizarListaPedidos() {
     const containerDisponibles = document.getElementById("pedidosDisponibles");
-    
-    // Verificar si el delivery ya tiene pedido activo (para UI)
     const tienePedidoActivo = misPedidosActivos.length > 0;
     
     if(pedidosDisponibles.length === 0) {
@@ -699,7 +869,6 @@ function actualizarListaPedidos() {
         `).join('');
     }
     
-    // Resto del código para pedidos activos...
     const containerActivos = document.getElementById("pedidosActivos");
     if(misPedidosActivos.length === 0) {
         containerActivos.innerHTML = '<div class="text-center text-gray-400 py-4"><i class="fas fa-check-circle text-2xl mb-1 block"></i>No hay pedidos activos</div>';
@@ -756,8 +925,14 @@ async function toggleOnline() {
             await setDeliveryOnlineSupabase(currentUser.id, true);
             
             if (userMarker) {
-                const coords = userMarker.getLatLng();
-                await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, coords.lat, coords.lng, true);
+                let coords;
+                if (!usandoMapbox) {
+                    coords = userMarker.getLatLng();
+                    await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, coords.lat, coords.lng, true);
+                } else {
+                    const lngLat = userMarker.getLngLat();
+                    await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, lngLat.lat, lngLat.lng, true);
+                }
             }
         }
         cargarPedidos();
@@ -765,8 +940,13 @@ async function toggleOnline() {
         if(ubicacionInterval) clearInterval(ubicacionInterval);
         ubicacionInterval = setInterval(async () => {
             if(userMarker && currentUser && isOnline) {
-                const coords = userMarker.getLatLng();
-                await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, coords.lat, coords.lng, true);
+                if (!usandoMapbox) {
+                    const coords = userMarker.getLatLng();
+                    await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, coords.lat, coords.lng, true);
+                } else {
+                    const lngLat = userMarker.getLngLat();
+                    await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, lngLat.lat, lngLat.lng, true);
+                }
             }
         }, 3000);
     } else {
@@ -782,8 +962,13 @@ async function toggleOnline() {
             await setDeliveryOnlineSupabase(currentUser.id, false);
             
             if (userMarker) {
-                const coords = userMarker.getLatLng();
-                await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, coords.lat, coords.lng, false);
+                if (!usandoMapbox) {
+                    const coords = userMarker.getLatLng();
+                    await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, coords.lat, coords.lng, false);
+                } else {
+                    const lngLat = userMarker.getLngLat();
+                    await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, lngLat.lat, lngLat.lng, false);
+                }
             }
         }
         if(ubicacionInterval) clearInterval(ubicacionInterval);
@@ -845,8 +1030,13 @@ function cerrarSesion() {
     limpiarRutasYMarcadores();
     
     if(currentUser && typeof guardarUbicacionEnSupabase !== 'undefined' && userMarker) {
-        const coords = userMarker.getLatLng();
-        guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, coords.lat, coords.lng, false);
+        if (!usandoMapbox) {
+            const coords = userMarker.getLatLng();
+            guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, coords.lat, coords.lng, false);
+        } else {
+            const lngLat = userMarker.getLngLat();
+            guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, lngLat.lat, lngLat.lng, false);
+        }
     }
     
     if(confirm("¿Cerrar sesión?")){ 
@@ -873,48 +1063,43 @@ async function actualizarColorMarcador() {
     
     const nombreMostrar = obtenerPrimerNombre(currentUser.nombre);
     
-    const nuevoIcono = L.divIcon({
-        html: `
+    if (!usandoMapbox) {
+        const nuevoIcono = L.divIcon({
+            html: `
+                <div style="text-align: center;">
+                    <div style="background: rgba(0,0,0,0.85); color: white; font-size: 11px; font-weight: bold; padding: 3px 8px; border-radius: 14px; margin-bottom: 4px; white-space: nowrap; display: inline-block; box-shadow: 0 1px 3px rgba(0,0,0,0.3); border: 0.5px solid rgba(255,255,255,0.2);">
+                        ${nombreMostrar}
+                    </div>
+                    <div style="background: ${color}; width: 34px; height: 34px; border-radius: 50%; border: 2.5px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; margin: 0 auto;">
+                        <i class="fas fa-motorcycle" style="color:white; font-size:18px;"></i>
+                    </div>
+                </div>
+            `,
+            iconSize: [50, 60],
+            className: 'moto-marker',
+            popupAnchor: [0, -25]
+        });
+        
+        userMarker.setIcon(nuevoIcono);
+        userMarker.setPopupContent(`🏍️ <b>${currentUser.nombre}</b><br>${estadoTexto}`);
+    } else {
+        const el = document.createElement('div');
+        el.className = 'delivery-marker';
+        el.innerHTML = `
             <div style="text-align: center;">
-                <div style="
-                    background: rgba(0, 0, 0, 0.85);
-                    color: white;
-                    font-size: 11px;
-                    font-weight: bold;
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                    padding: 3px 8px;
-                    border-radius: 14px;
-                    margin-bottom: 4px;
-                    white-space: nowrap;
-                    display: inline-block;
-                    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-                    border: 0.5px solid rgba(255,255,255,0.2);
-                ">
+                <div style="background: rgba(0,0,0,0.85); color: white; font-size: 10px; padding: 2px 6px; border-radius: 12px; white-space: nowrap;">
                     ${nombreMostrar}
                 </div>
-                <div style="
-                    background: ${color};
-                    width: 34px;
-                    height: 34px;
-                    border-radius: 50%;
-                    border: 2.5px solid white;
-                    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    margin: 0 auto;
-                ">
-                    <i class="fas fa-motorcycle" style="color:white; font-size:18px;"></i>
+                <div style="background: ${color}; width: 28px; height: 28px; border-radius: 50%; border: 2px solid white; display: flex; align-items: center; justify-content: center; margin-top: 2px;">
+                    <i class="fas fa-motorcycle" style="color: white; font-size: 14px;"></i>
                 </div>
             </div>
-        `,
-        iconSize: [50, 60],
-        className: 'moto-marker',
-        popupAnchor: [0, -25]
-    });
-    
-    userMarker.setIcon(nuevoIcono);
-    userMarker.setPopupContent(`🏍️ <b>${currentUser.nombre}</b><br>${estadoTexto}`);
+        `;
+        userMarker.setPopup(new mapboxgl.Popup().setHTML(`🏍️ <b>${currentUser.nombre}</b><br>${estadoTexto}`));
+        const lngLat = userMarker.getLngLat();
+        userMarker.remove();
+        userMarker = new mapboxgl.Marker(el).setLngLat([lngLat.lng, lngLat.lat]).setPopup(new mapboxgl.Popup().setHTML(`🏍️ <b>${currentUser.nombre}</b><br>${estadoTexto}`)).addTo(map);
+    }
     
     console.log(`🎨 Marcador actualizado: ${tienePedido ? 'NARANJA' : 'VERDE'} - ${nombreMostrar}`);
 }

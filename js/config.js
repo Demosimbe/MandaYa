@@ -1,3 +1,6 @@
+// Configuración de Mapbox
+const MAPBOX_TOKEN = process.env.MAPBOX_TOKEN || '';
+
 // Configuración de Supabase
 const SUPABASE_URL = 'https://ewjljddexyajxuzzzssp.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3amxqZGRleHlhanh1enp6c3NwIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3ODAyMDExOSwiZXhwIjoyMDkzNTk2MTE5fQ.Xcb3vGH7a7Q0RA9-RlnZ1wUrWNXAV7YxEWiTPGsOMPU';
@@ -132,11 +135,11 @@ async function tienePedidoActivo(deliveryId) {
             .from('pedidos')
             .select('id')
             .eq('delivery_id', deliveryId)
-            .in('estado', ['asignado'])
+            .in('estado', ['asignado', 'recogido'])  // ✅ CORREGIDO: incluye 'recogido'
             .maybeSingle();
         
         if (error) throw error;
-        return !!data; // true si tiene pedido activo, false si no
+        return !!data;
     } catch(e) {
         console.error('Error verificando pedido activo:', e);
         return false;
@@ -167,7 +170,7 @@ async function getAllUsuariosSupabase() {
 
 async function deliveryTienePedidoActivo(deliveryId) {
     const supabase = initSupabase();
-    if (!supabase) return true; // Por seguridad, asumir que tiene pedido si hay error
+    if (!supabase) return true;
     
     try {
         const { data, error } = await supabase
@@ -182,7 +185,7 @@ async function deliveryTienePedidoActivo(deliveryId) {
         return data && data.length > 0;
     } catch(e) {
         console.error('Error verificando pedido activo:', e);
-        return true; // Por seguridad, evitar que agarre pedido si hay error
+        return true;
     }
 }
 

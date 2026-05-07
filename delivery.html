@@ -8,10 +8,21 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     
+    <!-- Mapbox GL JS -->
+    <link href="https://api.mapbox.com/mapbox-gl-js/v3.5.0/mapbox-gl.css" rel="stylesheet">
+    <script src="https://api.mapbox.com/mapbox-gl-js/v3.5.0/mapbox-gl.js"></script>
+    
+    <!-- Mapbox GL Directions -->
+    <script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-directions/v4.1.0/mapbox-gl-directions.js"></script>
+    <link href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-directions/v4.1.0/mapbox-gl-directions.css" rel="stylesheet">
+    
+    <!-- Mapbox GL Geocoder -->
+    <script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.0/mapbox-gl-geocoder.min.js"></script>
+    <link href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.0/mapbox-gl-geocoder.css" rel="stylesheet">
+    
+    <!-- Leaflet (solo para compatibilidad con código existente) -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    
-    <!-- Leaflet Routing Machine -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
     <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
 
@@ -39,6 +50,11 @@
             height: 100vh; 
             width: 100%; 
             z-index: 1;
+        }
+        
+        /* Estilos para Mapbox */
+        .mapboxgl-map {
+            border-radius: 0;
         }
         
         .toast-message {
@@ -104,6 +120,13 @@
         .overflow-y-auto::-webkit-scrollbar-thumb {
             background: #FF6200;
             border-radius: 10px;
+        }
+        
+        /* Para los marcadores personalizados de delivery */
+        .delivery-marker {
+            background: transparent;
+            border: none;
+            cursor: pointer;
         }
         
         /* Responsive ajustes */
@@ -367,51 +390,49 @@
             }
         }
         
-       // ==================== CONTROL DE INTERVALOS ====================
-// Guardamos el intervalo en una variable para poder limpiarlo después
-let syncInterval = null;
-
-// Función que ejecuta la sincronización
-function ejecutarSincronizacion() {
-    actualizarListaPedidosMobile();
-    actualizarUserInfoMobile();
-}
-
-// Iniciar el intervalo solo si no existe
-function iniciarSincronizacion() {
-    if (syncInterval) return; // Ya está corriendo
-    syncInterval = setInterval(ejecutarSincronizacion, 500);
-    console.log("✅ Sincronización mobile iniciada");
-}
-
-// Detener el intervalo
-function detenerSincronizacion() {
-    if (syncInterval) {
-        clearInterval(syncInterval);
-        syncInterval = null;
-        console.log("🛑 Sincronización mobile detenida");
-    }
-}
-
-// Iniciar la sincronización automáticamente
-iniciarSincronizacion();
-
-// ✅ IMPORTANTE: Detener la sincronización cuando la página se cierra o cambia
-window.addEventListener('beforeunload', function() {
-    detenerSincronizacion();
-});
-
-// ✅ También limpiar cuando el usuario cierra sesión
-const originalCerrarSesion = window.cerrarSesion;
-window.cerrarSesion = function() {
-    detenerSincronizacion();
-    if (originalCerrarSesion) {
-        originalCerrarSesion();
-    }
-};
+        // ==================== CONTROL DE INTERVALOS ====================
+        let syncInterval = null;
+        
+        function ejecutarSincronizacion() {
+            actualizarListaPedidosMobile();
+            actualizarUserInfoMobile();
+        }
+        
+        function iniciarSincronizacion() {
+            if (syncInterval) return;
+            syncInterval = setInterval(ejecutarSincronizacion, 500);
+            console.log("✅ Sincronización mobile iniciada");
+        }
+        
+        function detenerSincronizacion() {
+            if (syncInterval) {
+                clearInterval(syncInterval);
+                syncInterval = null;
+                console.log("🛑 Sincronización mobile detenida");
+            }
+        }
+        
+        iniciarSincronizacion();
+        
+        window.addEventListener('beforeunload', function() {
+            detenerSincronizacion();
+        });
+        
+        const originalCerrarSesion = window.cerrarSesion;
+        window.cerrarSesion = function() {
+            detenerSincronizacion();
+            if (originalCerrarSesion) {
+                originalCerrarSesion();
+            }
+        };
         
         function centrarMapa() {
-            if (map) map.setView([18.6456, -91.8249], 13);
+            if (typeof map !== 'undefined' && map) {
+                map.setView([18.6456, -91.8249], 13);
+            } else if (typeof mapboxMap !== 'undefined' && mapboxMap) {
+                mapboxMap.setCenter([-91.8249, 18.6456]);
+                mapboxMap.setZoom(13);
+            }
             mostrarToast("📍 Mapa centrado en Ciudad del Carmen");
         }
     </script>
