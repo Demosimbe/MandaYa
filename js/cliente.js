@@ -910,8 +910,22 @@ Gracias por usar MandaYa 🙏`;
     
     console.log("📱 Abriendo WhatsApp con mensaje para:", numeroWhatsApp);
     
-    // Abrir WhatsApp
-    window.open(url, '_blank');
+    // ========== MÉTODO UNIVERSAL ==========
+    // Detectar si es dispositivo móvil
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    
+    if (isMobile) {
+        // ✅ Para móviles: usar location.href (más confiable que window.open)
+        window.location.href = url;
+    } else {
+        // ✅ Para PC: abrir en nueva pestaña
+        window.open(url, '_blank', 'noopener,noreferrer');
+    }
+    
+    // ✅ Mostrar mensaje de ayuda por si no se abre
+    setTimeout(() => {
+        mostrarToast("💡 Si no se abre, verifica que tengas WhatsApp instalado");
+    }, 500);
     
     // Confirmar pago después de enviar
     confirmarPagoTransferencia();
