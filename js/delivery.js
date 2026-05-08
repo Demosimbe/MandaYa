@@ -977,41 +977,80 @@ window.addEventListener('unload', function() {
     console.log("💀 Delivery: página descargada");
 });
 
-function mostrarToast(msg, err=false){ 
-    const t=document.createElement('div'); 
-    t.className='toast-message'; 
-    t.style.cssText = `
+function mostrarToast(msg, err = false) {
+    // ✅ Eliminar toasts anteriores
+    const toastsAnteriores = document.querySelectorAll('.toast-moderno');
+    toastsAnteriores.forEach(toast => toast.remove());
+    
+    const toast = document.createElement('div');
+    toast.className = 'toast-moderno';
+    
+    const isMobile = window.innerWidth < 768;
+    const paddingY = isMobile ? '12px' : '14px';
+    const paddingX = isMobile ? '20px' : '28px';
+    const fontSize = isMobile ? '13px' : '14px';
+    
+    let icono = err ? 'fa-exclamation-triangle' : 'fa-check-circle';
+    let colorFondo = err 
+        ? 'linear-gradient(135deg, #dc2626, #b91c1c)' 
+        : 'linear-gradient(135deg, #10b981, #059669)';
+    
+    // Personalizar iconos según el contexto delivery
+    if (msg.includes('🏍️') || msg.includes('moto') || msg.includes('Delivery')) icono = 'fa-motorcycle';
+    else if (msg.includes('📦')) icono = 'fa-box';
+    else if (msg.includes('💰') || msg.includes('$') || msg.includes('ganaste')) icono = 'fa-coins';
+    else if (msg.includes('✅')) icono = 'fa-circle-check';
+    else if (msg.includes('❌')) icono = 'fa-circle-exclamation';
+    else if (msg.includes('📍')) icono = 'fa-location-dot';
+    else if (msg.includes('🔍')) icono = 'fa-magnifying-glass';
+    
+    toast.style.cssText = `
         position: fixed;
-        bottom: 20px;
+        bottom: ${isMobile ? '80px' : '20px'};
         left: 50%;
         transform: translateX(-50%) translateY(20px);
-        background: ${err ? 'linear-gradient(135deg, #dc2626, #ef4444)' : 'linear-gradient(135deg, #10b981, #059669)'};
+        background: ${colorFondo};
         color: white;
-        padding: 14px 28px;
-        border-radius: 50px;
-        font-size: 14px;
+        padding: ${paddingY} ${paddingX};
+        border-radius: ${isMobile ? '30px' : '50px'};
+        font-size: ${fontSize};
         font-weight: 500;
-        z-index: 10000;
-        box-shadow: 0 10px 25px -5px rgba(0,0,0,0.2);
+        z-index: 100000;
+        box-shadow: 0 10px 25px -5px rgba(0,0,0,0.2), 0 8px 10px -6px rgba(0,0,0,0.1);
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 10px;
         opacity: 0;
-        transition: all 0.3s ease;
+        transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        backdrop-filter: blur(4px);
+        border: 1px solid rgba(255,255,255,0.2);
+        max-width: ${isMobile ? '85%' : 'auto'};
+        white-space: ${isMobile ? 'normal' : 'nowrap'};
+        text-align: center;
+        line-height: 1.4;
+        word-break: break-word;
     `;
-    t.innerHTML = `<i class="fas ${err ? 'fa-exclamation-circle' : 'fa-check-circle'}"></i> ${msg}`;
-    document.body.appendChild(t);
+    
+    toast.innerHTML = `
+        <i class="fas ${icono}" style="font-size: ${isMobile ? '16px' : '18px'}; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.2));"></i>
+        <span>${msg}</span>
+    `;
+    
+    document.body.appendChild(toast);
     
     setTimeout(() => {
-        t.style.transform = 'translateX(-50%) translateY(0)';
-        t.style.opacity = '1';
+        toast.style.transform = 'translateX(-50%) translateY(0)';
+        toast.style.opacity = '1';
     }, 10);
     
+    const duracion = err ? 3500 : (msg.length > 50 ? 3500 : 2500);
+    
     setTimeout(() => {
-        t.style.transform = 'translateX(-50%) translateY(20px)';
-        t.style.opacity = '0';
-        setTimeout(() => t.remove(), 300);
-    }, 3000);
+        toast.style.transform = 'translateX(-50%) translateY(20px)';
+        toast.style.opacity = '0';
+        setTimeout(() => toast.remove(), 400);
+    }, duracion);
 }
 
 window.onload = () => { 

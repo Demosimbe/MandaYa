@@ -181,6 +181,30 @@
                 display: none;
             }
         }
+        /* Estilos adicionales para toasts en móvil */
+@media (max-width: 768px) {
+    .toast-moderno {
+        white-space: normal !important;
+        text-align: center;
+        line-height: 1.4;
+        max-width: calc(100% - 40px) !important;
+        word-break: break-word;
+        font-size: 13px;
+        padding: 12px 20px !important;
+        bottom: 80px !important;
+    }
+}
+
+/* Animación de vibración suave para errores */
+@keyframes shakeToast {
+    0%, 100% { transform: translateX(-50%) translateY(0); }
+    25% { transform: translateX(-52%) translateY(0); }
+    75% { transform: translateX(-48%) translateY(0); }
+}
+
+.toast-error-shake {
+    animation: shakeToast 0.3s ease-in-out !important;
+}
     </style>
 </head>
 <body class="h-screen overflow-hidden flex flex-row">

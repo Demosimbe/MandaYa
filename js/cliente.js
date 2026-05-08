@@ -22,6 +22,133 @@ let ultimaPeticionTime = 0;
 let paginaVisible = true;
 let ultimaPeticionDeliverys = 0;
 
+// ==================== BLOQUEAR/REACTIVAR UI CUANDO HAY PEDIDO ACTIVO ====================
+function bloquearUIporPedidoActivo(bloquear) {
+    const elementos = {
+        inputs: ['origen', 'destino'],
+        select: 'tipoEnvio',
+        botones: ['btnOrigen', 'btnDestino'],
+        botonSolicitar: 'solicitarEnvio'
+    };
+    
+    if (bloquear) {
+        // Bloquear inputs de origen y destino
+        elementos.inputs.forEach(id => {
+            const input = document.getElementById(id);
+            if (input) {
+                input.disabled = true;
+                input.classList.add('bg-gray-100', 'cursor-not-allowed', 'opacity-70');
+            }
+        });
+        
+        // Bloquear select de tipo de envío
+        const select = document.getElementById(elementos.select);
+        if (select) {
+            select.disabled = true;
+            select.classList.add('bg-gray-100', 'cursor-not-allowed', 'opacity-70');
+        }
+        
+        // Bloquear botones de modo (Origen/Destino)
+        elementos.botones.forEach(id => {
+            const btn = document.getElementById(id);
+            if (btn) {
+                btn.style.pointerEvents = 'none';
+                btn.classList.add('opacity-50');
+            }
+        });
+        
+        // Deshabilitar marcadores arrastrables
+        if (originMarker && originMarker.dragging) {
+            originMarker.dragging.disable();
+            originMarker.setOpacity(0.6);
+        }
+        if (destMarker && destMarker.dragging) {
+            destMarker.dragging.disable();
+            destMarker.setOpacity(0.6);
+        }
+        
+        // Deshabilitar click en el mapa para seleccionar ubicación
+        if (map) {
+            map._container.style.cursor = 'default';
+        }
+        
+        // Ocultar/deshabilitar botón solicitar envío
+        const btnSolicitar = document.querySelector('button[onclick="solicitarEnvio()"], button[onclick="solicitarEnvioMobile()"]');
+        if (btnSolicitar) {
+            btnSolicitar.disabled = true;
+            btnSolicitar.classList.add('opacity-50', 'cursor-not-allowed');
+        }
+        
+        // Mostrar mensaje en los inputs
+        const origenInput = document.getElementById('origen');
+        if (origenInput && !origenInput.placeholder.includes('(Bloqueado)')) {
+            origenInput.placeholder = '📍 Origen (bloqueado - pedido en curso)';
+        }
+        const destinoInput = document.getElementById('destino');
+        if (destinoInput && !destinoInput.placeholder.includes('(Bloqueado)')) {
+            destinoInput.placeholder = '🏁 Destino (bloqueado - pedido en curso)';
+        }
+
+          // ✅ SINCRONIZAR BLOQUEO CON MÓVIL
+        if (typeof sincronizarBloqueoMobile === 'function') {
+            sincronizarBloqueoMobile(true);
+        }
+        
+        console.log("🔒 UI bloqueada - Pedido activo en curso");
+        
+    } else {
+        // Reactivar todo
+        elementos.inputs.forEach(id => {
+            const input = document.getElementById(id);
+            if (input) {
+                input.disabled = false;
+                input.classList.remove('bg-gray-100', 'cursor-not-allowed', 'opacity-70');
+                input.placeholder = id === 'origen' ? 'Buscar dirección o arrastra el marcador' : 'Buscar dirección o arrastra el marcador';
+            }
+        });
+        
+        const select = document.getElementById(elementos.select);
+        if (select) {
+            select.disabled = false;
+            select.classList.remove('bg-gray-100', 'cursor-not-allowed', 'opacity-70');
+        }
+        
+        elementos.botones.forEach(id => {
+            const btn = document.getElementById(id);
+            if (btn) {
+                btn.style.pointerEvents = 'auto';
+                btn.classList.remove('opacity-50');
+            }
+        });
+        
+        if (originMarker && originMarker.dragging) {
+            originMarker.dragging.enable();
+            originMarker.setOpacity(1);
+        }
+        if (destMarker && destMarker.dragging) {
+            destMarker.dragging.enable();
+            destMarker.setOpacity(1);
+        }
+        
+        if (map) {
+            map._container.style.cursor = 'crosshair';
+        }
+        
+        const btnSolicitar = document.querySelector('button[onclick="solicitarEnvio()"], button[onclick="solicitarEnvioMobile()"]');
+        if (btnSolicitar) {
+            btnSolicitar.disabled = false;
+            btnSolicitar.classList.remove('opacity-50', 'cursor-not-allowed');
+        }
+
+        // ✅ SINCRONIZAR REACTIVACIÓN CON MÓVIL
+        if (typeof sincronizarBloqueoMobile === 'function') {
+            sincronizarBloqueoMobile(false);
+        }
+        
+        console.log("🔓 UI reactivada - Sin pedido activo");
+    }
+}
+
 // Detectar cuando la pestaña está visible
 document.addEventListener('visibilitychange', () => {
     paginaVisible = !document.hidden;
@@ -470,6 +597,11 @@ function mostrarPanelEstado(pedido) {
     document.getElementById("pedidoIdLabel").innerText = pedido.id;
     actualizarEstadoPanel(pedido.estado);
     panel.classList.remove("hidden");
+    
+    // ✅ BLOQUEAR UI cuando hay pedido activo
+    if (pedido && (pedido.estado === 'asignado' || pedido.estado === 'recogido' || pedido.estado === 'pendiente')) {
+        bloquearUIporPedidoActivo(true);
+    }
 }
 
 // Reemplazar la función actualizarEstadoPanel por esta:
@@ -524,6 +656,9 @@ function actualizarEstadoPanel(estado, deliveryNombre = null) {
             // Limpiar el pedido actual
             pedidoActual = null;
             
+            // ✅ REACTIVAR UI (importante)
+            bloquearUIporPedidoActivo(false);
+            
             // Detener intervalos
             if(seguimientoInterval) {
                 clearInterval(seguimientoInterval);
@@ -567,6 +702,10 @@ async function cancelarPedido() {
                 if (error) throw error;
                 
                 mostrarToast(`✅ Pedido #${pedidoActual.id} cancelado correctamente`);
+                
+                // ✅ Reactivar UI antes de limpiar
+                bloquearUIporPedidoActivo(false);
+                
                 limpiarYResetearUI();
                 
             } catch(e) {
@@ -578,6 +717,9 @@ async function cancelarPedido() {
 }
 
 function limpiarYResetearUI() {
+
+    bloquearUIporPedidoActivo(false);
+
     // Detener intervalos
     if (seguimientoInterval) {
         clearInterval(seguimientoInterval);
@@ -1269,41 +1411,84 @@ function cerrarSesion() {
     );
 }
 
-function mostrarToast(msg, err=false){ 
-    const t=document.createElement('div'); 
-    t.className='toast-message'; 
-    t.style.cssText = `
+function mostrarToast(msg, err = false) {
+    // ✅ Eliminar toasts anteriores para evitar acumulación
+    const toastsAnteriores = document.querySelectorAll('.toast-moderno');
+    toastsAnteriores.forEach(toast => toast.remove());
+    
+    const toast = document.createElement('div');
+    toast.className = 'toast-moderno';
+    
+    // ✅ Diseño moderno y adaptable a móvil
+    const isMobile = window.innerWidth < 768;
+    const paddingY = isMobile ? '12px' : '14px';
+    const paddingX = isMobile ? '20px' : '28px';
+    const fontSize = isMobile ? '13px' : '14px';
+    
+    // Iconos según el tipo
+    let icono = err ? 'fa-exclamation-triangle' : 'fa-check-circle';
+    let colorFondo = err 
+        ? 'linear-gradient(135deg, #dc2626, #b91c1c)' 
+        : 'linear-gradient(135deg, #10b981, #059669)';
+    
+    // Si el mensaje contiene palabras clave, personalizar icono
+    if (msg.includes('📍')) icono = 'fa-location-dot';
+    else if (msg.includes('🏁')) icono = 'fa-flag-checkered';
+    else if (msg.includes('💰') || msg.includes('$')) icono = 'fa-money-bill-wave';
+    else if (msg.includes('🚚') || msg.includes('delivery')) icono = 'fa-motorcycle';
+    else if (msg.includes('✅')) icono = 'fa-circle-check';
+    else if (msg.includes('❌')) icono = 'fa-circle-exclamation';
+    
+    toast.style.cssText = `
         position: fixed;
-        bottom: 20px;
+        bottom: ${isMobile ? '80px' : '20px'};
         left: 50%;
         transform: translateX(-50%) translateY(20px);
-        background: ${err ? 'linear-gradient(135deg, #dc2626, #ef4444)' : 'linear-gradient(135deg, #10b981, #059669)'};
+        background: ${colorFondo};
         color: white;
-        padding: 14px 28px;
-        border-radius: 50px;
-        font-size: 14px;
+        padding: ${paddingY} ${paddingX};
+        border-radius: ${isMobile ? '30px' : '50px'};
+        font-size: ${fontSize};
         font-weight: 500;
-        z-index: 10000;
-        box-shadow: 0 10px 25px -5px rgba(0,0,0,0.2);
+        z-index: 100000;
+        box-shadow: 0 10px 25px -5px rgba(0,0,0,0.2), 0 8px 10px -6px rgba(0,0,0,0.1);
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 10px;
         opacity: 0;
-        transition: all 0.3s ease;
+        transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        backdrop-filter: blur(4px);
+        border: 1px solid rgba(255,255,255,0.2);
+        max-width: ${isMobile ? '85%' : 'auto'};
+        white-space: ${isMobile ? 'normal' : 'nowrap'};
+        text-align: center;
+        line-height: 1.4;
+        word-break: break-word;
     `;
-    t.innerHTML = `<i class="fas ${err ? 'fa-exclamation-circle' : 'fa-check-circle'}"></i> ${msg}`;
-    document.body.appendChild(t);
     
+    toast.innerHTML = `
+        <i class="fas ${icono}" style="font-size: ${isMobile ? '16px' : '18px'}; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.2));"></i>
+        <span>${msg}</span>
+    `;
+    
+    document.body.appendChild(toast);
+    
+    // Animación de entrada
     setTimeout(() => {
-        t.style.transform = 'translateX(-50%) translateY(0)';
-        t.style.opacity = '1';
+        toast.style.transform = 'translateX(-50%) translateY(0)';
+        toast.style.opacity = '1';
     }, 10);
     
+    // Mostrar por más tiempo si es error o mensaje largo
+    const duracion = err ? 3500 : (msg.length > 50 ? 3500 : 2500);
+    
+    // Animación de salida
     setTimeout(() => {
-        t.style.transform = 'translateX(-50%) translateY(20px)';
-        t.style.opacity = '0';
-        setTimeout(() => t.remove(), 300);
-    }, 3000);
+        toast.style.transform = 'translateX(-50%) translateY(20px)';
+        toast.style.opacity = '0';
+        setTimeout(() => toast.remove(), 400);
+    }, duracion);
 }
 
 function mostrarResumenRuta() {
