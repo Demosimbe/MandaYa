@@ -858,8 +858,8 @@ function cerrarSesion() {
 async function actualizarColorMarcador() {
     if (!userMarker || !currentUser) return;
     
-    const tienePedido = await tienePedidoActivo(currentUser.id);
-    
+    const tienePedido = await deliveryTienePedidoActivo(currentUser.id);
+
     let color;
     let estadoTexto;
     
@@ -922,6 +922,60 @@ async function actualizarColorMarcador() {
 async function actualizarEstadoYColor() {
     await actualizarColorMarcador();
 }
+
+// ==================== LIMPIAR RECURSOS AL CERRAR PESTAÑA (DELIVERY) ====================
+function limpiarIntervalosDelivery() {
+    console.log("🧹 Limpiando intervalos de delivery...");
+    
+    if (ubicacionInterval) {
+        clearInterval(ubicacionInterval);
+        ubicacionInterval = null;
+    }
+    
+    if (cargaPedidosInterval) {
+        clearInterval(cargaPedidosInterval);
+        cargaPedidosInterval = null;
+    }
+    
+    if (watchId) {
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+    }
+    
+    // Limpiar rutas
+    limpiarRutasYMarcadores();
+    
+    // Actualizar estado offline en Supabase
+       if (currentUser && isOnline && supabaseClient) {
+        setDeliveryOnlineSupabase(currentUser.id, false).catch(console.error);
+        // ✅ Mejor verificar que userMarker existe
+        if (userMarker && userMarker.getLatLng) {
+            const coords = userMarker.getLatLng();
+            guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, coords.lat, coords.lng, false).catch(console.error);
+        }
+    }
+    
+    console.log("✅ Recursos de delivery liberados");
+}
+
+// Sobrescribir cerrarSesion
+const originalCerrarSesionDelivery = window.cerrarSesion;
+window.cerrarSesion = function() {
+    limpiarIntervalosDelivery();
+    if (originalCerrarSesionDelivery) {
+        originalCerrarSesionDelivery();
+    }
+};
+
+// Eventos de cierre
+window.addEventListener('beforeunload', function() {
+    console.log("🚪 Delivery: pestaña cerrando");
+    limpiarIntervalosDelivery();
+});
+
+window.addEventListener('unload', function() {
+    console.log("💀 Delivery: página descargada");
+});
 
 function mostrarToast(msg, err=false){ 
     const t=document.createElement('div'); 

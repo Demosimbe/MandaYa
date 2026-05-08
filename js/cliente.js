@@ -12,6 +12,10 @@ let deliverysMarkers = []; // Para los marcadores de deliverys en línea
 let deliverysInterval = null;  // Para el intervalo de deliverys en línea
 let pedidoPendiente = null; // Variable global para guardar pedido antes de pagar
 let clienteRouteControl = null;
+let rutaActualTipo = null;     // 'recogida' o 'entrega'
+let rutaDestinoActual = null;  // Guardar destino para comparar
+let rutaYaDibujada = false;
+let ultimoEstadoPedido = null;
 
 // ==================== CONTROL DE PETICIONES INTELIGENTE ====================
 let ultimaPeticionTime = 0;
@@ -138,6 +142,11 @@ function initMap() {
 }
 
 function loadUser() {
+    // ✅ Limpiar intervalos previos antes de cargar nuevo usuario
+    if (seguimientoInterval) clearInterval(seguimientoInterval);
+    if (ubicacionInterval) clearInterval(ubicacionInterval);
+    if (deliverysInterval) clearInterval(deliverysInterval);
+    
     const sesion = localStorage.getItem('sesion_activa');
     if (!sesion) { window.location.href = "index.html"; return; }
     currentUser = JSON.parse(sesion);
@@ -177,7 +186,22 @@ async function dibujarRutaDeliveryEnCliente(ubicacionDelivery, destinoCoords, ti
         return;
     }
     
-    limpiarRutaCliente();
+    // ✅ Limpiar ruta anterior de forma más segura
+    if (clienteRouteControl) {
+        try {
+            // Intentar remover el control del mapa
+            if (clienteRouteControl._map) {
+                map.removeControl(clienteRouteControl);
+            }
+            // También limpiar event listeners si es posible
+            if (clienteRouteControl.getPlan) {
+                clienteRouteControl.getPlan().setWaypoints([]);
+            }
+        } catch(e) {
+            console.warn("Error limpiando ruta anterior:", e);
+        }
+        clienteRouteControl = null;
+    }
     
     let waypoints = [];
     let color = '#FF6200';
@@ -213,8 +237,15 @@ async function dibujarRutaDeliveryEnCliente(ubicacionDelivery, destinoCoords, ti
         addWaypoints: false
     }).addTo(map);
     
+    // ✅ Ajustar el mapa a la ruta
     setTimeout(() => {
-        map.fitBounds(waypoints, { padding: [50, 50] });
+        try {
+            if (waypoints.length >= 2) {
+                map.fitBounds(L.latLngBounds(waypoints), { padding: [50, 50] });
+            }
+        } catch(e) {
+            console.warn("Error ajustando bounds:", e);
+        }
         map.invalidateSize();
     }, 300);
 }
@@ -786,13 +817,12 @@ function seguirUbicacionDelivery(deliveryId) {
     ubicacionInterval = setInterval(async () => {
         let ubicacion = null;
         
-        if (typeof obtenerUbicacionDeSupabase !== 'undefined') {
-            const supabaseUbicacion = await obtenerUbicacionDeSupabase(deliveryId);
-            if (supabaseUbicacion) {
-                ubicacion = { lat: supabaseUbicacion.lat, lng: supabaseUbicacion.lng };
-                console.log("📍 Ubicación delivery obtenida:", ubicacion);
-            }
-        }
+       if (typeof obtenerUbicacionDeSupabase !== 'undefined') {
+           ubicacion = await obtenerUbicacionDeSupabase(deliveryId);
+           if (ubicacion && ubicacion.lat && ubicacion.lng) {
+                 ubicacion = { lat: ubicacion.lat, lng: ubicacion.lng };
+       }
+    }
         
         let deliveryNombre = 'Delivery';
         const supabase = supabaseClient;
@@ -808,6 +838,7 @@ function seguirUbicacionDelivery(deliveryId) {
         }
         
         if (ubicacion) {
+            // Actualizar marcador SIEMPRE (esto NO causa parpadeo)
             if (deliveryMarker) map.removeLayer(deliveryMarker);
             
             deliveryMarker = crearMarcadorDelivery(
@@ -818,49 +849,65 @@ function seguirUbicacionDelivery(deliveryId) {
             );
             deliveryMarker.addTo(map);
             
-            // ✅ Dibujar ruta según el estado del pedido
+            // ✅ IMPORTANTE: Solo dibujar ruta si ha cambiado el estado o es la primera vez
+            const estadoActual = pedidoActual?.estado;
+            const necesitaRedibujar = !rutaYaDibujada || ultimoEstadoPedido !== estadoActual;
+            
             if (pedidoActual) {
                 console.log("📌 Estado pedido:", pedidoActual.estado);
                 
+                // Determinar destino según estado
+                let destinoCoords = null;
+                let tipoRuta = null;
+                
                 if (pedidoActual.estado === 'asignado') {
-                    // Ruta: delivery -> origen (usando origen_lat, origen_lng)
                     if (pedidoActual.origen_lat && pedidoActual.origen_lng) {
-                        const origenCoords = { lat: pedidoActual.origen_lat, lng: pedidoActual.origen_lng };
-                        console.log("🟢 Dibujando ruta RECOGIDA hacia:", origenCoords);
-                        await dibujarRutaDeliveryEnCliente(ubicacion, origenCoords, 'recogida');
-                        deliveryMarker.bindPopup(`<b>🏍️ ${deliveryNombre}</b><br>🟠 En camino a recoger tu paquete`);
-                    } else {
-                        console.log("❌ No hay coordenadas de origen");
+                        destinoCoords = { lat: pedidoActual.origen_lat, lng: pedidoActual.origen_lng };
+                        tipoRuta = 'recogida';
                     }
-                    
                 } else if (pedidoActual.estado === 'recogido') {
-                    // Ruta: delivery -> destino (usando destino_lat, destino_lng)
                     if (pedidoActual.destino_lat && pedidoActual.destino_lng) {
-                        const destinoCoords = { lat: pedidoActual.destino_lat, lng: pedidoActual.destino_lng };
-                        console.log("🟠 Dibujando ruta ENTREGA hacia:", destinoCoords);
-                        await dibujarRutaDeliveryEnCliente(ubicacion, destinoCoords, 'entrega');
-                        deliveryMarker.bindPopup(`<b>🏍️ ${deliveryNombre}</b><br>📦 En camino a entregar tu paquete`);
-                    } else {
-                        console.log("❌ No hay coordenadas de destino");
+                        destinoCoords = { lat: pedidoActual.destino_lat, lng: pedidoActual.destino_lng };
+                        tipoRuta = 'entrega';
                     }
                 }
-            }
-            
-            // Mostrar distancia al destino
-            if (pedidoActual && pedidoActual.destino_lat && ubicacion) {
-                const destinoCoords = { lat: pedidoActual.destino_lat, lng: pedidoActual.destino_lng };
-                const distanciaADestino = calcularDistanciaEntrePuntos(ubicacion, destinoCoords);
-                if (distanciaADestino < 0.5) {
-                    document.getElementById("deliveryEstado").innerHTML = "🟢 Muy cerca de tu destino 🎯";
-                } else if (distanciaADestino < 1) {
-                    document.getElementById("deliveryEstado").innerHTML = "🟡 Cerca de tu destino";
-                } else {
-                    document.getElementById("deliveryEstado").innerHTML = `🔴 A ${distanciaADestino.toFixed(1)} km de tu destino`;
+                
+                // ✅ SOLO REDIBUJAR SI:
+                // 1. Es la primera vez (rutaYaDibujada = false)
+                // 2. Cambió el estado del pedido (de asignado a recogido, etc.)
+                // 3. Cambió el tipo de ruta (recogida ↔ entrega)
+                if (destinoCoords && necesitaRedibujar) {
+                    console.log(`🔄 Redibujando ruta (${tipoRuta}) - Estado cambió de ${ultimoEstadoPedido} a ${estadoActual}`);
+                    await dibujarRutaDeliveryEnCliente(ubicacion, destinoCoords, tipoRuta);
+                    rutaYaDibujada = true;
+                    ultimoEstadoPedido = estadoActual;
+                    rutaDestinoActual = destinoCoords;
+                    
+                    // Actualizar popup
+                    if (tipoRuta === 'recogida') {
+                        deliveryMarker.bindPopup(`<b>🏍️ ${deliveryNombre}</b><br>🟠 En camino a recoger tu paquete`);
+                    } else {
+                        deliveryMarker.bindPopup(`<b>🏍️ ${deliveryNombre}</b><br>📦 En camino a entregar tu paquete`);
+                    }
+                } else if (destinoCoords && rutaYaDibujada) {
+                    // ✅ Solo actualizar la posición del marcador, NO redibujar la ruta
+                    // Actualizar el popup con distancia si es necesario
+                    if (pedidoActual && pedidoActual.destino_lat && ubicacion) {
+                        const destinoFinal = { lat: pedidoActual.destino_lat, lng: pedidoActual.destino_lng };
+                        const distanciaADestino = calcularDistanciaEntrePuntos(ubicacion, destinoFinal);
+                        if (distanciaADestino < 0.5) {
+                            document.getElementById("deliveryEstado").innerHTML = "🟢 Muy cerca de tu destino 🎯";
+                        } else if (distanciaADestino < 1) {
+                            document.getElementById("deliveryEstado").innerHTML = "🟡 Cerca de tu destino";
+                        } else {
+                            document.getElementById("deliveryEstado").innerHTML = `🔴 A ${distanciaADestino.toFixed(1)} km de tu destino`;
+                        }
+                    }
                 }
             }
         }
         
-        // ✅ Verificar si el pedido ya fue completado
+        // Verificar si el pedido ya fue completado
         if (supabase && pedidoActual) {
             const { data: pedidoActualizado } = await supabase
                 .from('pedidos')
@@ -885,11 +932,16 @@ function seguirUbicacionDelivery(deliveryId) {
                     deliveryMarker = null;
                 }
                 
+                // Resetear variables de control
+                rutaYaDibujada = false;
+                ultimoEstadoPedido = null;
+                rutaDestinoActual = null;
+                
                 pedidoActual = null;
                 mostrarToast("🎉 ¡Envío completado! Gracias por usar MandaYa");
             }
         }
-    }, 2000);
+    }, 2000); // Seguimos actualizando cada 2 segundos solo la ubicación
 }
 
 function calcularDistanciaEntrePuntos(punto1, punto2) {
@@ -1857,6 +1909,95 @@ async function tienePedidoActivo(deliveryId) {
         return false;
     }
 }
+
+// ==================== LIMPIAR RECURSOS AL CERRAR PESTAÑA ====================
+function limpiarTodosLosIntervalos() {
+    console.log("🧹 Limpiando intervalos y recursos...");
+    
+    // Limpiar intervalos principales
+    if (seguimientoInterval) {
+        clearInterval(seguimientoInterval);
+        seguimientoInterval = null;
+        console.log("✅ seguimientoInterval limpiado");
+    }
+    
+    if (ubicacionInterval) {
+        clearInterval(ubicacionInterval);
+        ubicacionInterval = null;
+        console.log("✅ ubicacionInterval limpiado");
+    }
+    
+    if (deliverysInterval) {
+        clearInterval(deliverysInterval);
+        deliverysInterval = null;
+        console.log("✅ deliverysInterval limpiado");
+    }
+    
+    // Limpiar timeout si existe
+    if (busquedaTimeout) {
+        clearTimeout(busquedaTimeout);
+        busquedaTimeout = null;
+    }
+    
+    // Limpiar rutas del mapa para liberar memoria
+    if (clienteRouteControl) {
+        try {
+            if (clienteRouteControl._map) {
+                map.removeControl(clienteRouteControl);
+            }
+        } catch(e) {}
+        clienteRouteControl = null;
+    }
+    
+    // Eliminar marcadores
+    if (deliveryMarker) {
+        try { map.removeLayer(deliveryMarker); } catch(e) {}
+        deliveryMarker = null;
+    }
+    
+    console.log("✅ Todos los recursos liberados");
+}
+
+// Guardar referencia a la función original de cerrar sesión si existe
+const originalCerrarSesionCliente = window.cerrarSesion;
+
+// Sobrescribir cerrarSesion para incluir limpieza
+window.cerrarSesion = function() {
+    limpiarTodosLosIntervalos();
+    if (originalCerrarSesionCliente) {
+        originalCerrarSesionCliente();
+    }
+};
+
+// Evento cuando la página se está cerrando (pestaña cerrada, navegador cerrado, refresh)
+window.addEventListener('beforeunload', function() {
+    console.log("🚪 Pestaña cerrando - Limpiando recursos...");
+    limpiarTodosLosIntervalos();
+});
+
+// Evento cuando la página se descarga completamente (último recurso)
+window.addEventListener('unload', function() {
+    console.log("💀 Página descargada - Recursos liberados");
+    // Intentar actualizar estado offline si es necesario
+    if (currentUser && currentUser.rol === 'cliente' && supabaseClient) {
+        // Opcional: no es necesario para cliente, pero por si acaso
+        console.log("👋 Cliente desconectado");
+    }
+});
+
+// Detectar cuando la página se oculta (pestaña inactiva pero no cerrada)
+// Esto ya está manejado con visibilitychange, pero reforzamos
+document.addEventListener('visibilitychange', function() {
+    if (document.hidden) {
+        console.log("📱 Pestaña oculta - Reduciendo actividad");
+        // Opcional: pausar intervalos menos críticos
+        if (deliverysInterval) {
+            // No lo cancelamos, solo reducimos frecuencia (ya está en 15 segundos)
+        }
+    } else {
+        console.log("🟢 Pestaña visible - Reanudando actividad normal");
+    }
+});
 
 // ==================== EVENT LISTENERS ====================
 document.addEventListener('DOMContentLoaded', () => {
