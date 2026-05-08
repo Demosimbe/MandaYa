@@ -341,14 +341,63 @@ async function marcarPaqueteRecogido(pedidoId) {
 
 function startLocationTracking() {
     if("geolocation" in navigator) {
+        const options = {
+            enableHighAccuracy: true,
+            maximumAge: 0,        // ✅ Cambiado: no usar caché
+            timeout: 5000
+        };
+        
+        // ✅ NUEVO: Obtener ubicación inicial rápida (getCurrentPosition)
+        navigator.geolocation.getCurrentPosition(
+            async (pos) => {
+                const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                console.log("📍 Ubicación inicial obtenida:", coords);
+                
+                if(!userMarker) {
+                    userMarker = crearMarcadorDelivery(
+                        coords.lat, 
+                        coords.lng, 
+                        currentUser.nombre, 
+                        '#10B981'
+                    );
+                    userMarker.addTo(map);
+                    userMarker.bindPopup(`🏍️ <b>${currentUser.nombre}</b><br>🟢 Disponible`);
+                } else {
+                    userMarker.setLatLng(coords);
+                }
+                
+                // ✅ Centrar mapa en la ubicación del delivery
+                map.setView([coords.lat, coords.lng], 15);
+                mostrarToast("📍 Ubicación detectada");
+                
+                if(currentUser && isOnline) {
+                    await guardarUbicacionEnSupabase(
+                        currentUser.id,
+                        currentUser.nombre,
+                        coords.lat,
+                        coords.lng,
+                        true
+                    );
+                }
+            },
+            (err) => {
+                console.error("Error en ubicación inicial:", err);
+                if(err.code === 1) {
+                    mostrarToast("❌ Permite el acceso a tu ubicación en el navegador", true);
+                } else {
+                    mostrarToast("⚠️ Activando GPS... esperando señal", true);
+                }
+            },
+            options
+        );
+        
+        // ✅ Watch continuo (el que ya tenías)
         watchId = navigator.geolocation.watchPosition(
             async (pos) => {
                 const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
                 
                 if(userMarker) {
-                    // ✅ Solo actualizar la posición del marcador, NO redibujar la ruta
                     userMarker.setLatLng(coords);
-                    // ❌ ELIMINADO: bloque que redibujaba la ruta constantemente
                 } else {
                     userMarker = crearMarcadorDelivery(
                         coords.lat, 
@@ -376,11 +425,18 @@ function startLocationTracking() {
                 }
             },
             (err) => {
-                console.error(err);
-                mostrarToast("⚠️ No se pudo obtener tu ubicación", true);
+                console.error("Error en watchPosition:", err);
+                if(err.code === 1) {
+                    mostrarToast("❌ Permite el acceso a tu ubicación", true);
+                } else if(err.code === 3) {
+                    mostrarToast("⚠️ Tiempo de espera agotado - Reintentando...", true);
+                }
             },
-            { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }
+            options
         );
+        
+        mostrarToast("🟢 Buscando tu ubicación...");
+        
     } else {
         mostrarToast("⚠️ Tu navegador no soporta geolocalización", true);
     }

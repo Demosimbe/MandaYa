@@ -883,82 +883,47 @@ function enviarComprobanteWhatsApp() {
     
     const total = pedidoPendiente.tarifa;
     const pedidoId = pedidoPendiente.id;
-    const numeroWhatsApp = "5219381083498"; // Sin + para wa.me
     
-    const mensaje = `🍔 *MANDAYA - NUEVO PEDIDO* 🍔
+    // ✅ MISMO NÚMERO que funciona en tu otro proyecto
+    const numeroWhatsApp = '5219381083498';
     
-📦 *Pedido #${pedidoId}*
-💰 *Total:* $${total} MXN
-
-📝 *Detalles del envío:*
-📍 Origen: ${pedidoPendiente.origen}
-🏁 Destino: ${pedidoPendiente.destino}
-📏 Distancia: ${pedidoPendiente.distancia_real} km
-
-👤 *Cliente:* ${pedidoPendiente.cliente_nombre}
-
-✅ *Comprobante de pago adjunto*
-
-Gracias por usar MandaYa 🙏`;
-
+    // ✅ MISMO FORMATO de mensaje (como en tu ejemplo)
+    let mensaje = `🍔 *MANDAYA - NUEVO PEDIDO* 🍔\n\n`;
+    
+    mensaje += `🎫 *PEDIDO:* #${pedidoId}\n`;
+    mensaje += `👤 *CLIENTE:* ${pedidoPendiente.cliente_nombre}\n`;
+    
+    mensaje += `\n━━━━━━━━━━━━━━━\n`;
+    mensaje += `📦 *DETALLES DEL ENVÍO:*\n`;
+    mensaje += `\n📍 *ORIGEN:* ${pedidoPendiente.origen}\n`;
+    mensaje += `🏁 *DESTINO:* ${pedidoPendiente.destino}\n`;
+    mensaje += `📏 *DISTANCIA:* ${pedidoPendiente.distancia_real} km\n`;
+    mensaje += `📦 *TIPO:* ${pedidoPendiente.tipo}\n`;
+    
+    mensaje += `\n━━━━━━━━━━━━━━━\n`;
+    mensaje += `💰 *TOTAL A PAGAR:* $${total} MXN\n`;
+    
+    mensaje += `\n━━━━━━━━━━━━━━━\n`;
+    mensaje += `✅ *Comprobante de pago adjunto*\n`;
+    
+    mensaje += `\n🙏 *¡Gracias por usar MandaYa!*`;
+    
+    // ✅ MISMA URL que funciona en tu otro proyecto
     const mensajeCodificado = encodeURIComponent(mensaje);
-    const url = `https://wa.me/${numeroWhatsApp}?text=${mensajeCodificado}`;
+    const whatsappUrl = `https://api.whatsapp.com/send?phone=${numeroWhatsApp}&text=${mensajeCodificado}`;
     
-    console.log("📱 Abriendo WhatsApp...");
+    console.log("📱 Abriendo WhatsApp con URL:", whatsappUrl);
     
-    // ✅ DETECCIÓN DE DISPOSITIVO
-    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    // ✅ MISMA FORMA de abrir que en tu otro proyecto
+    window.open(whatsappUrl, '_blank');
     
-    if (isMobile) {
-        // ✅ MÓVIL: Abrir la app (redirige, pero es lo esperado en móvil)
-        window.location.href = url;
-    } else {
-        // ✅ PC: Abrir WhatsApp Web en NUEVA PESTAÑA sin redirigir la página actual
-        const ventana = window.open(url, '_blank');
-        
-        // Si el popup fue bloqueado, mostrar aviso
-        if (!ventana || ventana.closed || typeof ventana.closed === 'undefined') {
-            mostrarToast("⚠️ Permite ventanas emergentes para abrir WhatsApp Web", true);
-            // Mostrar enlace manual como respaldo
-            mostrarEnlaceManual(url);
-        } else {
-            mostrarToast("✅ Abriendo WhatsApp Web en nueva pestaña");
-        }
-    }
+    // Mostrar mensaje de confirmación
+    mostrarToast("📱 Abriendo WhatsApp...");
     
-    // Confirmar pago
+    // Confirmar pago después de enviar
     confirmarPagoTransferencia();
 }
 
-// Función de respaldo si el popup es bloqueado
-function mostrarEnlaceManual(url) {
-    const toast = document.createElement('div');
-    toast.style.cssText = `
-        position: fixed;
-        bottom: 100px;
-        left: 50%;
-        transform: translateX(-50%);
-        background: #075E54;
-        color: white;
-        padding: 12px 20px;
-        border-radius: 30px;
-        font-size: 14px;
-        z-index: 100000;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-    `;
-    toast.innerHTML = `<i class="fab fa-whatsapp"></i> Haz clic aquí para abrir WhatsApp Web`;
-    toast.onclick = () => {
-        window.open(url, '_blank');
-        toast.remove();
-    };
-    document.body.appendChild(toast);
-    
-    setTimeout(() => toast.remove(), 8000);
-}
 
 async function confirmarPagoTransferencia() {
     await guardarPedidoEnSupabase();
