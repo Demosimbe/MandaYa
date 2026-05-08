@@ -391,15 +391,14 @@ function centrarMapa() {
     mostrarToast("📍 Mapa centrado en Ciudad del Carmen");
 }
 
-async function cargarPedidos() {
-     // ✅ Si no es forzado y la página está oculta, salir
+async function cargarPedidos(force = false) {
+    // ✅ Si no es forzado y la página está oculta, salir
     if (!force && !paginaVisible) {
         console.log("📴 Página oculta, no se cargan pedidos");
         return;
     }
     
-    
-      // ✅ Throttling solo si no es forzado
+    // ✅ Throttling solo si no es forzado
     const ahora = Date.now();
     if (!force && (ahora - ultimaPeticionPedidos < 5000)) {
         console.log(`⏳ Throttling: cargarPedidos - demasiado rápido`);
@@ -568,7 +567,7 @@ async function agarrarPedido(pedidoId) {
         
         if (pedidoActual.estado !== 'pendiente') {
             mostrarToast(`❌ El pedido #${pedidoId} ya no está disponible (fue agarrado por otro delivery)`, true);
-            await cargarPedidos(); // Recargar lista
+            await cargarPedidos(true);   // ✅
             return;
         }
         
@@ -597,7 +596,7 @@ async function agarrarPedido(pedidoId) {
         
         // ✅ Limpiar selección y recargar
         pedidoSeleccionado = null;
-        await cargarPedidos();
+        await cargarPedidos(true);   // ✅ Forzar recarga
         await actualizarColorMarcador();
         
         // ✅ Mostrar ruta de recogida inmediatamente
@@ -648,7 +647,7 @@ async function completarPedido(pedidoId) {
         limpiarRutasYMarcadores();
         
         // ✅ Recargar pedidos para actualizar listas
-        await cargarPedidos();
+       await cargarPedidos(true);  
         
         // ✅ Actualizar color del marcador (de vuelta a verde)
         await actualizarColorMarcador();
@@ -756,7 +755,7 @@ async function toggleOnline() {
                 await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, coords.lat, coords.lng, true);
             }
         }
-        cargarPedidos();
+        cargarPedidos(true);
         
         if(ubicacionInterval) clearInterval(ubicacionInterval);
         ubicacionInterval = setInterval(async () => {
