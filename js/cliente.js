@@ -1052,20 +1052,33 @@ function iniciarSeguimientoDelivery() {
 }
 
 function seguirUbicacionDelivery(deliveryId) {
+    // ✅ 1. Limpiar intervalo anterior si existe
     if (ubicacionInterval) {
         clearInterval(ubicacionInterval);
         ubicacionInterval = null;
     }
     
+    // ✅ 2. Eliminar marcador de seguimiento anterior si existe
+    if (deliveryMarker) {
+        try { map.removeLayer(deliveryMarker); } catch(e) {}
+        deliveryMarker = null;
+    }
+    
+    // ✅ 3. FORZAR RECARGA de deliverys en línea para OCULTAR este delivery de la lista general
+    console.log(`🔄 Ocultando delivery ${deliveryId} de la lista general de deliverys`);
+    cargarDeliverysEnLinea(); // Esto ahora excluirá automáticamente al delivery asignado
+    
+    // ✅ 4. Iniciar el intervalo de seguimiento
     ubicacionInterval = setInterval(async () => {
         let ubicacion = null;
         
-       if (typeof obtenerUbicacionDeSupabase !== 'undefined') {
-           ubicacion = await obtenerUbicacionDeSupabase(deliveryId);
-           if (ubicacion && ubicacion.lat && ubicacion.lng) {
-                 ubicacion = { lat: ubicacion.lat, lng: ubicacion.lng };
-       }
-    }
+        // Obtener ubicación del delivery
+        if (typeof obtenerUbicacionDeSupabase !== 'undefined') {
+            ubicacion = await obtenerUbicacionDeSupabase(deliveryId);
+            if (ubicacion && ubicacion.lat && ubicacion.lng) {
+                ubicacion = { lat: ubicacion.lat, lng: ubicacion.lng };
+            }
+        }
         
         let deliveryNombre = 'Delivery';
         const supabase = supabaseClient;
@@ -1081,18 +1094,20 @@ function seguirUbicacionDelivery(deliveryId) {
         }
         
         if (ubicacion) {
-            // Actualizar marcador SIEMPRE (esto NO causa parpadeo)
-            if (deliveryMarker) map.removeLayer(deliveryMarker);
+            // ✅ 5. Actualizar marcador de seguimiento
+            if (deliveryMarker) {
+                try { map.removeLayer(deliveryMarker); } catch(e) {}
+            }
             
             deliveryMarker = crearMarcadorDelivery(
                 ubicacion.lat, 
                 ubicacion.lng, 
                 deliveryNombre, 
-                '#FF6200'
+                '#FF6200'  // Color naranja para el delivery asignado
             );
             deliveryMarker.addTo(map);
             
-            // ✅ IMPORTANTE: Solo dibujar ruta si ha cambiado el estado o es la primera vez
+            // ✅ 6. Solo dibujar ruta si cambió el estado
             const estadoActual = pedidoActual?.estado;
             const necesitaRedibujar = !rutaYaDibujada || ultimoEstadoPedido !== estadoActual;
             
@@ -1115,10 +1130,7 @@ function seguirUbicacionDelivery(deliveryId) {
                     }
                 }
                 
-                // ✅ SOLO REDIBUJAR SI:
-                // 1. Es la primera vez (rutaYaDibujada = false)
-                // 2. Cambió el estado del pedido (de asignado a recogido, etc.)
-                // 3. Cambió el tipo de ruta (recogida ↔ entrega)
+                // Redibujar solo si es necesario
                 if (destinoCoords && necesitaRedibujar) {
                     console.log(`🔄 Redibujando ruta (${tipoRuta}) - Estado cambió de ${ultimoEstadoPedido} a ${estadoActual}`);
                     await dibujarRutaDeliveryEnCliente(ubicacion, destinoCoords, tipoRuta);
@@ -1126,77 +1138,79 @@ function seguirUbicacionDelivery(deliveryId) {
                     ultimoEstadoPedido = estadoActual;
                     rutaDestinoActual = destinoCoords;
                     
-                    // Actualizar popup
+                    // Actualizar popup según el estado
                     if (tipoRuta === 'recogida') {
                         deliveryMarker.bindPopup(`<b>🏍️ ${deliveryNombre}</b><br>🟠 En camino a recoger tu paquete`);
                     } else {
                         deliveryMarker.bindPopup(`<b>🏍️ ${deliveryNombre}</b><br>📦 En camino a entregar tu paquete`);
                     }
                 } else if (destinoCoords && rutaYaDibujada) {
-                    // ✅ Solo actualizar la posición del marcador, NO redibujar la ruta
-                    // Actualizar el popup con distancia si es necesario
+                    // Solo actualizar información de distancia
                     if (pedidoActual && pedidoActual.destino_lat && ubicacion) {
                         const destinoFinal = { lat: pedidoActual.destino_lat, lng: pedidoActual.destino_lng };
                         const distanciaADestino = calcularDistanciaEntrePuntos(ubicacion, destinoFinal);
-                        if (distanciaADestino < 0.5) {
-                            document.getElementById("deliveryEstado").innerHTML = "🟢 Muy cerca de tu destino 🎯";
-                        } else if (distanciaADestino < 1) {
-                            document.getElementById("deliveryEstado").innerHTML = "🟡 Cerca de tu destino";
-                        } else {
-                            document.getElementById("deliveryEstado").innerHTML = `🔴 A ${distanciaADestino.toFixed(1)} km de tu destino`;
+                        const deliveryEstado = document.getElementById("deliveryEstado");
+                        if (deliveryEstado) {
+                            if (distanciaADestino < 0.5) {
+                                deliveryEstado.innerHTML = "🟢 Muy cerca de tu destino 🎯";
+                            } else if (distanciaADestino < 1) {
+                                deliveryEstado.innerHTML = "🟡 Cerca de tu destino";
+                            } else {
+                                deliveryEstado.innerHTML = `🔴 A ${distanciaADestino.toFixed(1)} km de tu destino`;
+                            }
                         }
                     }
                 }
             }
         }
         
-        // Verificar si el pedido ya fue completado
-            if (supabase && pedidoActual) {
-                const { data: pedidoActualizado } = await supabase
-                    .from('pedidos')
-                    .select('estado')
-                    .eq('id', pedidoActual.id)
-                    .single();
+        // ✅ 7. Verificar si el pedido ya fue completado (CORREGIDO el error de llaves)
+        if (supabase && pedidoActual) {
+            const { data: pedidoActualizado } = await supabase
+                .from('pedidos')
+                .select('estado')
+                .eq('id', pedidoActual.id)
+                .single();
+            
+            if (pedidoActualizado?.estado === 'completado') {
+                console.log("🎉 Pedido completado detectado en seguirUbicacionDelivery");
                 
-                if (pedidoActualizado?.estado === 'completado') {
-                    console.log("🎉 Pedido completado detectado en seguirUbicacionDelivery");
-                    
-                    clearInterval(ubicacionInterval);
-                    ubicacionInterval = null;
-                    
-                    ocultarDeliveryInfo();
-                    limpiarRutaCliente();
-                    
-                    // ✅ IMPORTANTE: Ocultar paneles
-                    const panel = document.getElementById("panelEstadoPedido");
-                    const panelMobile = document.getElementById("panelEstadoPedidoMobile");
-                    if(panel) panel.classList.add("hidden");
-                    if(panelMobile) panelMobile.classList.add("hidden");
-                    
-                    // ✅ Eliminar marcador del delivery
-                    if(deliveryMarker) {
-                        map.removeLayer(deliveryMarker);
-                        deliveryMarker = null;
-                    }
-                    
-                    // ✅ Resetear variables de control
-                    rutaYaDibujada = false;
-                    ultimoEstadoPedido = null;
-                    rutaDestinoActual = null;
-                    
-                    // ✅ REACTIVAR UI
-                    bloquearUIporPedidoActivo(false);
-                    
-                    // ✅ Limpiar pedido actual
-                    pedidoActual = null;
-                    
-                    // ✅ Recargar deliverys
-                    cargarDeliverysEnLinea();
-                    
-                    mostrarToast("🎉 ¡Envío completado! Gracias por usar MandaYa");       
+                clearInterval(ubicacionInterval);
+                ubicacionInterval = null;
+                
+                ocultarDeliveryInfo();
+                limpiarRutaCliente();
+                
+                // Ocultar paneles
+                const panel = document.getElementById("panelEstadoPedido");
+                const panelMobile = document.getElementById("panelEstadoPedidoMobile");
+                if(panel) panel.classList.add("hidden");
+                if(panelMobile) panelMobile.classList.add("hidden");
+                
+                // Eliminar marcador del delivery
+                if(deliveryMarker) {
+                    map.removeLayer(deliveryMarker);
+                    deliveryMarker = null;
+                }
+                
+                // Resetear variables de control
+                rutaYaDibujada = false;
+                ultimoEstadoPedido = null;
+                rutaDestinoActual = null;
+                
+                // REACTIVAR UI
+                bloquearUIporPedidoActivo(false);
+                
+                // Limpiar pedido actual
+                pedidoActual = null;
+                
+                // Recargar deliverys (ahora mostrará todos nuevamente)
+                cargarDeliverysEnLinea();
+                
+                mostrarToast("🎉 ¡Envío completado! Gracias por usar MandaYa");
             }
         }
-    }, 2000); // Seguimos actualizando cada 2 segundos solo la ubicación
+    }, 2000); // Actualizar cada 2 segundos
 }
 
 function calcularDistanciaEntrePuntos(punto1, punto2) {
@@ -2098,7 +2112,7 @@ function seleccionarDireccion(tipo, lat, lng, direccion) {
 
 // ==================== VER DELIVERYS EN LÍNEA ====================
 async function cargarDeliverysEnLinea() {
-    // ✅ 1. Verificar si la página está visible (ahorrar recursos)
+    // ✅ 1. Verificar si la página está visible
     if (!paginaVisible) {
         console.log("📴 Página oculta, omitiendo carga de deliverys");
         return;
@@ -2138,21 +2152,37 @@ async function cargarDeliverysEnLinea() {
             return;
         }
         
-        // ✅ 5. Verificar cuáles deliverys tienen pedido activo
-        const deliverysConEstado = await Promise.all(ubicaciones.map(async (delivery) => {
-            const tienePedido = await tienePedidoActivo(delivery.delivery_id);
-            return { ...delivery, tienePedido };
-        }));
+        // ✅ 5. OBTENER EL ID DEL DELIVERY ASIGNADO (si hay pedido activo)
+        let deliveryAsignadoId = null;
+        if (pedidoActual && (pedidoActual.estado === 'asignado' || pedidoActual.estado === 'recogido')) {
+            deliveryAsignadoId = pedidoActual.delivery_id;
+            console.log(`🚚 Delivery asignado detectado: ${deliveryAsignadoId} - No se mostrará en la lista general`);
+        }
         
-        // ✅ 6. Limpiar marcadores antiguos
+        // ✅ 6. Obtener IDs de deliverys con pedido activo (optimizado: una sola consulta)
+        const { data: pedidosActivos } = await supabaseClient
+            .from('pedidos')
+            .select('delivery_id')
+            .in('estado', ['asignado', 'recogido'])
+            .not('delivery_id', 'is', null);
+        
+        const deliverysOcupados = new Set(pedidosActivos?.map(p => p.delivery_id) || []);
+        
+        // ✅ 7. Limpiar marcadores antiguos
         deliverysMarkers.forEach(marker => {
             try { map.removeLayer(marker); } catch(e) {}
         });
         deliverysMarkers = [];
         
-        // ✅ 7. Crear nuevos marcadores para cada delivery
-        deliverysConEstado.forEach(delivery => {
-            const tienePedido = delivery.tienePedido;
+        // ✅ 8. Crear marcadores SOLO para deliverys NO asignados al pedido actual
+        for (const delivery of ubicaciones) {
+            // Saltar el delivery que está asignado a MI pedido actual
+            if (delivery.delivery_id === deliveryAsignadoId) {
+                console.log(`🚫 Ocultando delivery asignado: ${delivery.delivery_nombre}`);
+                continue;
+            }
+            
+            const tienePedido = deliverysOcupados.has(delivery.delivery_id);
             const color = tienePedido ? '#FF6200' : '#10B981';
             const estadoTexto = tienePedido ? '🟠 En entrega' : '🟢 Disponible';
             
@@ -2171,9 +2201,9 @@ async function cargarDeliverysEnLinea() {
             
             marker.addTo(map);
             deliverysMarkers.push(marker);
-        });
+        }
         
-        console.log(`✅ ${deliverysConEstado.length} deliverys mostrados (${deliverysConEstado.filter(d => d.tienePedido).length} ocupados, ${deliverysConEstado.filter(d => !d.tienePedido).length} disponibles)`);
+        console.log(`✅ ${deliverysMarkers.length} deliverys mostrados (excluido el asignado: ${deliveryAsignadoId ? 'Sí' : 'No'})`);
         
     } catch(e) {
         console.error('❌ Error cargando deliverys en línea:', e);
