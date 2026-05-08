@@ -643,7 +643,9 @@ function actualizarEstadoPanel(estado, deliveryNombre = null) {
             break;
             
        case 'completado':
-           // Ocultar el panel de estado cuando se completa
+           console.log("🎉 Actualizando UI para pedido COMPLETADO");
+           
+           // Ocultar el panel de estado
            const panel = document.getElementById("panelEstadoPedido");
            const panelMobile = document.getElementById("panelEstadoPedidoMobile");
            if(panel) panel.classList.add("hidden");
@@ -652,7 +654,7 @@ function actualizarEstadoPanel(estado, deliveryNombre = null) {
            // ✅ Limpiar el pedido actual
            pedidoActual = null;
            
-           // ✅ REACTIVAR UI (importante)
+           // ✅ REACTIVAR UI
            bloquearUIporPedidoActivo(false);
            
            // Detener intervalos
@@ -674,8 +676,25 @@ function actualizarEstadoPanel(estado, deliveryNombre = null) {
            // ✅ Limpiar ruta del delivery
            limpiarRutaCliente();
            
+           // ✅ Resetear el tipo de envío
+           const selectTipo = document.getElementById("tipoEnvio");
+           if(selectTipo) selectTipo.value = "";
+           
+           // ✅ Limpiar campos de búsqueda si es necesario
+           const origenInput = document.getElementById("origen");
+           const destinoInput = document.getElementById("destino");
+           if(origenInput) origenInput.value = "";
+           if(destinoInput) destinoInput.value = "";
+           
            // ✅ Volver a cargar deliverys en línea
            cargarDeliverysEnLinea();
+           
+           // ✅ Ajustar el mapa a vista normal
+           setTimeout(() => {
+               if(map && originCoords && destCoords) {
+                   map.setView([18.6456, -91.8249], 13);
+               }
+           }, 500);
            
            mostrarToast("🎉 ¡Envío completado! Gracias por usar MandaYa");
            break;    
@@ -770,6 +789,52 @@ function limpiarYResetearUI() {
         cargarDeliverysEnLinea();
     }
     mostrarToast("🔄 Todo listo. Puedes hacer un nuevo envío.");
+}
+
+function forzarReactivacionUI() {
+    console.log("🔄 Forzando reactivación de UI");
+    
+    // Reactivar todos los inputs
+    const origenInput = document.getElementById("origen");
+    const destinoInput = document.getElementById("destino");
+    const selectTipo = document.getElementById("tipoEnvio");
+    const btnSolicitar = document.querySelector('button[onclick="solicitarEnvio()"]');
+    
+    if(origenInput) {
+        origenInput.disabled = false;
+        origenInput.classList.remove('bg-gray-100', 'cursor-not-allowed', 'opacity-70');
+    }
+    if(destinoInput) {
+        destinoInput.disabled = false;
+        destinoInput.classList.remove('bg-gray-100', 'cursor-not-allowed', 'opacity-70');
+    }
+    if(selectTipo) {
+        selectTipo.disabled = false;
+        selectTipo.classList.remove('bg-gray-100', 'cursor-not-allowed', 'opacity-70');
+    }
+    if(btnSolicitar) {
+        btnSolicitar.disabled = false;
+        btnSolicitar.classList.remove('opacity-50', 'cursor-not-allowed');
+    }
+    
+    // Reactivar marcadores arrastrables
+    if(originMarker && originMarker.dragging) {
+        originMarker.dragging.enable();
+        originMarker.setOpacity(1);
+    }
+    if(destMarker && destMarker.dragging) {
+        destMarker.dragging.enable();
+        destMarker.setOpacity(1);
+    }
+    
+    // Ocultar paneles
+    const panel = document.getElementById("panelEstadoPedido");
+    if(panel) panel.classList.add("hidden");
+    
+    // Limpiar pedido actual
+    pedidoActual = null;
+    
+    mostrarToast("✅ Listo para un nuevo envío");
 }
 
 // ==================== FUNCIONES DE PEDIDO MODIFICADAS ====================
@@ -913,13 +978,45 @@ function iniciarSeguimientoDelivery() {
                 const estadoAnterior = pedidoActual.estado;
                 pedidoActual = pedidoActualizado;
                 
-                // Actualizar el panel de estado según el estado actual
+                // ✅ DETECTAR CUANDO EL PEDIDO SE COMPLETA
+                if (pedidoActualizado.estado === 'completado') {
+                    console.log("🎉 Pedido completado detectado! Limpiando UI...");
+                    
+                    // Limpiar intervalos
+                    if (seguimientoInterval) {
+                        clearInterval(seguimientoInterval);
+                        seguimientoInterval = null;
+                    }
+                    if (ubicacionInterval) {
+                        clearInterval(ubicacionInterval);
+                        ubicacionInterval = null;
+                    }
+                    
+                    // Actualizar panel y limpiar UI
+                    actualizarEstadoPanel('completado');
+                    
+                    // Resetear variables de control
+                    rutaYaDibujada = false;
+                    ultimoEstadoPedido = null;
+                    rutaDestinoActual = null;
+                    pedidoActual = null;
+                    
+                    // Reactivar UI
+                    bloquearUIporPedidoActivo(false);
+                    
+                    // Recargar deliverys
+                    cargarDeliverysEnLinea();
+                    
+                    return; // Salir del intervalo
+                    
+                }
+                
+                // Actualizar el panel según el estado actual
                 if (pedidoActualizado.estado === 'asignado' && pedidoActualizado.delivery_nombre) {
                     actualizarEstadoPanel('asignado', pedidoActualizado.delivery_nombre);
                 } else if (pedidoActualizado.estado === 'recogido' && pedidoActualizado.delivery_nombre) {
                     actualizarEstadoPanel('recogido', pedidoActualizado.delivery_nombre);
                     
-                    // Notificar al cliente cuando cambia de asignado a recogido
                     if (estadoAnterior === 'asignado') {
                         mostrarToast(`📦 ¡El delivery ${pedidoActualizado.delivery_nombre} ya recogió tu paquete!`);
                     }
@@ -928,13 +1025,11 @@ function iniciarSeguimientoDelivery() {
                 }
             }
             
-            // Si el pedido ya tiene delivery asignado (asignado o recogido), iniciar seguimiento de ubicación
-            // PERO SIN DETENER el intervalo de estado, para poder detectar futuros cambios
+            // Seguimiento de ubicación para estados activos
             if (pedidoActualizado && 
                 (pedidoActualizado.estado === 'asignado' || pedidoActualizado.estado === 'recogido') && 
                 pedidoActualizado.delivery_id) {
                 
-                // Mostrar notificación solo la primera vez que se asigna
                 if (!ubicacionInterval) {
                     mostrarToast(`✅ Delivery asignado: ${pedidoActualizado.delivery_nombre || 'Delivery'}`);
                     mostrarDeliveryEnMapa(pedidoActualizado.delivery_id, pedidoActualizado.delivery_nombre);
@@ -942,23 +1037,10 @@ function iniciarSeguimientoDelivery() {
                 }
             }
             
-            // Si el pedido fue completado, limpiar todo (incluyendo este intervalo)
-            if (pedidoActualizado && pedidoActualizado.estado === 'completado') {
-                if (seguimientoInterval) {
-                    clearInterval(seguimientoInterval);
-                    seguimientoInterval = null;
-                }
-                if (ubicacionInterval) {
-                    clearInterval(ubicacionInterval);
-                    ubicacionInterval = null;
-                }
-                // El panel de estado ya se oculta dentro de actualizarEstadoPanel (caso 'completado')
-            }
-            
         } catch(e) {
             console.error('Error en seguimiento:', e);
         }
-    }, 3000); // Sigue consultando el estado cada 3 segundos hasta que se complete
+    }, 3000);
 }
 
 function seguirUbicacionDelivery(deliveryId) {
@@ -1061,37 +1143,49 @@ function seguirUbicacionDelivery(deliveryId) {
         }
         
         // Verificar si el pedido ya fue completado
-        if (supabase && pedidoActual) {
-            const { data: pedidoActualizado } = await supabase
-                .from('pedidos')
-                .select('estado')
-                .eq('id', pedidoActual.id)
-                .single();
-            
-            if (pedidoActualizado?.estado === 'completado') {
-                clearInterval(ubicacionInterval);
-                ubicacionInterval = null;
+            if (supabase && pedidoActual) {
+                const { data: pedidoActualizado } = await supabase
+                    .from('pedidos')
+                    .select('estado')
+                    .eq('id', pedidoActual.id)
+                    .single();
                 
-                ocultarDeliveryInfo();
-                limpiarRutaCliente();
-                
-                const panel = document.getElementById("panelEstadoPedido");
-                const panelMobile = document.getElementById("panelEstadoPedidoMobile");
-                if(panel) panel.classList.add("hidden");
-                if(panelMobile) panelMobile.classList.add("hidden");
-                
-                if(deliveryMarker) {
-                    map.removeLayer(deliveryMarker);
-                    deliveryMarker = null;
-                }
-                
-                // Resetear variables de control
-                rutaYaDibujada = false;
-                ultimoEstadoPedido = null;
-                rutaDestinoActual = null;
-                
-                pedidoActual = null;
-                mostrarToast("🎉 ¡Envío completado! Gracias por usar MandaYa");
+                if (pedidoActualizado?.estado === 'completado') {
+                    console.log("🎉 Pedido completado detectado en seguirUbicacionDelivery");
+                    
+                    clearInterval(ubicacionInterval);
+                    ubicacionInterval = null;
+                    
+                    ocultarDeliveryInfo();
+                    limpiarRutaCliente();
+                    
+                    // ✅ IMPORTANTE: Ocultar paneles
+                    const panel = document.getElementById("panelEstadoPedido");
+                    const panelMobile = document.getElementById("panelEstadoPedidoMobile");
+                    if(panel) panel.classList.add("hidden");
+                    if(panelMobile) panelMobile.classList.add("hidden");
+                    
+                    // ✅ Eliminar marcador del delivery
+                    if(deliveryMarker) {
+                        map.removeLayer(deliveryMarker);
+                        deliveryMarker = null;
+                    }
+                    
+                    // ✅ Resetear variables de control
+                    rutaYaDibujada = false;
+                    ultimoEstadoPedido = null;
+                    rutaDestinoActual = null;
+                    
+                    // ✅ REACTIVAR UI
+                    bloquearUIporPedidoActivo(false);
+                    
+                    // ✅ Limpiar pedido actual
+                    pedidoActual = null;
+                    
+                    // ✅ Recargar deliverys
+                    cargarDeliverysEnLinea();
+                    
+                    mostrarToast("🎉 ¡Envío completado! Gracias por usar MandaYa");       
             }
         }
     }, 2000); // Seguimos actualizando cada 2 segundos solo la ubicación

@@ -625,6 +625,8 @@ async function completarPedido(pedidoId) {
     }
     
     try {
+        mostrarToast("🏁 Marcando pedido como entregado...");
+        
         const { error } = await supabase
             .from('pedidos')
             .update({
@@ -643,20 +645,33 @@ async function completarPedido(pedidoId) {
         
         mostrarToast(`✅ Pedido #${pedidoId} ENTREGADO! Ganaste $${pedido?.tarifa || 0} MXN`);
         
-        // ✅ Limpiar rutas y marcadores
+        // Limpiar rutas y marcadores
         limpiarRutasYMarcadores();
         
-        // ✅ Recargar pedidos para actualizar listas
-       await cargarPedidos(true);  
+        // Limpiar intervalo de ubicación si existe
+        if (ubicacionInterval) {
+            clearInterval(ubicacionInterval);
+            ubicacionInterval = null;
+        }
         
-        // ✅ Actualizar color del marcador (de vuelta a verde)
+        // Resetear variables de seguimiento
+        ultimoPedidoDibujado = null;
+        ultimaEtapa = null;
+        dibujandoRuta = false;
+        
+        // Recargar pedidos FORZADAMENTE
+        await cargarPedidos(true);
+        
+        // Actualizar color del marcador
         await actualizarColorMarcador();
         
-        // ✅ Forzar actualización del badge de estado
+        // Actualizar badge de estado
         await actualizarBadgeEstado();
         
-        // ✅ Mostrar mensaje de que ya puede agarrar nuevos pedidos
-        mostrarToast("🟢 ¡Pedido completado! Ya puedes aceptar nuevos envíos");
+        // Forzar una actualización adicional después de 1 segundo
+        setTimeout(() => {
+            cargarPedidos(true);
+        }, 1000);
         
     } catch(e) {
         console.error('Error completando pedido:', e);
