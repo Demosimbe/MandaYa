@@ -883,11 +883,8 @@ function enviarComprobanteWhatsApp() {
     
     const total = pedidoPendiente.tarifa;
     const pedidoId = pedidoPendiente.id;
+    const numeroWhatsApp = "5219381083498"; // Sin + para wa.me
     
-    // ✅ TU NÚMERO ACTUALIZADO - Formato internacional sin "+" ni espacios
-    const numeroWhatsApp = "5219381083498";  // 52 es México, 9381083498 es tu número
-    
-    // ✅ Mensaje más completo y profesional
     const mensaje = `🍔 *MANDAYA - NUEVO PEDIDO* 🍔
     
 📦 *Pedido #${pedidoId}*
@@ -904,31 +901,63 @@ function enviarComprobanteWhatsApp() {
 
 Gracias por usar MandaYa 🙏`;
 
-    // Codificar el mensaje para URL
     const mensajeCodificado = encodeURIComponent(mensaje);
     const url = `https://wa.me/${numeroWhatsApp}?text=${mensajeCodificado}`;
     
-    console.log("📱 Abriendo WhatsApp con mensaje para:", numeroWhatsApp);
+    console.log("📱 Abriendo WhatsApp...");
     
-    // ========== MÉTODO UNIVERSAL ==========
-    // Detectar si es dispositivo móvil
+    // ✅ DETECCIÓN DE DISPOSITIVO
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
     
     if (isMobile) {
-        // ✅ Para móviles: usar location.href (más confiable que window.open)
+        // ✅ MÓVIL: Abrir la app (redirige, pero es lo esperado en móvil)
         window.location.href = url;
     } else {
-        // ✅ Para PC: abrir en nueva pestaña
-        window.open(url, '_blank', 'noopener,noreferrer');
+        // ✅ PC: Abrir WhatsApp Web en NUEVA PESTAÑA sin redirigir la página actual
+        const ventana = window.open(url, '_blank');
+        
+        // Si el popup fue bloqueado, mostrar aviso
+        if (!ventana || ventana.closed || typeof ventana.closed === 'undefined') {
+            mostrarToast("⚠️ Permite ventanas emergentes para abrir WhatsApp Web", true);
+            // Mostrar enlace manual como respaldo
+            mostrarEnlaceManual(url);
+        } else {
+            mostrarToast("✅ Abriendo WhatsApp Web en nueva pestaña");
+        }
     }
     
-    // ✅ Mostrar mensaje de ayuda por si no se abre
-    setTimeout(() => {
-        mostrarToast("💡 Si no se abre, verifica que tengas WhatsApp instalado");
-    }, 500);
-    
-    // Confirmar pago después de enviar
+    // Confirmar pago
     confirmarPagoTransferencia();
+}
+
+// Función de respaldo si el popup es bloqueado
+function mostrarEnlaceManual(url) {
+    const toast = document.createElement('div');
+    toast.style.cssText = `
+        position: fixed;
+        bottom: 100px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #075E54;
+        color: white;
+        padding: 12px 20px;
+        border-radius: 30px;
+        font-size: 14px;
+        z-index: 100000;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    `;
+    toast.innerHTML = `<i class="fab fa-whatsapp"></i> Haz clic aquí para abrir WhatsApp Web`;
+    toast.onclick = () => {
+        window.open(url, '_blank');
+        toast.remove();
+    };
+    document.body.appendChild(toast);
+    
+    setTimeout(() => toast.remove(), 8000);
 }
 
 async function confirmarPagoTransferencia() {
