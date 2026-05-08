@@ -29,12 +29,9 @@ document.addEventListener('visibilitychange', () => {
         console.log("🔴 Página oculta - Reduciendo actualizaciones");
     }
 });
-// ==================== FIN OPTIMIZACIÓN ====================
-
 // ==================== INICIALIZACIÓN ====================
 function initMap() {
     const cdDelCarmen = { lat: 18.6456, lng: -91.8249 };
-    
     map = L.map('map').setView([cdDelCarmen.lat, cdDelCarmen.lng], 13);
     
     L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
@@ -44,7 +41,6 @@ function initMap() {
     }).addTo(map);
     
     limitarMapaACarmen(map);
-    
     startLocationTracking();
     cargarPedidos();
     
@@ -134,7 +130,6 @@ async function dibujarRutaRecogida(pedido) {
     }
     
     dibujandoRuta = true;
-    
     limpiarRutasYMarcadores();
     ultimoPedidoDibujado = pedido.id;
     ultimaEtapa = 'recogida';
@@ -319,17 +314,13 @@ async function marcarPaqueteRecogido(pedidoId) {
         
         mostrarToast(`✅ ¡Paquete #${pedidoId} RECOGIDO! Ahora dirígete al destino.`);
         
-        // ✅ IMPORTANTE: Forzar actualización inmediata
-        await cargarPedidos();
+          // ✅ Forzar recarga para obtener el nuevo estado 'recogido'
+        await cargarPedidos(true);
         
         // ✅ Buscar el pedido actualizado y dibujar ruta de entrega
         const pedidoActualizado = misPedidosActivos.find(p => p.id === pedidoId);
-        
         if (pedidoActualizado && pedidoActualizado.estado === 'recogido') {
-            // ✅ Dibujar ruta de ENTREGA
             await dibujarRutaEntrega(pedidoActualizado);
-            
-            // ✅ Actualizar color del marcador
             await actualizarColorMarcador();
             
             // ✅ Mostrar popup con instrucciones
@@ -401,16 +392,17 @@ function centrarMapa() {
 }
 
 async function cargarPedidos() {
-    // ✅ THROTTLING: Verificar visibilidad
-    if (!paginaVisible) {
+     // ✅ Si no es forzado y la página está oculta, salir
+    if (!force && !paginaVisible) {
         console.log("📴 Página oculta, no se cargan pedidos");
         return;
     }
     
-    // ✅ THROTTLING: Mínimo 5 segundos entre peticiones
+    
+      // ✅ Throttling solo si no es forzado
     const ahora = Date.now();
-    if (ahora - ultimaPeticionPedidos < 5000) {
-        console.log(`⏳ Throttling: cargarPedidos - demasiado rápido (${ahora - ultimaPeticionPedidos}ms desde última)`);
+    if (!force && (ahora - ultimaPeticionPedidos < 5000)) {
+        console.log(`⏳ Throttling: cargarPedidos - demasiado rápido`);
         return;
     }
     ultimaPeticionPedidos = ahora;
@@ -497,8 +489,7 @@ function seleccionarPedido(pedidoId) {
     mostrarToast(`📍 Pedido #${pedidoId} seleccionado - Ruta mostrada en mapa`);
 }
 
-async function dibujarRutaOptimaPedido(pedido) {
-    limpiarRutasYMarcadores();
+async function dibujarRutaOptimaPedido(pedido) { limpiarRutasYMarcadores();
     
     if (pedido.origenCoords && pedido.destinoCoords) {
         currentRoutingControl = L.Routing.control({
@@ -676,7 +667,6 @@ async function completarPedido(pedidoId) {
 
 function actualizarListaPedidos() {
     const containerDisponibles = document.getElementById("pedidosDisponibles");
-    
     // Verificar si el delivery ya tiene pedido activo (para UI)
     const tienePedidoActivo = misPedidosActivos.length > 0;
     
@@ -831,9 +821,7 @@ async function verHistorial() {
     }
 }
 
-function verPerfil() { 
-    alert(`👤 ${currentUser?.nombre}\n📧 ${currentUser?.email}\n🏍️ Delivery`); 
-}
+function verPerfil() { alert(`👤 ${currentUser?.nombre}\n📧 ${currentUser?.email}\n🏍️ Delivery`); }
 
 function cerrarSesion() { 
     if(watchId) navigator.geolocation.clearWatch(watchId);
@@ -921,13 +909,10 @@ async function actualizarColorMarcador() {
     
     userMarker.setIcon(nuevoIcono);
     userMarker.setPopupContent(`🏍️ <b>${currentUser.nombre}</b><br>${estadoTexto}`);
-    
     console.log(`🎨 Marcador actualizado: ${tienePedido ? 'NARANJA' : 'VERDE'} - ${nombreMostrar}`);
 }
 
-async function actualizarEstadoYColor() {
-    await actualizarColorMarcador();
-}
+async function actualizarEstadoYColor() { await actualizarColorMarcador();}
 
 // ==================== LIMPIAR RECURSOS AL CERRAR PESTAÑA (DELIVERY) ====================
 function limpiarIntervalosDelivery() {
@@ -974,28 +959,19 @@ window.cerrarSesion = function() {
 };
 
 // Eventos de cierre
-window.addEventListener('beforeunload', function() {
-    console.log("🚪 Delivery: pestaña cerrando");
-    limpiarIntervalosDelivery();
-});
-
-window.addEventListener('unload', function() {
-    console.log("💀 Delivery: página descargada");
-});
+window.addEventListener('beforeunload', function() {console.log("🚪 Delivery: pestaña cerrando"); limpiarIntervalosDelivery();});
+window.addEventListener('unload', function() { console.log("💀 Delivery: página descargada");});
 
 function mostrarToast(msg, err = false) {
     // ✅ Eliminar toasts anteriores
     const toastsAnteriores = document.querySelectorAll('.toast-moderno');
     toastsAnteriores.forEach(toast => toast.remove());
-    
     const toast = document.createElement('div');
     toast.className = 'toast-moderno';
-    
     const isMobile = window.innerWidth < 768;
     const paddingY = isMobile ? '12px' : '14px';
     const paddingX = isMobile ? '20px' : '28px';
     const fontSize = isMobile ? '13px' : '14px';
-    
     let icono = err ? 'fa-exclamation-triangle' : 'fa-check-circle';
     let colorFondo = err 
         ? 'linear-gradient(135deg, #dc2626, #b91c1c)' 

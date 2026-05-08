@@ -261,10 +261,8 @@ function initMap() {
     // Inicializar coordenadas
     originCoords = { lat: 18.6456, lng: -91.8249 };
     destCoords = { lat: 18.6556, lng: -91.8149 };
-    
     reverseGeocode(originCoords, (addr) => document.getElementById("origen").value = addr);
     reverseGeocode(destCoords, (addr) => document.getElementById("destino").value = addr);
-    
     setTimeout(() => actualizarRutaYTarifa(), 500);
 }
 
@@ -394,7 +392,6 @@ async function actualizarRutaYTarifa() {
         
         // ✅ Guardar los extras actuales antes de recalcular
         const extrasGuardados = currentRouteData?.extras || null;
-        
         const tipoEnvio = document.getElementById("tipoEnvio").value || 'paquete';
         const routeResult = await drawRealRoute(map, originCoords, destCoords, '#FF6200', 5);
         
@@ -531,9 +528,7 @@ async function solicitarEnvio() {
     document.getElementById("modalPago").classList.add("flex");
 }
 
-function seleccionarPago(metodo) {
-    cerrarModalPago();
-    
+function seleccionarPago(metodo) { cerrarModalPago(); 
     if (metodo === 'efectivo') {
         const total = pedidoPendiente.tarifa;
         document.getElementById("efectivoTotal").innerHTML = `$${total}`;
@@ -724,9 +719,7 @@ async function cancelarPedido() {
 }
 
 function limpiarYResetearUI() {
-
     bloquearUIporPedidoActivo(false);
-
     // Detener intervalos
     if (seguimientoInterval) {
         clearInterval(seguimientoInterval);
@@ -740,13 +733,11 @@ function limpiarYResetearUI() {
         clearInterval(deliverysInterval);
         deliverysInterval = null;
     }
-    
     // Limpiar campos del formulario
     document.getElementById("origen").value = "";
     document.getElementById("destino").value = "";
     document.getElementById("tipoEnvio").value = "";
     document.getElementById("tarifaContainer").classList.add("hidden");
-    
     // Restablecer marcadores a posición por defecto
     if (originMarker && destMarker) {
         originCoords = { lat: 18.6456, lng: -91.8249 };
@@ -769,18 +760,15 @@ function limpiarYResetearUI() {
     
     // Ocultar panel de estado
     document.getElementById("panelEstadoPedido").classList.add("hidden");
-    
     // Resetear variables
     pedidoActual = null;
     pedidoPendiente = null;
-    
     // Reactivar la carga de deliverys en línea
     if (currentUser && currentUser.rol === 'cliente') {
         if (deliverysInterval) clearInterval(deliverysInterval);
         deliverysInterval = setInterval(() => cargarDeliverysEnLinea(), 5000);
         cargarDeliverysEnLinea();
     }
-    
     mostrarToast("🔄 Todo listo. Puedes hacer un nuevo envío.");
 }
 
@@ -925,47 +913,52 @@ function iniciarSeguimientoDelivery() {
                 const estadoAnterior = pedidoActual.estado;
                 pedidoActual = pedidoActualizado;
                 
-                // ✅ Actualizar el panel de estado según el estado actual
+                // Actualizar el panel de estado según el estado actual
                 if (pedidoActualizado.estado === 'asignado' && pedidoActualizado.delivery_nombre) {
                     actualizarEstadoPanel('asignado', pedidoActualizado.delivery_nombre);
                 } else if (pedidoActualizado.estado === 'recogido' && pedidoActualizado.delivery_nombre) {
                     actualizarEstadoPanel('recogido', pedidoActualizado.delivery_nombre);
                     
-                    // ✅ Si cambió de asignado a recogido, notificar al cliente
+                    // Notificar al cliente cuando cambia de asignado a recogido
                     if (estadoAnterior === 'asignado') {
                         mostrarToast(`📦 ¡El delivery ${pedidoActualizado.delivery_nombre} ya recogió tu paquete!`);
                     }
                 } else if (pedidoActualizado.estado === 'pendiente') {
                     actualizarEstadoPanel('pendiente');
-                } else if (pedidoActualizado.estado === 'completado') {
-                    actualizarEstadoPanel('completado');
                 }
             }
             
-            // ✅ Si el pedido fue asignado, detener búsqueda y seguir ubicación
-            if (pedidoActualizado && (pedidoActualizado.estado === 'asignado' || pedidoActualizado.estado === 'recogido') && pedidoActualizado.delivery_id) {
-                if (seguimientoInterval) {
-                    clearInterval(seguimientoInterval);
-                    seguimientoInterval = null;
-                }
+            // Si el pedido ya tiene delivery asignado (asignado o recogido), iniciar seguimiento de ubicación
+            // PERO SIN DETENER el intervalo de estado, para poder detectar futuros cambios
+            if (pedidoActualizado && 
+                (pedidoActualizado.estado === 'asignado' || pedidoActualizado.estado === 'recogido') && 
+                pedidoActualizado.delivery_id) {
                 
-                mostrarToast(`✅ Delivery asignado: ${pedidoActualizado.delivery_nombre || 'Delivery'}`);
-                mostrarDeliveryEnMapa(pedidoActualizado.delivery_id, pedidoActualizado.delivery_nombre);
-                seguirUbicacionDelivery(pedidoActualizado.delivery_id);
+                // Mostrar notificación solo la primera vez que se asigna
+                if (!ubicacionInterval) {
+                    mostrarToast(`✅ Delivery asignado: ${pedidoActualizado.delivery_nombre || 'Delivery'}`);
+                    mostrarDeliveryEnMapa(pedidoActualizado.delivery_id, pedidoActualizado.delivery_nombre);
+                    seguirUbicacionDelivery(pedidoActualizado.delivery_id);
+                }
             }
             
-            // ✅ Si el pedido fue completado, limpiar todo
+            // Si el pedido fue completado, limpiar todo (incluyendo este intervalo)
             if (pedidoActualizado && pedidoActualizado.estado === 'completado') {
                 if (seguimientoInterval) {
                     clearInterval(seguimientoInterval);
                     seguimientoInterval = null;
                 }
-                // El panel ya se oculta en actualizarEstadoPanel
+                if (ubicacionInterval) {
+                    clearInterval(ubicacionInterval);
+                    ubicacionInterval = null;
+                }
+                // El panel de estado ya se oculta dentro de actualizarEstadoPanel (caso 'completado')
             }
+            
         } catch(e) {
             console.error('Error en seguimiento:', e);
         }
-    }, 3000);
+    }, 3000); // Sigue consultando el estado cada 3 segundos hasta que se complete
 }
 
 function seguirUbicacionDelivery(deliveryId) {
@@ -1304,9 +1297,7 @@ function cerrarModalConfirmacion() {
     if (modal) modal.remove();
 }
 
-function verHistorial() {
-    mostrarHistorialCompleto();
-}
+function verHistorial() { mostrarHistorialCompleto();}
 
 function verPerfil() {
     const modalExistente = document.getElementById("modalPerfil");
@@ -1778,9 +1769,7 @@ function toggleExtraSeleccion(extra) {
 }
 
 // Función para confirmar extras SOLO cuando se presiona ACEPTAR
-function confirmarExtrasDesdeResumen() {
-    console.log("✅ Confirmando extras...");
-    
+function confirmarExtrasDesdeResumen() {console.log("✅ Confirmando extras...");
     // Obtener valores temporales
     const lluviaSeleccionada = window.extrasTemporales?.lluvia || false;
     const nocheSeleccionada = window.extrasTemporales?.noche || false;
@@ -1839,14 +1828,11 @@ function confirmarExtrasDesdeResumen() {
     } else {
         mostrarToast(`✅ Total: $${totalFinal} MXN`);
     }
-    
     // Cerrar modal
-    cerrarModalResumen();
-    
+    cerrarModalResumen();  
 }
 
-function confirmarExtrasYPagar() {
-    console.log("🔍 Confirmando extras y procediendo al pago...");
+function confirmarExtrasYPagar() { console.log("🔍 Confirmando extras y procediendo al pago...");
     
     // Obtener valores actuales de los checkboxes
     const checkLluvia = document.getElementById("checkLluviaExtras");
@@ -2163,7 +2149,6 @@ function limpiarTodosLosIntervalos() {
 
 // Guardar referencia a la función original de cerrar sesión si existe
 const originalCerrarSesionCliente = window.cerrarSesion;
-
 // Sobrescribir cerrarSesion para incluir limpieza
 window.cerrarSesion = function() {
     limpiarTodosLosIntervalos();
@@ -2188,7 +2173,6 @@ window.addEventListener('unload', function() {
     }
 });
 
-// Detectar cuando la página se oculta (pestaña inactiva pero no cerrada)
 // Esto ya está manejado con visibilitychange, pero reforzamos
 document.addEventListener('visibilitychange', function() {
     if (document.hidden) {
