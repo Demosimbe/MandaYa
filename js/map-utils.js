@@ -178,7 +178,9 @@ function convertirPedidoDeSupabase(pedidoSupabase) {
         deliveryId: pedidoSupabase.delivery_id,
         deliveryNombre: pedidoSupabase.delivery_nombre,
         fecha: pedidoSupabase.fecha,
-        fechaCompletado: pedidoSupabase.fecha_completado
+        fechaCompletado: pedidoSupabase.fecha_completado,
+        origenCoords: (pedidoSupabase.origen_lat && pedidoSupabase.origen_lng) ? { lat: pedidoSupabase.origen_lat, lng: pedidoSupabase.origen_lng } : null,
+        destinoCoords: (pedidoSupabase.destino_lat && pedidoSupabase.destino_lng) ? { lat: pedidoSupabase.destino_lat, lng: pedidoSupabase.destino_lng } : null
     };
 }
 

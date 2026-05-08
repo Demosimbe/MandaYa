@@ -303,11 +303,10 @@ async function marcarPaqueteRecogido(pedidoId) {
         return;
     }
     
-    // ✅ 1. Mostrar loading feedback
     mostrarToast("📦 Actualizando estado del paquete...");
     
     try {
-        // ✅ 2. Actualizar en Supabase
+        // ✅ Actualizar en Supabase
         const { error } = await supabase
             .from('pedidos')
             .update({
@@ -320,31 +319,28 @@ async function marcarPaqueteRecogido(pedidoId) {
         
         mostrarToast(`✅ ¡Paquete #${pedidoId} RECOGIDO! Ahora dirígete al destino.`);
         
-        // ✅ 3. Recargar pedidos y ESPERAR a que termine
+        // ✅ IMPORTANTE: Forzar actualización inmediata
         await cargarPedidos();
         
-        // ✅ 4. Buscar el pedido actualizado en misPedidosActivos
-        // Pequeño delay para asegurar que el estado se actualizó
-        setTimeout(async () => {
-            const pedidoActualizado = misPedidosActivos.find(p => p.id === pedidoId);
+        // ✅ Buscar el pedido actualizado y dibujar ruta de entrega
+        const pedidoActualizado = misPedidosActivos.find(p => p.id === pedidoId);
+        
+        if (pedidoActualizado && pedidoActualizado.estado === 'recogido') {
+            // ✅ Dibujar ruta de ENTREGA
+            await dibujarRutaEntrega(pedidoActualizado);
             
-            if (pedidoActualizado && pedidoActualizado.estado === 'recogido') {
-                // ✅ 5. Dibujar ruta de ENTREGA
-                await dibujarRutaEntrega(pedidoActualizado);
-                
-                // ✅ 6. Actualizar color del marcador del delivery (ahora ocupado)
-                await actualizarColorMarcador();
-                
-                // ✅ 7. Mostrar popup con instrucciones
-                if (userMarker) {
-                    userMarker.bindPopup(`🏍️ <b>${currentUser.nombre}</b><br>📦 En camino a ENTREGAR`).openPopup();
-                    setTimeout(() => userMarker.closePopup(), 3000);
-                }
-            } else {
-                console.error("❌ No se encontró el pedido actualizado", pedidoId);
-                mostrarToast("⚠️ El pedido se actualizó, pero no se pudo dibujar la ruta", true);
+            // ✅ Actualizar color del marcador
+            await actualizarColorMarcador();
+            
+            // ✅ Mostrar popup con instrucciones
+            if (userMarker) {
+                userMarker.bindPopup(`🏍️ <b>${currentUser.nombre}</b><br>📦 En camino a ENTREGAR`).openPopup();
+                setTimeout(() => userMarker.closePopup(), 3000);
             }
-        }, 500);
+        } else {
+            console.error("❌ No se encontró el pedido actualizado", pedidoId);
+            mostrarToast("⚠️ El pedido se actualizó, pero no se pudo dibujar la ruta", true);
+        }
         
     } catch(e) {
         console.error('Error marcando paquete recogido:', e);
@@ -657,10 +653,20 @@ async function completarPedido(pedidoId) {
         
         mostrarToast(`✅ Pedido #${pedidoId} ENTREGADO! Ganaste $${pedido?.tarifa || 0} MXN`);
         
+        // ✅ Limpiar rutas y marcadores
         limpiarRutasYMarcadores();
         
+        // ✅ Recargar pedidos para actualizar listas
         await cargarPedidos();
+        
+        // ✅ Actualizar color del marcador (de vuelta a verde)
         await actualizarColorMarcador();
+        
+        // ✅ Forzar actualización del badge de estado
+        await actualizarBadgeEstado();
+        
+        // ✅ Mostrar mensaje de que ya puede agarrar nuevos pedidos
+        mostrarToast("🟢 ¡Pedido completado! Ya puedes aceptar nuevos envíos");
         
     } catch(e) {
         console.error('Error completando pedido:', e);

@@ -476,8 +476,9 @@ async function solicitarEnvio() {
     const destino = document.getElementById("destino").value;
     const tipo = document.getElementById("tipoEnvio").value;
     
-    if (!origen || !destino) {
-        mostrarToast("❌ Selecciona origen y destino", true);
+    // ✅ Validar que las coordenadas existan
+    if (!originCoords || !destCoords) {
+        mostrarToast("❌ Error: No se han seleccionado origen o destino válidos", true);
         return;
     }
     
@@ -646,37 +647,43 @@ function actualizarEstadoPanel(estado, deliveryNombre = null) {
             if(estadoDetalleMobile) estadoDetalleMobile.innerHTML = `🏍️ <strong>${deliveryNombre || 'Delivery'}</strong> ya recogió tu paquete y va en camino.`;
             break;
             
-        case 'completado':
-            // Ocultar el panel de estado cuando se completa
-            const panel = document.getElementById("panelEstadoPedido");
-            const panelMobile = document.getElementById("panelEstadoPedidoMobile");
-            if(panel) panel.classList.add("hidden");
-            if(panelMobile) panelMobile.classList.add("hidden");
-            
-            // Limpiar el pedido actual
-            pedidoActual = null;
-            
-            // ✅ REACTIVAR UI (importante)
-            bloquearUIporPedidoActivo(false);
-            
-            // Detener intervalos
-            if(seguimientoInterval) {
-                clearInterval(seguimientoInterval);
-                seguimientoInterval = null;
-            }
-            if(ubicacionInterval) {
-                clearInterval(ubicacionInterval);
-                ubicacionInterval = null;
-            }
-            
-            // Eliminar marcador del delivery del mapa
-            if(deliveryMarker) {
-                map.removeLayer(deliveryMarker);
-                deliveryMarker = null;
-            }
-            
-            mostrarToast("🎉 ¡Envío completado! Gracias por usar MandaYa");
-            break;
+       case 'completado':
+           // Ocultar el panel de estado cuando se completa
+           const panel = document.getElementById("panelEstadoPedido");
+           const panelMobile = document.getElementById("panelEstadoPedidoMobile");
+           if(panel) panel.classList.add("hidden");
+           if(panelMobile) panelMobile.classList.add("hidden");
+           
+           // ✅ Limpiar el pedido actual
+           pedidoActual = null;
+           
+           // ✅ REACTIVAR UI (importante)
+           bloquearUIporPedidoActivo(false);
+           
+           // Detener intervalos
+           if(seguimientoInterval) {
+               clearInterval(seguimientoInterval);
+               seguimientoInterval = null;
+           }
+           if(ubicacionInterval) {
+               clearInterval(ubicacionInterval);
+               ubicacionInterval = null;
+           }
+           
+           // Eliminar marcador del delivery del mapa
+           if(deliveryMarker) {
+               map.removeLayer(deliveryMarker);
+               deliveryMarker = null;
+           }
+           
+           // ✅ Limpiar ruta del delivery
+           limpiarRutaCliente();
+           
+           // ✅ Volver a cargar deliverys en línea
+           cargarDeliverysEnLinea();
+           
+           mostrarToast("🎉 ¡Envío completado! Gracias por usar MandaYa");
+           break;    
     }
 }
 
@@ -915,33 +922,44 @@ function iniciarSeguimientoDelivery() {
             if (error) throw error;
             
             if (pedidoActualizado) {
+                const estadoAnterior = pedidoActual.estado;
                 pedidoActual = pedidoActualizado;
                 
-                // ✅ Actualizar el panel de estado con el nombre del delivery si está asignado
+                // ✅ Actualizar el panel de estado según el estado actual
                 if (pedidoActualizado.estado === 'asignado' && pedidoActualizado.delivery_nombre) {
                     actualizarEstadoPanel('asignado', pedidoActualizado.delivery_nombre);
                 } else if (pedidoActualizado.estado === 'recogido' && pedidoActualizado.delivery_nombre) {
                     actualizarEstadoPanel('recogido', pedidoActualizado.delivery_nombre);
+                    
+                    // ✅ Si cambió de asignado a recogido, notificar al cliente
+                    if (estadoAnterior === 'asignado') {
+                        mostrarToast(`📦 ¡El delivery ${pedidoActualizado.delivery_nombre} ya recogió tu paquete!`);
+                    }
                 } else if (pedidoActualizado.estado === 'pendiente') {
                     actualizarEstadoPanel('pendiente');
                 } else if (pedidoActualizado.estado === 'completado') {
                     actualizarEstadoPanel('completado');
                 }
-                    
             }
             
+            // ✅ Si el pedido fue asignado, detener búsqueda y seguir ubicación
             if (pedidoActualizado && (pedidoActualizado.estado === 'asignado' || pedidoActualizado.estado === 'recogido') && pedidoActualizado.delivery_id) {
-                // ✅ Detener el intervalo de búsqueda ya que ya fue asignado
-                clearInterval(seguimientoInterval);
-                seguimientoInterval = null;
+                if (seguimientoInterval) {
+                    clearInterval(seguimientoInterval);
+                    seguimientoInterval = null;
+                }
                 
                 mostrarToast(`✅ Delivery asignado: ${pedidoActualizado.delivery_nombre || 'Delivery'}`);
                 mostrarDeliveryEnMapa(pedidoActualizado.delivery_id, pedidoActualizado.delivery_nombre);
                 seguirUbicacionDelivery(pedidoActualizado.delivery_id);
-            } 
-            else if (pedidoActualizado && pedidoActualizado.estado === 'completado') {
-                clearInterval(seguimientoInterval);
-                seguimientoInterval = null;
+            }
+            
+            // ✅ Si el pedido fue completado, limpiar todo
+            if (pedidoActualizado && pedidoActualizado.estado === 'completado') {
+                if (seguimientoInterval) {
+                    clearInterval(seguimientoInterval);
+                    seguimientoInterval = null;
+                }
                 // El panel ya se oculta en actualizarEstadoPanel
             }
         } catch(e) {
