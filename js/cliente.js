@@ -1,28 +1,40 @@
-// Constantes y variables globales
+// ==================== CONSTANTES Y VARIABLES GLOBALES ====================
 const BOUNDS = { north: 18.70, south: 18.58, east: -91.75, west: -91.88 };
 
-let map, originMarker, destMarker, deliveryMarker;
-let originCoords = null, destCoords = null;
-let currentUser = null, pedidoActual = null;
-let selectMode = 'origen';
-let seguimientoInterval = null;
-let ubicacionInterval = null;
+// Mapa y marcadores
+let map = null;
+let originMarker = null;
+let destMarker = null;
+let originCoords = null;
+let destCoords = null;
+let currentRouteLayerId = 'current-route';
 let currentRouteData = null;
-let deliverysMarkers = [];
-let deliverysInterval = null;
-let pedidoPendiente = null;
-let clienteRouteControl = null;
+let rutaYaDibujada = false;
 let rutaActualTipo = null;
 let rutaDestinoActual = null;
-let rutaYaDibujada = false;
+
+// Usuario y pedidos
+let currentUser = null;
+let pedidoActual = null;
+let pedidoPendiente = null;
 let ultimoEstadoPedido = null;
-let currentRouteLayerId = 'current-route';
+let deliveryMarker = null;  // ✅ Agregar
 
-// ==================== CONTROL DE PETICIONES INTELIGENTE ====================
+// Modos y control UI
+let selectMode = 'origen';  // 'origen' o 'destino'
+let clienteRouteControl = null;
+
+// Intervalos y seguimiento
+let seguimientoInterval = null;
+let ubicacionInterval = null;
+let deliverysInterval = null;
+
+// Control de peticiones
 let ultimaPeticionTime = 0;
-let paginaVisible = true;
 let ultimaPeticionDeliverys = 0;
-
+let paginaVisible = true;
+// ✅ Array para marcadores de deliverys (VERSIÓN GLOBAL)
+window.deliveryMarkers = [];
 // ==================== BLOQUEAR/REACTIVAR UI ====================
 function bloquearUIporPedidoActivo(bloquear) {
     const elementos = {
@@ -163,6 +175,8 @@ function initMap() {
         return;
     }
     
+    console.log("🗺️ Inicializando mapa...");
+    
     map = new maplibregl.Map({
         container: 'map',
         style: {
@@ -186,8 +200,11 @@ function initMap() {
         center: [-91.8249, 18.6456],
         zoom: 13,
         minZoom: 12,
-        maxZoom: 17  // Reducido a 17 para evitar problemas
+        maxZoom: 17
     });
+    
+    // ✅ Guardar referencia global del mapa
+    window.map = map;
     
     map.addControl(new maplibregl.NavigationControl(), 'top-right');
     
@@ -212,12 +229,31 @@ function initMap() {
         }
     });
     
+    // ✅ Cuando el mapa carga completamente
     map.on('load', () => {
         console.log('✅ Mapa MapLibre cargado');
+        
+        // Crear marcadores iniciales (origen/destino)
         crearMarcadoresIniciales();
+        
+        // ✅ Cargar deliverys en línea SOLO después de que el mapa esté listo
+        setTimeout(() => {
+            if (typeof cargarDeliverysEnLinea === 'function') {
+                cargarDeliverysEnLinea();
+            }
+        }, 500);
+        
+        // ✅ Intervalo para actualizar deliverys en línea
+        if (deliverysInterval) clearInterval(deliverysInterval);
+        deliverysInterval = setInterval(() => {
+
+            if (paginaVisible && map && map.loaded() && typeof cargarDeliverysEnLinea === 'function') {
+                cargarDeliverysEnLinea();
+            }
+        }, 10000);
     });
     
-    // Click en el mapa para seleccionar ubicación
+    // ✅ Click en el mapa para seleccionar ubicación
     map.on('click', (e) => {
         const { lng, lat } = e.lngLat;
         
@@ -233,6 +269,8 @@ function initMap() {
             mostrarToast("❌ Solo dentro de Ciudad del Carmen", true);
         }
     });
+    
+    console.log("✅ Mapa inicializado correctamente");
 }
 
 // Agregar en cliente.js
@@ -387,15 +425,6 @@ function actualizarMarcadorDestino(lat, lng) {
         document.getElementById("destino").value = addr;
         if (document.getElementById("destinoMobile")) document.getElementById("destinoMobile").value = addr;
     });
-    actualizarRutaYTarifa();
-}
-
-function actualizarMarcadorDestino(lat, lng) {
-    if (destMarker) {
-        destMarker.setLngLat([lng, lat]);
-    }
-    destCoords = { lat, lng };
-    reverseGeocode(destCoords, (addr) => document.getElementById("destino").value = addr);
     actualizarRutaYTarifa();
 }
 
@@ -609,32 +638,6 @@ async function getRealDistanceAndTime(origin, dest) {
     return null;
 }
 
-function calculateShippingRate(distanceKm, tipo) {
-    const km = parseFloat(distanceKm);
-    let baseRate = 0;
-    
-    // Tarifa base por distancia
-    if (km <= 1) baseRate = 30;
-    else if (km <= 2) baseRate = 35;
-    else if (km <= 3) baseRate = 40;
-    else if (km <= 4) baseRate = 45;
-    else if (km <= 5) baseRate = 50;
-    else if (km <= 6) baseRate = 60;
-    else if (km <= 7) baseRate = 70;
-    else baseRate = 70 + ((km - 7) * 10);
-    
-    // Ajuste por tipo de envío
-    if (tipo === 'comida') baseRate += 5;
-    else if (tipo === 'farmacia') baseRate += 5;
-    else if (tipo === 'mercancia') baseRate += 10;
-    
-    return { 
-        total: Math.round(baseRate), 
-        base: Math.round(baseRate), 
-        porKm: null 
-    };
-}
-
 function calcularDistancia() {
     const R = 6371;
     const dLat = (destCoords.lat - originCoords.lat) * Math.PI / 180;
@@ -656,35 +659,59 @@ function reverseGeocode(latlng, callback) {
         .catch(() => callback(`${latlng.lat.toFixed(4)}, ${latlng.lng.toFixed(4)}`));
 }
 
-function crearMarcadorDelivery(lat, lng, nombre, color, tienePedido = null) {
-    const colorFinal = tienePedido !== null 
-        ? (tienePedido ? '#FF6200' : '#10B981')
-        : color;
+function crearMarcadorDelivery(delivery) {
+    // ✅ Validar que el mapa existe
+    if (!map || typeof map.addSource !== 'function') {
+        console.warn("⏳ Mapa no listo para crear marcador de delivery");
+        return null;
+    }
     
-    const nombreMostrar = obtenerPrimerNombre(nombre);
+    // ✅ Validar datos del delivery
+    if (!delivery || typeof delivery.lat !== 'number' || typeof delivery.lng !== 'number') {
+        console.warn("⚠️ Datos de delivery inválidos:", delivery);
+        return null;
+    }
     
-    const html = `
-        <div style="text-align: center;">
-            <div style="background: rgba(0,0,0,0.85); color:white; font-size:11px; font-weight:bold; padding:3px 8px; border-radius:14px; margin-bottom:4px; white-space:nowrap; display:inline-block; box-shadow:0 1px 3px rgba(0,0,0,0.3); border:0.5px solid rgba(255,255,255,0.2);">
-                ${nombreMostrar}
+    try {
+        // Crear elemento del marcador
+        const markerDiv = document.createElement('div');
+        markerDiv.className = 'delivery-marker';
+        markerDiv.innerHTML = `
+            <div class="relative">
+                <div class="bg-black/80 text-white text-xs font-bold px-2 py-1 rounded-full whitespace-nowrap shadow-lg">
+                    ${delivery.nombre || 'Delivery'}
+                </div>
+                <div class="w-8 h-8 rounded-full border-2 border-white flex items-center justify-center shadow-lg"
+                     style="background-color: ${delivery.online ? '#10B981' : '#6B7280'}">
+                    <i class="fas fa-motorcycle text-white text-sm"></i>
+                </div>
             </div>
-            <div style="background:${colorFinal}; width:34px; height:34px; border-radius:50%; border:2.5px solid white; box-shadow:0 2px 8px rgba(0,0,0,0.4); display:flex; align-items:center; justify-content:center; margin:0 auto;">
-                <i class="fas fa-motorcycle" style="color:white; font-size:18px;"></i>
-            </div>
-        </div>
-    `;
-    
-    const element = document.createElement('div');
-    element.innerHTML = html;
-    
-    const marker = new maplibregl.Marker({
-        element: element.firstChild,
-        draggable: false
-    })
-    .setLngLat([lng, lat])
-    .addTo(map);
-    
-    return marker;
+        `;
+        
+        const marker = new maplibregl.Marker({
+            element: markerDiv,
+            draggable: false
+        })
+        .setLngLat([delivery.lng, delivery.lat])
+        .addTo(map);  // ✅ Aquí fallaba porque map no existía
+        
+        // Agregar popup
+        const estado = delivery.online ? '🟢 En línea' : '⚫ Desconectado';
+        const popup = new maplibregl.Popup({ offset: [0, -30] })
+            .setHTML(`
+                <div class="text-center">
+                    <strong>${delivery.nombre}</strong><br>
+                    ${estado}
+                </div>
+            `);
+        marker.setPopup(popup);
+        
+        return marker;
+        
+    } catch(e) {
+        console.error("❌ Error creando marcador delivery:", e);
+        return null;
+    }
 }
 
 async function solicitarEnvio() {
@@ -1243,12 +1270,14 @@ function seguirUbicacionDelivery(deliveryId) {
                 try { map.removeLayer(deliveryMarker); } catch(e) {}
             }
             
-            deliveryMarker = crearMarcadorDelivery(
-                ubicacion.lat, 
-                ubicacion.lng, 
-                deliveryNombre, 
-                '#FF6200'
-            );
+           deliveryMarker = crearMarcadorDelivery({
+               id: deliveryId,
+               nombre: deliveryNombre,
+               lat: ubicacion.lat,
+               lng: ubicacion.lng,
+               online: true
+           });
+            
             deliveryMarker.addTo(map);
             
             const estadoActual = pedidoActual?.estado;
@@ -1657,10 +1686,91 @@ function cerrarSesion() {
         "Cerrar Sesión",
         "¿Estás seguro de que deseas cerrar sesión?",
         () => {
-            if(seguimientoInterval) { clearInterval(seguimientoInterval); seguimientoInterval = null;}
-            if(ubicacionInterval) { clearInterval(ubicacionInterval); ubicacionInterval = null;}
-            if(deliverysInterval) { clearInterval(deliverysInterval); deliverysInterval = null; }
+            // ✅ Limpiar intervalos de seguimiento
+            if (seguimientoInterval) { 
+                clearInterval(seguimientoInterval); 
+                seguimientoInterval = null;
+            }
             
+            // ✅ Limpiar intervalo de ubicación
+            if (ubicacionInterval) { 
+                clearInterval(ubicacionInterval); 
+                ubicacionInterval = null;
+            }
+            
+            // ✅ Limpiar intervalo de deliverys
+            if (deliverysInterval) { 
+                clearInterval(deliverysInterval); 
+                deliverysInterval = null;
+            }
+            
+            // ✅ Limpiar marcadores de deliverys - USANDO window.deliveryMarkers
+            if (window.deliveryMarkers && window.deliveryMarkers.length > 0) {
+                window.deliveryMarkers.forEach(marker => {
+                    if (marker && marker.remove) {
+                        try {
+                            marker.remove();
+                        } catch(e) {
+                            console.warn("Error eliminando marcador:", e);
+                        }
+                    }
+                });
+                window.deliveryMarkers = [];
+            }
+            
+            // ✅ Limpiar marcador de delivery individual (cuando hay pedido activo)
+            if (deliveryMarker) {
+                try {
+                    if (typeof deliveryMarker.remove === 'function') {
+                        deliveryMarker.remove();
+                    } else if (deliveryMarker && map) {
+                        deliveryMarker.remove();
+                    }
+                } catch(e) {}
+                deliveryMarker = null;
+            }
+            
+            // ✅ Limpiar marcador de origen
+            if (originMarker) {
+                try {
+                    originMarker.remove();
+                } catch(e) {}
+                originMarker = null;
+            }
+            
+            // ✅ Limpiar marcador de destino
+            if (destMarker) {
+                try {
+                    destMarker.remove();
+                } catch(e) {}
+                destMarker = null;
+            }
+            
+            // ✅ Limpiar ruta
+            if (currentRouteLayerId && map) {
+                try {
+                    if (map.getLayer(currentRouteLayerId)) {
+                        map.removeLayer(currentRouteLayerId);
+                    }
+                    if (map.getSource(currentRouteLayerId)) {
+                        map.removeSource(currentRouteLayerId);
+                    }
+                } catch(e) {}
+            }
+            
+            // ✅ Limpiar cualquier otra capa de ruta
+            limpiarRutaCliente();
+            
+            // ✅ Opcional: Actualizar estado online en Supabase (si el cliente estaba online)
+            if (currentUser && currentUser.online && supabaseClient) {
+                supabaseClient
+                    .from('usuarios')
+                    .update({ online: false })
+                    .eq('id', currentUser.id)
+                    .catch(e => console.warn("Error actualizando estado online:", e));
+            }
+            
+            // ✅ Limpiar localStorage y redirigir
             localStorage.removeItem('sesion_activa'); 
             window.location.href = "index.html";
         }
@@ -2193,25 +2303,35 @@ function seleccionarDireccion(tipo, lat, lng, direccion) {
 
 // ==================== VER DELIVERYS EN LÍNEA ====================
 async function cargarDeliverysEnLinea() {
+    // ✅ Esperar a que el mapa esté listo
+    if (!map || !map.loaded()) {
+        console.log("⏳ Mapa no listo, esperando...");
+        setTimeout(() => cargarDeliverysEnLinea(), 1000);
+        return;
+    }
+    
     if (!paginaVisible) {
         console.log("📴 Página oculta, omitiendo carga de deliverys");
         return;
     }
     
+    // Throttling
     const ahora = Date.now();
-    if (ultimaPeticionDeliverys && (ahora - ultimaPeticionDeliverys) < 15000) {
+    if (ahora - ultimaPeticionDeliverys < 5000) {
         console.log("⏳ Throttling: cargarDeliverysEnLinea - muy rápido, espera");
         return;
     }
     ultimaPeticionDeliverys = ahora;
     
-    if (typeof supabaseClient === 'undefined' || !supabaseClient) {
-        console.log("❌ Supabase no disponible");
+    const supabase = supabaseClient;
+    if (!supabase) {
+        console.error('Supabase no disponible');
         return;
     }
     
     try {
-        const { data: ubicaciones, error } = await supabaseClient
+        // Obtener deliverys en línea desde la tabla 'ubicaciones'
+        const { data: deliverys, error } = await supabase
             .from('ubicaciones')
             .select('*')
             .eq('online', true)
@@ -2219,68 +2339,87 @@ async function cargarDeliverysEnLinea() {
         
         if (error) throw error;
         
-        if (!ubicaciones || ubicaciones.length === 0) {
-            deliverysMarkers.forEach(marker => {
-                try { map.removeLayer(marker); } catch(e) {}
+        console.log(`📍 ${deliverys?.length || 0} deliverys en línea`);
+        
+        // ✅ Limpiar marcadores anteriores - Usar array local O global consistente
+        // Opción 1: Usar array global (si declaraste window.deliveryMarkers = [] al inicio)
+        if (map && window.deliveryMarkers) {
+            window.deliveryMarkers.forEach(marker => {
+                if (marker && marker.remove) {
+                    try {
+                        marker.remove();
+                    } catch(e) {
+                        console.warn("Error eliminando marcador:", e);
+                    }
+                }
             });
-            deliverysMarkers = [];
+            window.deliveryMarkers = [];
+        }
+        
+        // Opción 2: Usar array local (recomendado si declaraste deliverysMarkers)
+        // if (map && deliverysMarkers) {
+        //     deliverysMarkers.forEach(marker => {
+        //         if (marker && marker.remove) marker.remove();
+        //     });
+        //     deliverysMarkers = [];
+        // }
+        
+        if (!deliverys || deliverys.length === 0) {
             console.log("📭 No hay deliverys en línea");
             return;
         }
         
-        let deliveryAsignadoId = null;
-        if (pedidoActual && (pedidoActual.estado === 'asignado' || pedidoActual.estado === 'recogido')) {
-            deliveryAsignadoId = pedidoActual.delivery_id;
-            console.log(`🚚 Delivery asignado detectado: ${deliveryAsignadoId} - No se mostrará en la lista general`);
-        }
-        
-        const { data: pedidosActivos } = await supabaseClient
-            .from('pedidos')
-            .select('delivery_id')
-            .in('estado', ['asignado', 'recogido'])
-            .not('delivery_id', 'is', null);
-        
-        const deliverysOcupados = new Set(pedidosActivos?.map(p => p.delivery_id) || []);
-        
-        deliverysMarkers.forEach(marker => {
-            try { map.removeLayer(marker); } catch(e) {}
-        });
-        deliverysMarkers = [];
-        
-        for (const delivery of ubicaciones) {
-            if (delivery.delivery_id === deliveryAsignadoId) {
-                console.log(`🚫 Ocultando delivery asignado: ${delivery.delivery_nombre}`);
-                continue;
+        // ✅ Crear nuevos marcadores
+        for (const delivery of deliverys) {
+            // Verificar coordenadas válidas
+            if (delivery.lat && delivery.lng && 
+                typeof delivery.lat === 'number' && 
+                typeof delivery.lng === 'number') {
+                
+                const marker = crearMarcadorDelivery({
+                    id: delivery.delivery_id,
+                    nombre: delivery.delivery_nombre,
+                    lat: delivery.lat,
+                    lng: delivery.lng,
+                    online: delivery.online
+                });
+                
+                if (marker) {
+                    // Usar el mismo array que limpiaste arriba
+                    window.deliveryMarkers.push(marker);
+                    // O si usas local: deliverysMarkers.push(marker);
+                }
             }
-            
-            const tienePedido = deliverysOcupados.has(delivery.delivery_id);
-            const color = tienePedido ? '#FF6200' : '#10B981';
-            const estadoTexto = tienePedido ? '🟠 En entrega' : '🟢 Disponible';
-            
-            const marker = crearMarcadorDelivery(
-                delivery.lat, 
-                delivery.lng, 
-                delivery.delivery_nombre, 
-                color
-            );
-            
-            const popup = new maplibregl.Popup({ offset: [0, -30] })
-                .setHTML(`
-                    <b>🏍️ ${delivery.delivery_nombre}</b><br>
-                    ${estadoTexto}<br>
-                    <small>Última actualización: ${new Date(delivery.updated_at).toLocaleTimeString()}</small>
-                `);
-            marker.setPopup(popup);
-            
-            marker.addTo(map);
-            deliverysMarkers.push(marker);
         }
         
-        console.log(`✅ ${deliverysMarkers.length} deliverys mostrados (excluido el asignado: ${deliveryAsignadoId ? 'Sí' : 'No'})`);
+        console.log(`✅ ${window.deliveryMarkers.length} marcadores de delivery creados`);
         
     } catch(e) {
-        console.error('❌ Error cargando deliverys en línea:', e);
+        console.error("❌ Error cargando deliverys en línea:", e);
     }
+}
+
+function crearMarcadorCirculo(map, lng, lat, color, icono, texto) {
+    const markerDiv = document.createElement('div');
+    markerDiv.innerHTML = `
+        <div class="relative">
+            <div class="bg-black/80 text-white text-xs font-bold px-2 py-1 rounded-full whitespace-nowrap shadow-lg">
+                ${texto}
+            </div>
+            <div class="w-8 h-8 rounded-full border-2 border-white flex items-center justify-center shadow-lg"
+                 style="background-color: ${color}; cursor: grab;">
+                <i class="fas ${icono} text-white text-sm"></i>
+            </div>
+        </div>
+    `;
+    
+    const marker = new maplibregl.Marker({
+        element: markerDiv.firstElementChild,
+        draggable: true
+    }).setLngLat([lng, lat]);
+    
+    marker.addTo(map);
+    return marker;
 }
 
 async function tienePedidoActivo(deliveryId) {

@@ -333,6 +333,12 @@ async function dibujarRutaOptimaPedido(pedido) {
 
 // ==================== INICIAR SEGUIMIENTO DE UBICACIÓN ====================
 function startLocationTracking(intentos = 0) {
+      // ✅ Evitar múltiples instancias en celular
+    if (window.locationTrackingActive) {
+        console.log("⚠️ Tracking ya activo, ignorando nueva llamada");
+        return;
+    }
+    window.locationTrackingActive = true;
     const maxIntentos = 10;
 
     // Evitar múltiples ejecuciones simultáneas
@@ -557,57 +563,89 @@ function loadUser() {
     cargarPedidos();
 }
 
-// ==================== ACTUALIZAR BADGE ESTADO ====================
+// ==================== ACTUALIZAR BADGE ESTADO (VERSIÓN CORREGIDA) ====================
 async function actualizarBadgeEstado() {
     if (!currentUser) return;
     
-    const tienePedido = await deliveryTienePedidoActivo(currentUser.id);
-    const badge = document.getElementById("estadoDeliveryBadge");
-    
-    if (badge) {
-        if (tienePedido) {
-            badge.innerHTML = '<span class="bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded-full"><i class="fas fa-motorcycle mr-1"></i> Ocupado - En entrega</span>';
-        } else {
-            badge.innerHTML = '<span class="bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full"><i class="fas fa-check-circle mr-1"></i> Disponible para entregas</span>';
+    try {
+        const tienePedido = await deliveryTienePedidoActivo(currentUser.id);
+        const badge = document.getElementById("estadoDeliveryBadge");
+        
+        if (badge) {
+            if (!isOnline) {
+                badge.innerHTML = '<span class="bg-gray-500/20 text-gray-400 px-2 py-0.5 rounded-full"><i class="fas fa-plug mr-1"></i> Desconectado</span>';
+            } else if (tienePedido) {
+                badge.innerHTML = '<span class="bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded-full"><i class="fas fa-motorcycle mr-1"></i> Ocupado - En entrega</span>';
+            } else {
+                badge.innerHTML = '<span class="bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full"><i class="fas fa-check-circle mr-1"></i> Disponible para entregas</span>';
+            }
         }
+    } catch(e) {
+        console.error("❌ Error actualizando badge:", e);
     }
 }
 
-// ==================== ACTUALIZAR COLOR MARCADOR ====================
+// ==================== ACTUALIZAR COLOR MARCADOR (VERSIÓN CORREGIDA) ====================
 async function actualizarColorMarcador() {
-    if (!userMarker || !currentUser) return;
+    if (!currentUser) {
+        console.warn("⚠️ No hay currentUser para actualizar marcador");
+        return;
+    }
     
-    const tienePedido = await deliveryTienePedidoActivo(currentUser.id);
-    const color = tienePedido ? '#FF6200' : '#10B981';
-    const estadoTexto = tienePedido ? '🟠 En una entrega' : '🟢 Disponible';
+    // Esperar a que userMarker exista
+    if (!userMarker) {
+        console.log("⏳ Marcador no listo, reintentando en 1 segundo...");
+        setTimeout(() => actualizarColorMarcador(), 1000);
+        return;
+    }
     
-    const lngLat = userMarker.getLngLat();
-    const lat = lngLat.lat;
-    const lng = lngLat.lng;
-    
-    userMarker.remove();
-    
-    const html = `
-        <div style="text-align: center;">
-            <div style="background:rgba(0,0,0,0.85); color:white; font-size:11px; font-weight:bold; padding:3px 8px; border-radius:14px; margin-bottom:4px; white-space:nowrap;">
-                ${currentUser.nombre}
+    try {
+        const tienePedido = await deliveryTienePedidoActivo(currentUser.id);
+        const color = tienePedido ? '#FF6200' : '#10B981';
+        const estadoTexto = tienePedido ? '🟠 En una entrega' : (isOnline ? '🟢 Disponible' : '⚫ Desconectado');
+        
+        // Obtener coordenadas actuales
+        const lngLat = userMarker.getLngLat();
+        const lat = lngLat.lat;
+        const lng = lngLat.lng;
+        
+        // Eliminar marcador viejo
+        userMarker.remove();
+        
+        // Crear nuevo marcador con el color correcto
+        const html = `
+            <div style="text-align: center;">
+                <div style="background:rgba(0,0,0,0.85); color:white; font-size:11px; font-weight:bold; padding:3px 8px; border-radius:14px; margin-bottom:4px; white-space:nowrap;">
+                    ${currentUser.nombre}
+                </div>
+                <div style="background:${color}; width:38px; height:38px; border-radius:50%; border:3px solid white; display:flex; align-items:center; justify-content:center;">
+                    <i class="fas fa-motorcycle" style="color:white; font-size:20px;"></i>
+                </div>
             </div>
-            <div style="background:${color}; width:38px; height:38px; border-radius:50%; border:3px solid white; display:flex; align-items:center; justify-content:center;">
-                <i class="fas fa-motorcycle" style="color:white; font-size:20px;"></i>
-            </div>
-        </div>
-    `;
-    
-    const div = document.createElement('div');
-    div.innerHTML = html;
-    
-    userMarker = new maplibregl.Marker({ element: div.firstChild, draggable: false })
-        .setLngLat([lng, lat])
-        .addTo(map);
-    
-    const popup = new maplibregl.Popup({ offset: [0, -35] })
-        .setHTML(`🏍️ <b>${currentUser.nombre}</b><br>${estadoTexto}`);
-    userMarker.setPopup(popup);
+        `;
+        
+        const div = document.createElement('div');
+        div.innerHTML = html;
+        const markerElement = div.firstElementChild;
+        
+        if (!markerElement) {
+            console.error("❌ Error creando elemento del marcador");
+            return;
+        }
+        
+        userMarker = new maplibregl.Marker({ element: markerElement, draggable: false })
+            .setLngLat([lng, lat])
+            .addTo(map);
+        
+        const popup = new maplibregl.Popup({ offset: [0, -35] })
+            .setHTML(`🏍️ <b>${currentUser.nombre}</b><br>${estadoTexto}`);
+        userMarker.setPopup(popup);
+        
+        console.log(`✅ Marcador actualizado: ${estadoTexto}`);
+        
+    } catch(e) {
+        console.error("❌ Error actualizando marcador:", e);
+    }
 }
 
 // ==================== CENTRAR MAPA ====================
@@ -876,6 +914,7 @@ async function completarPedido(pedidoId) {
 }
 
 // ==================== TOGGLE ONLINE ====================
+// ==================== TOGGLE ONLINE (VERSIÓN CORREGIDA PARA CELULAR) ====================
 async function toggleOnline() {
     isOnline = !isOnline;
     const btn = document.getElementById("onlineToggle");
@@ -894,35 +933,40 @@ async function toggleOnline() {
             localStorage.setItem('sesion_activa', JSON.stringify(currentUser));
             await setDeliveryOnlineSupabase(currentUser.id, true);
             
-            // Forzar guardado de ubicación inmediatamente
-            if (userMarker) {
-                const { lng, lat } = userMarker.getLngLat();
-                console.log("📍 Guardando ubicación actual:", lat, lng);
-                const resultado = await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, lat, lng, true);
-                if (resultado) {
-                    console.log("✅ Ubicación guardada al conectarse");
-                } else {
-                    console.error("❌ Falló guardado inicial");
-                }
+            // ✅ FORZAR RECREACIÓN DEL MARCADOR si no existe o está mal
+            if (!userMarker) {
+                console.log("🔄 Marcador no existe, reiniciando tracking...");
+                startLocationTracking(0);
             } else {
-                console.log("⏳ Marcador no listo, intentando obtener ubicación...");
-                // Intentar obtener ubicación actual
-                navigator.geolocation.getCurrentPosition(async (pos) => {
-                    const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-                    await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, coords.lat, coords.lng, true);
-                });
+                // Si existe, solo actualizar color y guardar ubicación
+                await actualizarColorMarcador();
+                
+                // Guardar ubicación actual
+                try {
+                    const { lng, lat } = userMarker.getLngLat();
+                    await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, lat, lng, true);
+                    console.log("✅ Ubicación guardada al conectarse");
+                } catch(e) {
+                    console.error("❌ Error guardando ubicación:", e);
+                }
             }
         }
+        
         cargarPedidos(true);
         
+        // Intervalo para guardar ubicación cada 4 segundos
         if (ubicacionInterval) clearInterval(ubicacionInterval);
         ubicacionInterval = setInterval(async () => {
             if (userMarker && currentUser && isOnline) {
-                const { lng, lat } = userMarker.getLngLat();
-                await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, lat, lng, true);
-                console.log("🔄 Ubicación actualizada automáticamente");
+                try {
+                    const { lng, lat } = userMarker.getLngLat();
+                    await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, lat, lng, true);
+                } catch(e) {
+                    console.error("❌ Error en intervalo de ubicación:", e);
+                }
             }
         }, 4000);
+        
     } else {
         btn.classList.remove("bg-green-500", "hover:bg-green-600");
         btn.classList.add("bg-gray-500");
@@ -934,14 +978,30 @@ async function toggleOnline() {
             localStorage.setItem('sesion_activa', JSON.stringify(currentUser));
             await setDeliveryOnlineSupabase(currentUser.id, false);
             
+            // Guardar última ubicación como offline
             if (userMarker) {
-                const { lng, lat } = userMarker.getLngLat();
-                await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, lat, lng, false);
+                try {
+                    const { lng, lat } = userMarker.getLngLat();
+                    await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, lat, lng, false);
+                } catch(e) {
+                    console.error("❌ Error guardando ubicación offline:", e);
+                }
             }
         }
+        
         if (ubicacionInterval) clearInterval(ubicacionInterval);
+        
+        // ✅ NO cambiar el color del marcador cuando se desconecta (solo quitar el intervalo)
+        // Solo actualizar el popup si existe
+        if (userMarker) {
+            const popup = new maplibregl.Popup({ offset: [0, -35] })
+                .setHTML(`🏍️ <b>${currentUser?.nombre}</b><br>⚫ Desconectado`);
+            userMarker.setPopup(popup);
+        }
     }
-    await actualizarColorMarcador();
+    
+    // ✅ Actualizar badge de estado
+    await actualizarBadgeEstado();
 }
 
 // ==================== ACTUALIZAR LISTA DE PEDIDOS (UI) ====================
