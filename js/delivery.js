@@ -3,16 +3,14 @@
 // Constantes y variables globales
 const BOUNDS = { north: 18.70, south: 18.58, east: -91.75, west: -91.88 };
 
-let map, userMarker;
+let map = null;
 let currentUser = null, isOnline = false;
 let pedidosDisponibles = [], misPedidosActivos = [];
 let pedidoSeleccionado = null;
-let watchId = null;
 let ubicacionInterval = null;
 let cargaPedidosInterval = null;
-let ultimaUbicacionEnviada = null;
 let primeraUbicacionObtenida = false;
-// ✅ ELIMINADAS las líneas duplicadas de userMarker y ultimaUbicacionEnviada
+
 
 // ==================== NUEVAS VARIABLES PARA RUTAS (MapLibre) ====================
 let currentRouteLayerId = 'delivery-route';
@@ -78,41 +76,23 @@ function initMap() {
             }]
         },
         center: [-91.8249, 18.6456],
-        zoom: 14,
+        zoom: 13.5,
         minZoom: 12,
-        maxZoom: 17
+        maxZoom: 18
     });
     
     map.addControl(new maplibregl.NavigationControl(), 'top-right');
-    
-    // Limitar movimiento sin recursión
-    let ajustandoBounds = false;
-    map.on('move', () => {
-        if (ajustandoBounds) return;
-        
-        const center = map.getCenter();
-        const lng = center.lng;
-        const lat = center.lat;
-        
-        if (lng < -91.88 || lng > -91.75 || lat < 18.58 || lat > 18.70) {
-            ajustandoBounds = true;
-            map.setCenter([-91.8249, 18.6456]);
-            setTimeout(() => { ajustandoBounds = false; }, 100);
-        }
-    });
-    
-    // Usar style.load en lugar de load para mayor confiabilidad
-    map.on('style.load', () => {
-        console.log('🎨 Estilo del mapa cargado');
-    });
-    
+
+    // Limitador de bounds DESACTIVADO (causaba saltos)
+    // Puedes reactivarlo después de forma más suave
+
     map.on('load', () => {
-        console.log('✅ Mapa Delivery MapLibre cargado');
+        console.log('✅ Mapa Delivery MapLibre cargado correctamente');
         cargarPedidos();
-        // Iniciar tracking después de que el mapa cargue
+        
         setTimeout(() => {
-            startLocationTracking(0);
-        }, 1500);
+            startLocationTracking();
+        }, 800);
     });
     
     console.log("✅ Mapa inicializado");
@@ -334,208 +314,118 @@ async function dibujarRutaOptimaPedido(pedido) {
 }
 
 // ==================== INICIAR SEGUIMIENTO DE UBICACIÓN ====================
+let userMarker = null;
+let watchId = null;
+let ultimaUbicacionEnviada = null;
+let locationTrackingActive = false;
+
 function startLocationTracking(intentos = 0) {
-    // ✅ Evitar múltiples instancias en celular
-    if (window.locationTrackingActive) {
-        console.log("⚠️ Tracking ya activo, ignorando nueva llamada");
+    const maxIntentos = 8;
+
+    if (locationTrackingActive && intentos === 0) {
+        console.log("⚠️ Tracking ya activo");
         return;
     }
-    window.locationTrackingActive = true;
-    const maxIntentos = 10;
+    if (intentos === 0) locationTrackingActive = true;
 
-    // Evitar múltiples ejecuciones simultáneas
-    if (window.trackingStarted && intentos === 0) return;
-    if (intentos === 0) window.trackingStarted = true;
-
-    // Validar mapa
-    if (!map || typeof map.getSource !== "function") {
+    if (!map || !map.loaded()) {
         if (intentos < maxIntentos) {
-            console.log(`⏳ Esperando mapa... (${intentos + 1})`);
             setTimeout(() => startLocationTracking(intentos + 1), 1000);
-        } else {
-            console.error("❌ No se pudo inicializar el mapa");
+            return;
         }
-        return;
-    }
-
-    // Esperar a que el mapa cargue completamente
-    if (!map.loaded()) {
-        if (intentos < maxIntentos) {
-            console.log(`⏳ Esperando carga del mapa... (${intentos + 1})`);
-            setTimeout(() => startLocationTracking(intentos + 1), 1000);
-        } else {
-            console.error("❌ El mapa no cargó correctamente");
-        }
-        return;
-    }
-
-    console.log("📍 Iniciando seguimiento...");
-
-    if (!("geolocation" in navigator)) {
-        mostrarToast("⚠️ Tu navegador no soporta geolocalización", true);
+        console.error("❌ Mapa no listo");
         return;
     }
 
     const options = {
         enableHighAccuracy: true,
         maximumAge: 0,
-        timeout: 10000
+        timeout: 15000
     };
 
-    // Limpiar watcher previo
-    if (watchId) {
-        navigator.geolocation.clearWatch(watchId);
-        watchId = null;
-    }
+    if (watchId) navigator.geolocation.clearWatch(watchId);
 
     navigator.geolocation.getCurrentPosition(
-        async (pos) => {
-            const coords = {
-                lat: pos.coords.latitude,
-                lng: pos.coords.longitude
-            };
+        (pos) => {
+            const lng = pos.coords.longitude;   // ← Longitud primero
+            const lat = pos.coords.latitude;    // ← Latitud segundo
 
-            console.log("📍 Ubicación inicial:", coords);
-            ultimaUbicacionEnviada = coords;
+            console.log(`📍 POSICIÓN REAL: [${lng}, ${lat}]`); // Debería salir aprox -91.8, 18.6
 
-            try {
-                // Eliminar marcador previo si existe
-                if (userMarker) {
-                    userMarker.remove();
-                    userMarker = null;
-                }
+            ultimaUbicacionEnviada = { lat, lng };
 
-                // ✅ Extraer solo el primer nombre (sin apellidos)
-                const nombreCompleto = currentUser?.nombre || 'Delivery';
-                const primerNombre = nombreCompleto.trim().split(' ')[0];
+            // Remover marcador viejo
+            if (userMarker) userMarker.remove();
 
-                const markerDiv = document.createElement('div');
-                markerDiv.style.cursor = 'pointer';
-                markerDiv.innerHTML = `
-                    <div style="position: relative; transform: translateY(-100%); display: flex; flex-direction: column; align-items: center;">
-                        <div style="background:rgba(0,0,0,0.7); backdrop-filter: blur(4px); color:white; font-size:12px; font-weight:500; padding:4px 12px; border-radius:20px; margin-bottom:6px; white-space:nowrap; box-shadow: 0 1px 4px rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.2);">
-                            ${primerNombre}
-                        </div>
-                        <div style="background:#10B981; width:36px; height:36px; border-radius:50%; border:3px solid white; display:flex; align-items:center; justify-content:center; box-shadow: 0 2px 6px rgba(0,0,0,0.3);">
-                            <i class="fas fa-motorcycle" style="color:white; font-size:18px;"></i>
-                        </div>
-                        <div style="position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%);
-                                    width: 0; height: 0; border-left: 7px solid transparent; border-right: 7px solid transparent;
-                                    border-top: 9px solid #10B981;">
-                        </div>
+            // Crear marcador
+            const primerNombre = (currentUser?.nombre || 'Delivery').split(' ')[0];
+
+            const markerDiv = document.createElement('div');
+            markerDiv.innerHTML = `
+                <div style="position:relative; display:flex; flex-direction:column; align-items:center;">
+                    <div style="background:rgba(0,0,0,0.8); color:white; font-size:12px; padding:4px 12px; border-radius:20px; margin-bottom:6px;">
+                        ${primerNombre}
                     </div>
-                `;
+                    <div style="background:#10B981; width:38px; height:38px; border-radius:50%; border:3px solid white; display:flex; align-items:center; justify-content:center;">
+                        <i class="fas fa-motorcycle" style="color:white; font-size:20px;"></i>
+                    </div>
+                </div>
+            `;
 
-                const markerElement = markerDiv.firstElementChild;
+            userMarker = new maplibregl.Marker({
+                element: markerDiv,
+                anchor: 'bottom'
+            })
+            .setLngLat([lng, lat])
+            .addTo(map);
 
-                if (!markerElement) {
-                    console.error("❌ Error creando marcador");
-                    return;
-                }
+            // Centrar correctamente con flyTo
+            map.flyTo({
+                center: [lng, lat],
+                zoom: 16.5,
+                duration: 2000,
+                essential: true
+            });
 
-                userMarker = new maplibregl.Marker({
-                    element: markerElement,
-                    anchor: 'bottom'  // ✅ Ancla en la parte inferior
-                }).setLngLat([coords.lng, coords.lat]);
+            mostrarToast("📍 Ubicación detectada en CD del Carmen");
 
-                userMarker.addTo(map);
-
-                const popup = new maplibregl.Popup({ offset: [0, -40] })
-                    .setHTML(`🏍️ <b>${primerNombre}</b><br>🟢 Disponible`);
-
-                userMarker.setPopup(popup);
-
-                // Solo centrar la primera vez
-                if (intentos === 0) {
-                    map.setCenter([coords.lng, coords.lat]);
-                    map.setZoom(15);
-                }
-
-                mostrarToast("📍 Ubicación detectada");
-
-                // Guardar en backend
-                if (currentUser && isOnline) {
-                    await guardarUbicacionEnSupabase(
-                        currentUser.id,
-                        currentUser.nombre,
-                        coords.lat,
-                        coords.lng,
-                        true
-                    );
-                }
-
-                // 🚀 WATCH SOLO DESPUÉS DE ÉXITO
-                watchId = navigator.geolocation.watchPosition(
-                    async (pos) => {
-                        if (!userMarker) return;
-
-                        const newCoords = {
-                            lat: pos.coords.latitude,
-                            lng: pos.coords.longitude
-                        };
-
-                        // Calcular distancia (Haversine)
-                        if (ultimaUbicacionEnviada) {
-                            const R = 6371;
-                            const dLat = (newCoords.lat - ultimaUbicacionEnviada.lat) * Math.PI / 180;
-                            const dLon = (newCoords.lng - ultimaUbicacionEnviada.lng) * Math.PI / 180;
-
-                            const a =
-                                Math.sin(dLat / 2) ** 2 +
-                                Math.cos(ultimaUbicacionEnviada.lat * Math.PI / 180) *
-                                Math.cos(newCoords.lat * Math.PI / 180) *
-                                Math.sin(dLon / 2) ** 2;
-
-                            const distancia = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)) * 1000;
-
-                            if (distancia < 15) return;
-                        }
-
-                        ultimaUbicacionEnviada = newCoords;
-
-                        try {
-                            userMarker.setLngLat([newCoords.lng, newCoords.lat]);
-                        } catch (e) {
-                            console.error("❌ Error moviendo marcador:", e);
-                        }
-
-                        if (currentUser && isOnline) {
-                            await guardarUbicacionEnSupabase(
-                                currentUser.id,
-                                currentUser.nombre,
-                                newCoords.lat,
-                                newCoords.lng,
-                                true
-                            );
-                        }
-                    },
-                    (err) => {
-                        if (err.code !== 3) {
-                            console.error("❌ Error GPS:", err);
-                        }
-                    },
-                    options
-                );
-
-            } catch (e) {
-                console.error("❌ Error general:", e);
-                setTimeout(() => startLocationTracking(intentos + 1), 2000);
+            if (currentUser && isOnline) {
+                guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, lat, lng, true);
             }
+
+            // Watch continuo
+            watchId = navigator.geolocation.watchPosition(
+                (pos2) => {
+                    if (!userMarker) return;
+                    const newLng = pos2.coords.longitude;
+                    const newLat = pos2.coords.latitude;
+
+                    if (ultimaUbicacionEnviada) {
+                        const dist = calcularDistanciaMetros(ultimaUbicacionEnviada.lat, ultimaUbicacionEnviada.lng, newLat, newLng);
+                        if (dist < 20) return;
+                    }
+
+                    ultimaUbicacionEnviada = { lat: newLat, lng: newLng };
+                    userMarker.setLngLat([newLng, newLat]);
+                },
+                err => console.error(err),
+                options
+            );
         },
         (err) => {
-            console.error("❌ Error ubicación:", err);
-
-            if (err.code === 1) {
-                mostrarToast("❌ Permite acceso a ubicación", true);
-            } else if (err.code === 3) {
-                setTimeout(() => startLocationTracking(intentos + 1), 2000);
-            } else {
-                mostrarToast("⚠️ Reintentando ubicación...", true);
-                setTimeout(() => startLocationTracking(intentos + 1), 3000);
-            }
+            console.error(err);
+            mostrarToast("Error al obtener ubicación", true);
         },
         options
     );
+}
+
+function calcularDistanciaMetros(lat1, lon1, lat2, lon2) {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)) * 1000;
 }
 
 // ==================== LOAD USER ====================
