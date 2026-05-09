@@ -166,17 +166,15 @@ async function peticionConThrottling(funcion, nombre, intervaloMinimo = 3000) {
     return await funcion();
 }
 
-// ==================== INICIALIZACIÓN CON MAPLIBRE ====================
-// CORREGIR en cliente.js - Reemplazar toda la función initMap
+// ==================== INICIALIZACIÓN CON MAPLIBRE (CLIENTE) ====================
 function initMap() {
-    // Evitar recrear el mapa si ya existe
     if (map) {
         console.log("⚠️ Mapa ya inicializado");
         return;
     }
     
     console.log("🗺️ Inicializando mapa...");
-    
+
     map = new maplibregl.Map({
         container: 'map',
         style: {
@@ -198,79 +196,47 @@ function initMap() {
             }]
         },
         center: [-91.8249, 18.6456],
-        zoom: 13,
+        zoom: 13.5,
         minZoom: 12,
-        maxZoom: 17
+        maxZoom: 18,
+        maxBounds: [[-91.95, 18.50], [-91.70, 18.75]]  // Límite suave
     });
-    
-    // ✅ Guardar referencia global del mapa
+
     window.map = map;
     
     map.addControl(new maplibregl.NavigationControl(), 'top-right');
-    
-    // Variable para controlar recursión
-    let ajustandoBounds = false;
-    
-    // Limitar movimiento SIN recursión infinita
-    map.on('move', () => {
-        if (ajustandoBounds) return;
+
+    // Limitador suave (mejor que el anterior)
+    let ajustando = false;
+    map.on('moveend', () => {
+        if (ajustando) return;
         
         const center = map.getCenter();
-        const lng = center.lng;
-        const lat = center.lat;
-        
-        // Verificar si está fuera de los límites
-        if (lng < -91.88 || lng > -91.75 || lat < 18.58 || lat > 18.70) {
-            ajustandoBounds = true;
-            map.setCenter([-91.8249, 18.6456]);
-            setTimeout(() => {
-                ajustandoBounds = false;
-            }, 100);
+        if (center.lng < -91.95 || center.lng > -91.70 || 
+            center.lat < 18.50 || center.lat > 18.75) {
+            
+            ajustando = true;
+            map.flyTo({
+                center: [-91.8249, 18.6456],
+                zoom: Math.min(map.getZoom(), 15),
+                duration: 1000
+            });
+            setTimeout(() => ajustando = false, 1200);
         }
     });
-    
-    // ✅ Cuando el mapa carga completamente
+
     map.on('load', () => {
-        console.log('✅ Mapa MapLibre cargado');
-        
-        // Crear marcadores iniciales (origen/destino)
+        console.log('✅ Mapa cargado correctamente');
         crearMarcadoresIniciales();
         
-        // ✅ Cargar deliverys en línea SOLO después de que el mapa esté listo
         setTimeout(() => {
             if (typeof cargarDeliverysEnLinea === 'function') {
                 cargarDeliverysEnLinea();
             }
-        }, 500);
-        
-        // ✅ Intervalo para actualizar deliverys en línea
-        if (deliverysInterval) clearInterval(deliverysInterval);
-        deliverysInterval = setInterval(() => {
+        }, 800);
+    });
 
-            if (paginaVisible && map && map.loaded() && typeof cargarDeliverysEnLinea === 'function') {
-                cargarDeliverysEnLinea();
-            }
-        }, 10000);
-    });
-    
-    // ✅ Click en el mapa para seleccionar ubicación
-    map.on('click', (e) => {
-        const { lng, lat } = e.lngLat;
-        
-        if (lat >= 18.58 && lat <= 18.70 && lng >= -91.88 && lng <= -91.75) {
-            if (selectMode === 'origen') {
-                actualizarMarcadorOrigen(lat, lng);
-                mostrarToast("📍 Origen actualizado");
-            } else {
-                actualizarMarcadorDestino(lat, lng);
-                mostrarToast("🏁 Destino actualizado");
-            }
-        } else {
-            mostrarToast("❌ Solo dentro de Ciudad del Carmen", true);
-        }
-    });
-    
-    console.log("✅ Mapa inicializado correctamente");
+    console.log("✅ Mapa inicializado");
 }
 
 // Agregar en cliente.js
@@ -390,10 +356,17 @@ function crearMarcadoresIniciales() {
     // Ajustar vista para ver ambos marcadores
     setTimeout(() => {
         try {
-            const bounds = new maplibregl.LngLatBounds()
-                .extend([originCoords.lng, originCoords.lat])
-                .extend([destCoords.lng, destCoords.lat]);
-            map.fitBounds(bounds, { padding: 80 });
+           // Después de dibujar la ruta:
+        const bounds = new maplibregl.LngLatBounds()
+        .extend([origin.lng, origin.lat])
+        .extend([dest.lng, dest.lat]);
+    
+    map.fitBounds(bounds, { 
+        padding: 70,
+        duration: 1600,
+        maxZoom: 16.2   // ← Evita que haga zoom demasiado
+    });
+        
         } catch(e) {
             console.log("Error ajustando bounds:", e);
         }

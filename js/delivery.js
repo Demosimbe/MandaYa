@@ -143,17 +143,21 @@ async function dibujarRutaDelivery(origin, dest, color, weight = 5) {
                 paint: {
                     'line-color': color,
                     'line-width': weight,
-                    'line-opacity': 0.8
+                    'line-opacity': 0.85
                 }
             });
             
-            // Ajustar bounds
+            // === CAMBIO IMPORTANTE: fitBounds más suave ===
             const bounds = new maplibregl.LngLatBounds()
                 .extend([origin.lng, origin.lat])
                 .extend([dest.lng, dest.lat]);
-            if (!map.isMoving()) {
-            map.fitBounds(bounds, { padding: 50 });
-            }
+
+            map.fitBounds(bounds, { 
+                padding: 80,
+                duration: 1800,
+                maxZoom: 16.5,        // ← Evita zoom excesivo
+                essential: true
+            });
             
             return {
                 distance: route.distance / 1000,
@@ -380,12 +384,14 @@ function startLocationTracking(intentos = 0) {
             .addTo(map);
 
             // Centrar correctamente con flyTo
-            map.flyTo({
-                center: [lng, lat],
-                zoom: 16.5,
-                duration: 2000,
-                essential: true
-            });
+           map.flyTo({
+               center: [lng, lat],
+               zoom: 16.8,
+               duration: 1400,
+               essential: true,
+               curve: 1.3
+           });
+            
 
             mostrarToast("📍 Ubicación detectada en CD del Carmen");
 
@@ -486,62 +492,32 @@ async function actualizarBadgeEstado() {
     }
 }
 
-// ==================== ACTUALIZAR COLOR MARCADOR (VERSIÓN CORREGIDA) ====================
+// ==================== ACTUALIZAR COLOR MARCADOR ====================
 async function actualizarColorMarcador() {
-    if (!currentUser) {
-        console.warn("⚠️ No hay currentUser para actualizar marcador");
-        return;
-    }
-    
-    // Esperar a que userMarker exista
-    if (!userMarker) {
-        console.log("⏳ Marcador no listo, reintentando en 1 segundo...");
-        setTimeout(() => actualizarColorMarcador(), 1000);
-        return;
-    }
-    
+    if (!currentUser || !userMarker) return;
+
     try {
         const tienePedido = await deliveryTienePedidoActivo(currentUser.id);
         const color = tienePedido ? '#FF6200' : '#10B981';
         const estadoTexto = tienePedido ? '🟠 En una entrega' : (isOnline ? '🟢 Disponible' : '⚫ Desconectado');
-        
-        // Obtener coordenadas actuales
+
         const lngLat = userMarker.getLngLat();
-        const lat = lngLat.lat;
-        const lng = lngLat.lng;
-        
-        // Eliminar marcador viejo
-        userMarker.remove();
-        
-        // Crear nuevo marcador con el color correcto
-        const html = `
-            <div style="text-align: center;">
-                <div style="background:rgba(0,0,0,0.85); color:white; font-size:11px; font-weight:bold; padding:3px 8px; border-radius:14px; margin-bottom:4px; white-space:nowrap;">
-                    ${currentUser.nombre}
-                </div>
-                <div style="background:${color}; width:38px; height:38px; border-radius:50%; border:3px solid white; display:flex; align-items:center; justify-content:center;">
-                    <i class="fas fa-motorcycle" style="color:white; font-size:20px;"></i>
-                </div>
-            </div>
-        `;
-        
-        const div = document.createElement('div');
-        div.innerHTML = html;
-        const markerElement = div.firstElementChild;
-        
-        if (!markerElement) {
-            console.error("❌ Error creando elemento del marcador");
-            return;
-        }
-        
-        userMarker = new maplibregl.Marker({ element: markerElement, draggable: false })
-            .setLngLat([lng, lat])
-            .addTo(map);
-        
-        const popup = new maplibregl.Popup({ offset: [0, -35] })
+
+        // Solo actualizar popup y color sin eliminar el marcador
+        const popup = new maplibregl.Popup({ offset: [0, -45] })
             .setHTML(`🏍️ <b>${currentUser.nombre}</b><br>${estadoTexto}`);
-        userMarker.setPopup(popup);
         
+        userMarker.setPopup(popup);
+
+        // Cambiar color del marcador existente
+        const el = userMarker.getElement();
+        if (el) {
+            const iconContainer = el.querySelector('div[style*="background:#10B981"], div[style*="background:#FF6200"]');
+            if (iconContainer) {
+                iconContainer.style.background = color;
+            }
+        }
+
         console.log(`✅ Marcador actualizado: ${estadoTexto}`);
         
     } catch(e) {
