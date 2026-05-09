@@ -2,9 +2,6 @@
 const SUPABASE_URL = 'https://ewjljddexyajxuzzzssp.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3amxqZGRleHlhanh1enp6c3NwIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3ODAyMDExOSwiZXhwIjoyMDkzNTk2MTE5fQ.Xcb3vGH7a7Q0RA9-RlnZ1wUrWNXAV7YxEWiTPGsOMPU';
 
-// ========== STADIA MAPS API KEY ==========
-const STADIA_API_KEY = '6da7a1a6-f0dd-4838-acd7-c3926d763794';
-
 let supabaseClient = null;
 
 // Inicializar Supabase
@@ -231,18 +228,12 @@ async function eliminarUsuarioSupabase(userId) {
 }
 
 // ========== FUNCIONES PARA UBICACIONES ==========
-// ========== FUNCIONES PARA UBICACIONES ==========
+
 async function guardarUbicacionEnSupabase(deliveryId, deliveryNombre, lat, lng, online) {
     const supabase = initSupabase();
-    if (!supabase) {
-        console.error("❌ Supabase no disponible");
-        return null;
-    }
-    
-    console.log(`📡 Guardando ubicación: ${deliveryNombre} (${lat}, ${lng}) online: ${online}`);
+    if (!supabase) return null;
     
     try {
-        // Usar upsert con la columna correcta (delivery_id tiene unique constraint)
         const { data, error } = await supabase
             .from('ubicaciones')
             .upsert({
@@ -251,23 +242,13 @@ async function guardarUbicacionEnSupabase(deliveryId, deliveryNombre, lat, lng, 
                 lat: lat,
                 lng: lng,
                 online: online,
-                updated_at: new Date().toISOString()
-            }, {
-                onConflict: 'delivery_id'  // Usar delivery_id para conflicto (tiene unique constraint)
-            })
-            .select();
+                updated_at: new Date()
+            }, { onConflict: 'delivery_id' });
         
-        if (error) {
-            console.error("❌ Error guardando ubicación:", error.message);
-            console.error("Detalle del error:", error);
-            return null;
-        }
-        
-        console.log("✅ Ubicación guardada correctamente");
-        return data;
-        
+        if (error) console.error('Error guardando ubicación:', error);
+        return { data, error };
     } catch(e) {
-        console.error("❌ Excepción guardando ubicación:", e);
+        console.error('Error:', e);
         return null;
     }
 }
