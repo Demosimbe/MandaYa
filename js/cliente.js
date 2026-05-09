@@ -173,7 +173,7 @@ function initMap() {
         return;
     }
     
-    console.log("🗺️ Inicializando mapa...");
+    console.log("🗺️ Inicializando mapa Cliente...");
 
     map = new maplibregl.Map({
         container: 'map',
@@ -198,45 +198,49 @@ function initMap() {
         center: [-91.8249, 18.6456],
         zoom: 13.5,
         minZoom: 12,
-        maxZoom: 18,
-        maxBounds: [[-91.95, 18.50], [-91.70, 18.75]]  // Límite suave
+        maxZoom: 18
     });
-
-    window.map = map;
     
+    window.map = map;
     map.addControl(new maplibregl.NavigationControl(), 'top-right');
 
-    // Limitador suave (mejor que el anterior)
+    // ==================== LIMITADOR SUAVE (igual que delivery) ====================
     let ajustando = false;
+
     map.on('moveend', () => {
         if (ajustando) return;
-        
+
         const center = map.getCenter();
-        if (center.lng < -91.95 || center.lng > -91.70 || 
-            center.lat < 18.50 || center.lat > 18.75) {
+        
+        // Tolerancia más amplia para evitar que te aviente al mar
+        if (center.lng < -91.98 || center.lng > -91.65 || 
+            center.lat < 18.45 || center.lat > 18.80) {
             
             ajustando = true;
+            
             map.flyTo({
                 center: [-91.8249, 18.6456],
                 zoom: Math.min(map.getZoom(), 15),
-                duration: 1000
+                duration: 900,
+                essential: true
             });
-            setTimeout(() => ajustando = false, 1200);
+            
+            setTimeout(() => ajustando = false, 1100);
         }
     });
 
     map.on('load', () => {
-        console.log('✅ Mapa cargado correctamente');
+        console.log('✅ Mapa Cliente cargado correctamente');
         crearMarcadoresIniciales();
         
         setTimeout(() => {
             if (typeof cargarDeliverysEnLinea === 'function') {
                 cargarDeliverysEnLinea();
             }
-        }, 800);
+        }, 1000);
     });
-
-    console.log("✅ Mapa inicializado");
+    
+    console.log("✅ Mapa Cliente inicializado (estilo Delivery)");
 }
 
 // Agregar en cliente.js
@@ -353,28 +357,26 @@ function crearMarcadoresIniciales() {
         if (document.getElementById("destinoMobile")) document.getElementById("destinoMobile").value = addr;
     });
     
-    // Ajustar vista para ver ambos marcadores
-    setTimeout(() => {
-        try {
-           // Después de dibujar la ruta:
-        const bounds = new maplibregl.LngLatBounds()
-        .extend([origin.lng, origin.lat])
-        .extend([dest.lng, dest.lat]);
-    
-    map.fitBounds(bounds, { 
-        padding: 70,
-        duration: 1600,
-        maxZoom: 16.2   // ← Evita que haga zoom demasiado
-    });
-        
-        } catch(e) {
-            console.log("Error ajustando bounds:", e);
-        }
-    }, 500);
-    
-    setTimeout(() => actualizarRutaYTarifa(), 500);
-    console.log("✅ Marcadores creados correctamente");
-}
+    // Ajustar vista para ver ambos marcadores - Versión suave como en delivery
+          setTimeout(() => {
+              if (!originCoords || !destCoords) return;
+          
+              const bounds = new maplibregl.LngLatBounds()
+                  .extend([originCoords.lng, originCoords.lat])
+                  .extend([destCoords.lng, destCoords.lat]);
+          
+              map.fitBounds(bounds, { 
+                  padding: 80,
+                  duration: 1600,      // Más suave
+                  maxZoom: 16.5,       // Evita zoom excesivo
+                  essential: true
+              });
+          }, 800);
+              
+              setTimeout(() => actualizarRutaYTarifa(), 500);
+              console.log("✅ Marcadores creados correctamente");
+          }
+            
 
 // CORREGIR en cliente.js
 function actualizarMarcadorOrigen(lat, lng) {
@@ -1223,146 +1225,82 @@ function iniciarSeguimientoDelivery() {
     }, 3000);
 }
 
+// ==================== SEGUIMIENTO INTELIGENTE DEL DELIVERY ====================
+let isUserInteracting = false;
+let ultimoCentroDelivery = null;
+
 function seguirUbicacionDelivery(deliveryId) {
     if (ubicacionInterval) {
         clearInterval(ubicacionInterval);
         ubicacionInterval = null;
     }
+
+    console.log(`🔄 Seguimiento inteligente activado para delivery ${deliveryId}`);
+
+    // Detectar si el usuario está interactuando con el mapa
+    map.on('dragstart', () => isUserInteracting = true);
+    map.on('zoomstart', () => isUserInteracting = true);
     
-    if (deliveryMarker) {
-        try { map.removeLayer(deliveryMarker); } catch(e) {}
-        deliveryMarker = null;
-    }
-    
-    console.log(`🔄 Ocultando delivery ${deliveryId} de la lista general de deliverys`);
-    cargarDeliverysEnLinea();
-    
+    // Resetear interacción después de 8 segundos de inactividad
+    map.on('moveend', () => {
+        setTimeout(() => {
+            isUserInteracting = false;
+        }, 8000);
+    });
+
     ubicacionInterval = setInterval(async () => {
         let ubicacion = null;
         
-        if (typeof obtenerUbicacionDeSupabase !== 'undefined') {
+        if (typeof obtenerUbicacionDeSupabase === 'function') {
             ubicacion = await obtenerUbicacionDeSupabase(deliveryId);
-            if (ubicacion && ubicacion.lat && ubicacion.lng) {
-                ubicacion = { lat: ubicacion.lat, lng: ubicacion.lng };
+        }
+
+        if (!ubicacion || !ubicacion.lat || !ubicacion.lng) return;
+
+        const deliveryPos = { lng: ubicacion.lng, lat: ubicacion.lat };
+        ultimoCentroDelivery = deliveryPos;
+
+        // Actualizar marcador
+        if (deliveryMarker) {
+            deliveryMarker.setLngLat([deliveryPos.lng, deliveryPos.lat]);
+        } else {
+            deliveryMarker = crearMarcadorDelivery({
+                id: deliveryId,
+                nombre: pedidoActual?.delivery_nombre || 'Delivery',
+                lat: deliveryPos.lat,
+                lng: deliveryPos.lng,
+                online: true
+            });
+            if (deliveryMarker) deliveryMarker.addTo(map);
+        }
+
+        // === SOLO centrar si el usuario NO está interactuando ===
+        if (!isUserInteracting && (pedidoActual?.estado === 'asignado' || pedidoActual?.estado === 'recogido')) {
+            
+            map.flyTo({
+                center: [deliveryPos.lng, deliveryPos.lat],
+                zoom: map.getZoom(),        // Respeta el zoom actual del usuario
+                duration: 1600,
+                essential: true,
+                curve: 1.25
+            });
+        }
+
+        // Actualizar ruta
+        if (pedidoActual) {
+            let destinoRuta = null;
+            if (pedidoActual.estado === 'asignado' && pedidoActual.origen_lat) {
+                destinoRuta = { lat: pedidoActual.origen_lat, lng: pedidoActual.origen_lng };
+            } else if (pedidoActual.estado === 'recogido' && pedidoActual.destino_lat) {
+                destinoRuta = { lat: pedidoActual.destino_lat, lng: pedidoActual.destino_lng };
+            }
+            
+            if (destinoRuta) {
+                await dibujarRutaDeliveryEnCliente(deliveryPos, destinoRuta, pedidoActual.estado === 'asignado' ? 'recogida' : 'entrega');
             }
         }
-        
-        let deliveryNombre = 'Delivery';
-        const supabase = supabaseClient;
-        if (supabase && deliveryId && !pedidoActual?.delivery_nombre) {
-            const { data: delivery } = await supabase
-                .from('usuarios')
-                .select('nombre')
-                .eq('id', deliveryId)
-                .single();
-            if (delivery) deliveryNombre = delivery.nombre;
-        } else if (pedidoActual?.delivery_nombre) {
-            deliveryNombre = pedidoActual.delivery_nombre;
-        }
-        
-        if (ubicacion) {
-            if (deliveryMarker) {
-                try { map.removeLayer(deliveryMarker); } catch(e) {}
-            }
-            
-           deliveryMarker = crearMarcadorDelivery({
-               id: deliveryId,
-               nombre: deliveryNombre,
-               lat: ubicacion.lat,
-               lng: ubicacion.lng,
-               online: true
-           });
-            
-            deliveryMarker.addTo(map);
-            
-            const estadoActual = pedidoActual?.estado;
-            const necesitaRedibujar = !rutaYaDibujada || ultimoEstadoPedido !== estadoActual;
-            
-            if (pedidoActual) {
-                let destinoCoords = null;
-                let tipoRuta = null;
-                
-                if (pedidoActual.estado === 'asignado') {
-                    if (pedidoActual.origen_lat && pedidoActual.origen_lng) {
-                        destinoCoords = { lat: pedidoActual.origen_lat, lng: pedidoActual.origen_lng };
-                        tipoRuta = 'recogida';
-                    }
-                } else if (pedidoActual.estado === 'recogido') {
-                    if (pedidoActual.destino_lat && pedidoActual.destino_lng) {
-                        destinoCoords = { lat: pedidoActual.destino_lat, lng: pedidoActual.destino_lng };
-                        tipoRuta = 'entrega';
-                    }
-                }
-                
-                if (destinoCoords && necesitaRedibujar) {
-                    console.log(`🔄 Redibujando ruta (${tipoRuta}) - Estado cambió de ${ultimoEstadoPedido} a ${estadoActual}`);
-                    await dibujarRutaDeliveryEnCliente(ubicacion, destinoCoords, tipoRuta);
-                    rutaYaDibujada = true;
-                    ultimoEstadoPedido = estadoActual;
-                    rutaDestinoActual = destinoCoords;
-                    
-                    const popup = new maplibregl.Popup({ offset: [0, -30] })
-                        .setHTML(tipoRuta === 'recogida' 
-                            ? `<b>🏍️ ${deliveryNombre}</b><br>🟠 En camino a recoger tu paquete`
-                            : `<b>🏍️ ${deliveryNombre}</b><br>📦 En camino a entregar tu paquete`);
-                    deliveryMarker.setPopup(popup);
-                    
-                } else if (destinoCoords && rutaYaDibujada) {
-                    if (pedidoActual && pedidoActual.destino_lat && ubicacion) {
-                        const destinoFinal = { lat: pedidoActual.destino_lat, lng: pedidoActual.destino_lng };
-                        const distanciaADestino = calcularDistanciaEntrePuntos(ubicacion, destinoFinal);
-                        const deliveryEstado = document.getElementById("deliveryEstado");
-                        if (deliveryEstado) {
-                            if (distanciaADestino < 0.5) {
-                                deliveryEstado.innerHTML = "🟢 Muy cerca de tu destino 🎯";
-                            } else if (distanciaADestino < 1) {
-                                deliveryEstado.innerHTML = "🟡 Cerca de tu destino";
-                            } else {
-                                deliveryEstado.innerHTML = `🔴 A ${distanciaADestino.toFixed(1)} km de tu destino`;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        
-        if (supabase && pedidoActual) {
-            const { data: pedidoActualizado } = await supabase
-                .from('pedidos')
-                .select('estado')
-                .eq('id', pedidoActual.id)
-                .single();
-            
-            if (pedidoActualizado?.estado === 'completado') {
-                console.log("🎉 Pedido completado detectado en seguirUbicacionDelivery");
-                
-                clearInterval(ubicacionInterval);
-                ubicacionInterval = null;
-                
-                ocultarDeliveryInfo();
-                limpiarRutaCliente();
-                
-                const panel = document.getElementById("panelEstadoPedido");
-                const panelMobile = document.getElementById("panelEstadoPedidoMobile");
-                if(panel) panel.classList.add("hidden");
-                if(panelMobile) panelMobile.classList.add("hidden");
-                
-                if(deliveryMarker) {
-                    map.removeLayer(deliveryMarker);
-                    deliveryMarker = null;
-                }
-                
-                rutaYaDibujada = false;
-                ultimoEstadoPedido = null;
-                rutaDestinoActual = null;
-                bloquearUIporPedidoActivo(false);
-                pedidoActual = null;
-                cargarDeliverysEnLinea();
-                
-                mostrarToast("🎉 ¡Envío completado! Gracias por usar MandaYa");
-            }
-        }
-    }, 2000);
+
+    }, 3000); // Cada 3 segundos
 }
 
 function calcularDistanciaEntrePuntos(punto1, punto2) {
