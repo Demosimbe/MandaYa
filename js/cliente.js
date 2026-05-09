@@ -2111,6 +2111,7 @@ function seleccionarDireccion(tipo, lat, lng, direccion) {
 }
 
 // ==================== VER DELIVERYS EN LÍNEA ====================
+// ==================== VER DELIVERYS EN LÍNEA ====================
 async function cargarDeliverysEnLinea() {
     // ✅ 1. Verificar si la página está visible
     if (!paginaVisible) {
@@ -2118,9 +2119,9 @@ async function cargarDeliverysEnLinea() {
         return;
     }
     
-    // ✅ 2. Throttling: mínimo 15 segundos entre peticiones
+    // ✅ 2. Throttling: mínimo 10 segundos entre peticiones
     const ahora = Date.now();
-    if (ultimaPeticionDeliverys && (ahora - ultimaPeticionDeliverys) < 15000) {
+    if (ultimaPeticionDeliverys && (ahora - ultimaPeticionDeliverys) < 10000) {
         console.log("⏳ Throttling: cargarDeliverysEnLinea - muy rápido, espera");
         return;
     }
@@ -2152,14 +2153,32 @@ async function cargarDeliverysEnLinea() {
             return;
         }
         
-        // ✅ 5. OBTENER EL ID DEL DELIVERY ASIGNADO (si hay pedido activo)
+        // ✅ 5. OBTENER EL ID DEL DELIVERY ASIGNADO (de forma más segura)
         let deliveryAsignadoId = null;
+        
+        // Intentar obtener de pedidoActual
         if (pedidoActual && (pedidoActual.estado === 'asignado' || pedidoActual.estado === 'recogido')) {
             deliveryAsignadoId = pedidoActual.delivery_id;
-            console.log(`🚚 Delivery asignado detectado: ${deliveryAsignadoId} - No se mostrará en la lista general`);
+            console.log(`🚚 Delivery asignado detectado en pedidoActual: ${deliveryAsignadoId}`);
         }
         
-        // ✅ 6. Obtener IDs de deliverys con pedido activo (optimizado: una sola consulta)
+        // ✅ 6. Si no hay pedidoActual, intentar obtener de Supabase
+        if (!deliveryAsignadoId && currentUser) {
+            const { data: pedidoReciente } = await supabaseClient
+                .from('pedidos')
+                .select('delivery_id, estado')
+                .eq('cliente_id', currentUser.id)
+                .in('estado', ['asignado', 'recogido'])
+                .order('fecha', { ascending: false })
+                .limit(1);
+            
+            if (pedidoReciente && pedidoReciente.length > 0 && pedidoReciente[0].delivery_id) {
+                deliveryAsignadoId = pedidoReciente[0].delivery_id;
+                console.log(`🔄 Delivery asignado recuperado de BD: ${deliveryAsignadoId}`);
+            }
+        }
+        
+        // ✅ 7. Obtener IDs de deliverys con pedido activo en GENERAL
         const { data: pedidosActivos } = await supabaseClient
             .from('pedidos')
             .select('delivery_id')
@@ -2168,42 +2187,51 @@ async function cargarDeliverysEnLinea() {
         
         const deliverysOcupados = new Set(pedidosActivos?.map(p => p.delivery_id) || []);
         
-        // ✅ 7. Limpiar marcadores antiguos
+        // ✅ 8. Limpiar marcadores antiguos
         deliverysMarkers.forEach(marker => {
             try { map.removeLayer(marker); } catch(e) {}
         });
         deliverysMarkers = [];
         
-        // ✅ 8. Crear marcadores SOLO para deliverys NO asignados al pedido actual
+        // ✅ 9. Crear marcadores SOLO para deliverys DISPONIBLES
+        let contadorMostrados = 0;
+        
         for (const delivery of ubicaciones) {
-            // Saltar el delivery que está asignado a MI pedido actual
-            if (delivery.delivery_id === deliveryAsignadoId) {
-                console.log(`🚫 Ocultando delivery asignado: ${delivery.delivery_nombre}`);
+            // 🔴 CRITERIO 1: Saltar si ES el delivery asignado a MI pedido
+            if (deliveryAsignadoId && delivery.delivery_id === deliveryAsignadoId) {
+                console.log(`🚫 Ocultando delivery ASIGNADO A MÍ: ${delivery.delivery_nombre}`);
                 continue;
             }
             
-            const tienePedido = deliverysOcupados.has(delivery.delivery_id);
-            const color = tienePedido ? '#FF6200' : '#10B981';
-            const estadoTexto = tienePedido ? '🟠 En entrega' : '🟢 Disponible';
+            // 🔴 CRITERIO 2: Saltar si el delivery está ocupado con OTRO pedido
+            if (deliverysOcupados.has(delivery.delivery_id)) {
+                console.log(`🚫 Ocultando delivery OCUPADO: ${delivery.delivery_nombre}`);
+                continue;
+            }
             
+            // ✅ Delivery disponible - mostrar en mapa (VERDE)
             const marker = crearMarcadorDelivery(
                 delivery.lat, 
                 delivery.lng, 
                 delivery.delivery_nombre, 
-                color
+                '#10B981'  // Verde para disponibles
             );
             
             marker.bindPopup(`
                 <b>🏍️ ${delivery.delivery_nombre}</b><br>
-                ${estadoTexto}<br>
+                🟢 Disponible<br>
                 <small>Última actualización: ${new Date(delivery.updated_at).toLocaleTimeString()}</small>
             `);
             
             marker.addTo(map);
             deliverysMarkers.push(marker);
+            contadorMostrados++;
         }
         
-        console.log(`✅ ${deliverysMarkers.length} deliverys mostrados (excluido el asignado: ${deliveryAsignadoId ? 'Sí' : 'No'})`);
+        console.log(`✅ ${contadorMostrados} deliverys disponibles mostrados`);
+        if (deliveryAsignadoId) {
+            console.log(`   (Excluido delivery asignado: ${deliveryAsignadoId})`);
+        }
         
     } catch(e) {
         console.error('❌ Error cargando deliverys en línea:', e);
@@ -2296,11 +2324,9 @@ window.addEventListener('beforeunload', function() {
 });
 
 // Evento cuando la página se descarga completamente (último recurso)
-window.addEventListener('unload', function() {
+window.addEventListener('pagehide', function() {
     console.log("💀 Página descargada - Recursos liberados");
-    // Intentar actualizar estado offline si es necesario
     if (currentUser && currentUser.rol === 'cliente' && supabaseClient) {
-        // Opcional: no es necesario para cliente, pero por si acaso
         console.log("👋 Cliente desconectado");
     }
 });

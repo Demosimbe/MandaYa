@@ -342,126 +342,201 @@ async function marcarPaqueteRecogido(pedidoId) {
 }
 
 function startLocationTracking() {
-    if("geolocation" in navigator) {
-        const options = {
-            enableHighAccuracy: true,
-            maximumAge: 0,
-            timeout: 5000
-        };
-        
-        // ✅ Obtener ubicación inicial rápida (getCurrentPosition)
-        navigator.geolocation.getCurrentPosition(
-            async (pos) => {
-                const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-                console.log("📍 Ubicación inicial obtenida:", coords);
-                
-                // ✅ GUARDAR UBICACIÓN INICIAL (importante para evitar parpadeo)
-                ultimaUbicacionEnviada = coords;
-                
-                if(!userMarker) {
-                    userMarker = crearMarcadorDelivery(
-                        coords.lat, 
-                        coords.lng, 
-                        currentUser.nombre, 
-                        '#10B981'
-                    );
-                    userMarker.addTo(map);
-                    userMarker.bindPopup(`🏍️ <b>${currentUser.nombre}</b><br>🟢 Disponible`);
-                } else {
-                    userMarker.setLatLng(coords);
-                }
-                
-                // Centrar mapa en la ubicación del delivery
-                map.setView([coords.lat, coords.lng], 15);
-                mostrarToast("📍 Ubicación detectada");
-                
-                if(currentUser && isOnline) {
-                    await guardarUbicacionEnSupabase(
-                        currentUser.id,
-                        currentUser.nombre,
-                        coords.lat,
-                        coords.lng,
-                        true
-                    );
-                }
-            },
-            (err) => {
-                console.error("Error en ubicación inicial:", err);
-                if(err.code === 1) {
-                    mostrarToast("❌ Permite el acceso a tu ubicación en el navegador", true);
-                } else {
-                    mostrarToast("⚠️ Activando GPS... esperando señal", true);
-                }
-            },
-            options
-        );
-        
-        // ✅ Watch continuo
-        watchId = navigator.geolocation.watchPosition(
-            async (pos) => {
-                const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-                
-                // ✅ Solo actualizar si la ubicación cambió más de 15 metros (evita parpadeo)
-                if (ultimaUbicacionEnviada) {
-                    const R = 6371;
-                    const dLat = (coords.lat - ultimaUbicacionEnviada.lat) * Math.PI / 180;
-                    const dLon = (coords.lng - ultimaUbicacionEnviada.lng) * Math.PI / 180;
-                    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                              Math.cos(ultimaUbicacionEnviada.lat * Math.PI / 180) * Math.cos(coords.lat * Math.PI / 180) *
-                              Math.sin(dLon/2) * Math.sin(dLon/2);
-                    const distanciaMetros = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)) * 1000;
-                    
-                    if (distanciaMetros < 15) {
-                        return; // No actualizar si movió menos de 15 metros
-                    }
-                }
-                
-                ultimaUbicacionEnviada = coords;
-                
-                if(userMarker) {
-                    userMarker.setLatLng(coords);
-                } else {
-                    userMarker = crearMarcadorDelivery(
-                        coords.lat, 
-                        coords.lng, 
-                        currentUser.nombre, 
-                        '#10B981'
-                    );
-                    userMarker.addTo(map);
-                    userMarker.bindPopup(`🏍️ <b>${currentUser.nombre}</b><br>🟢 Disponible`);
-                }
-                
-                if(currentUser && isOnline) {
-                    localStorage.setItem(`ubicacion_${currentUser.id}`, JSON.stringify(coords));
-                    
-                    if (typeof guardarUbicacionEnSupabase !== 'undefined') {
-                        await guardarUbicacionEnSupabase(
-                            currentUser.id,
-                            currentUser.nombre,
-                            coords.lat,
-                            coords.lng,
-                            true
-                        );
-                        console.log('✅ Ubicación guardada en Supabase:', coords);
-                    }
-                }
-            },
-            (err) => {
-                console.error("Error en watchPosition:", err);
-                if(err.code === 1) {
-                    mostrarToast("❌ Permite el acceso a tu ubicación", true);
-                } else if(err.code === 3) {
-                    mostrarToast("⚠️ Tiempo de espera agotado - Reintentando...", true);
-                }
-            },
-            options
-        );
-        
-        mostrarToast("🟢 Buscando tu ubicación...");
-        
-    } else {
+    if(!("geolocation" in navigator)) {
         mostrarToast("⚠️ Tu navegador no soporta geolocalización", true);
+        return;
     }
+    
+    mostrarToast("📍 Obteniendo ubicación...");
+    
+    const options = {
+        enableHighAccuracy: true,
+        maximumAge: 5000,      // ✅ Aceptar ubicación de hasta 5 segundos
+        timeout: 8000          // ✅ Timeout más rápido
+    };
+    
+    // ✅ PRIMERO: Obtener ubicación rápida con getCurrentPosition
+    navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+            const coords = { 
+                lat: pos.coords.latitude, 
+                lng: pos.coords.longitude 
+            };
+            
+            console.log("📍 Ubicación inicial obtenida en:", Date.now());
+            
+            // Guardar inmediatamente
+            ultimaUbicacionEnviada = coords;
+            
+            // Crear marcador si no existe
+            if(!userMarker) {
+                userMarker = crearMarcadorDelivery(
+                    coords.lat, 
+                    coords.lng, 
+                    currentUser.nombre, 
+                    isOnline ? '#10B981' : '#9CA3AF'
+                );
+                userMarker.addTo(map);
+            } else {
+                userMarker.setLatLng(coords);
+            }
+            
+            // Centrar mapa inmediatamente
+            map.setView([coords.lat, coords.lng], 15);
+            
+            // ✅ Guardar en Supabase SOLO si está online
+            if(currentUser && isOnline) {
+                await guardarUbicacionEnSupabase(
+                    currentUser.id,
+                    currentUser.nombre,
+                    coords.lat,
+                    coords.lng,
+                    true
+                );
+                console.log("✅ Ubicación guardada en Supabase");
+            }
+            
+            mostrarToast("✅ Ubicación detectada");
+        },
+        (err) => {
+            console.error("Error en ubicación inicial:", err);
+            if(err.code === 1) {
+                mostrarToast("❌ Permite el acceso a tu ubicación", true);
+            } else {
+                mostrarToast("⚠️ Buscando GPS... espera 5 segundos", true);
+                // ✅ Segundo intento después de 3 segundos
+                setTimeout(() => {
+                    if(!ultimaUbicacionEnviada) {
+                        obtenerUbicacionAlternativa();
+                    }
+                }, 3000);
+            }
+        },
+        options
+    );
+    
+    // ✅ DESPUÉS: Iniciar watch para seguimiento continuo (con menos frecuencia)
+    if(watchId) navigator.geolocation.clearWatch(watchId);
+    
+    watchId = navigator.geolocation.watchPosition(
+        async (pos) => {
+            const coords = { 
+                lat: pos.coords.latitude, 
+                lng: pos.coords.longitude 
+            };
+            
+            // ✅ Reducir frecuencia: solo actualizar si movió más de 20 metros
+            if (ultimaUbicacionEnviada) {
+                const distancia = calcularDistanciaMetros(ultimaUbicacionEnviada, coords);
+                if (distancia < 20) {
+                    return; // No actualizar si movió menos de 20 metros
+                }
+            }
+            
+            ultimaUbicacionEnviada = coords;
+            
+            if(userMarker) {
+                userMarker.setLatLng(coords);
+            }
+            
+            // ✅ Guardar en Supabase con throttling (máximo cada 5 segundos)
+            if(currentUser && isOnline) {
+                await guardarUbicacionConThrottle(
+                    currentUser.id, 
+                    currentUser.nombre, 
+                    coords.lat, 
+                    coords.lng, 
+                    true
+                );
+            }
+        },
+        (err) => {
+            console.error("Error en watchPosition:", err);
+        },
+        { 
+            enableHighAccuracy: true, 
+            maximumAge: 5000,      // ✅ Aceptar ubicación de hasta 5 segundos
+            timeout: 10000         // ✅ Timeout más amigable
+        }
+    );
+}
+
+// ✅ Función auxiliar: calcular distancia en metros
+function calcularDistanciaMetros(punto1, punto2) {
+    const R = 6371e3; // Metros
+    const φ1 = punto1.lat * Math.PI/180;
+    const φ2 = punto2.lat * Math.PI/180;
+    const Δφ = (punto2.lat - punto1.lat) * Math.PI/180;
+    const Δλ = (punto2.lng - punto1.lng) * Math.PI/180;
+
+    const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ/2) * Math.sin(Δλ/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+    return R * c;
+}
+
+// ✅ Variable para throttle de ubicación
+let ultimoGuardadoUbicacion = 0;
+
+// ✅ Función con throttle para guardar ubicación
+async function guardarUbicacionConThrottle(deliveryId, deliveryNombre, lat, lng, online) {
+    const ahora = Date.now();
+    if (ahora - ultimoGuardadoUbicacion < 5000) {
+        return; // Guardar máximo cada 5 segundos
+    }
+    ultimoGuardadoUbicacion = ahora;
+    
+    await guardarUbicacionEnSupabase(deliveryId, deliveryNombre, lat, lng, online);
+}
+
+// ✅ Función alternativa para obtener ubicación (si falla la primera)
+function obtenerUbicacionAlternativa() {
+    mostrarToast("🔄 Reintentando obtener ubicación...");
+    
+    navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+            const coords = { 
+                lat: pos.coords.latitude, 
+                lng: pos.coords.longitude 
+            };
+            
+            console.log("📍 Ubicación obtenida en segundo intento");
+            ultimaUbicacionEnviada = coords;
+            
+            if(!userMarker) {
+                userMarker = crearMarcadorDelivery(
+                    coords.lat, 
+                    coords.lng, 
+                    currentUser.nombre, 
+                    isOnline ? '#10B981' : '#9CA3AF'
+                );
+                userMarker.addTo(map);
+            } else {
+                userMarker.setLatLng(coords);
+            }
+            
+            map.setView([coords.lat, coords.lng], 15);
+            
+            if(currentUser && isOnline) {
+                await guardarUbicacionEnSupabase(
+                    currentUser.id,
+                    currentUser.nombre,
+                    coords.lat,
+                    coords.lng,
+                    true
+                );
+            }
+            
+            mostrarToast("✅ Ubicación detectada");
+        },
+        (err) => {
+            console.error("Error en segundo intento:", err);
+            mostrarToast("⚠️ Activa el GPS manualmente", true);
+        },
+        { enableHighAccuracy: true, timeout: 8000 }
+    );
 }
 
 function centrarMapa() {
@@ -476,11 +551,22 @@ async function cargarPedidos(force = false) {
         return;
     }
     
-    // ✅ Throttling solo si no es forzado
+    // ✅ Throttling INTELIGENTE: 2 segundos si está online, 5 si está offline
     const ahora = Date.now();
-    if (!force && (ahora - ultimaPeticionPedidos < 5000)) {
-        console.log(`⏳ Throttling: cargarPedidos - demasiado rápido`);
-        return;
+    let tiempoEspera = 5000; // Valor por defecto
+    
+    if (!force) {
+        // Si está online, reducir throttling a 2 segundos
+        if (isOnline) {
+            tiempoEspera = 2000;  // ⚡ 2 segundos cuando está conectado
+        } else {
+            tiempoEspera = 5000;  // 5 segundos cuando está offline
+        }
+        
+        if (ahora - ultimaPeticionPedidos < tiempoEspera) {
+            console.log(`⏳ Throttling: cargarPedidos - demasiado rápido (${tiempoEspera/1000}s)`);
+            return;
+        }
     }
     ultimaPeticionPedidos = ahora;
     
@@ -838,46 +924,71 @@ async function toggleOnline() {
     const span = document.getElementById("onlineStatusText");
     
     if(isOnline) {
+        // ✅ Cambiar UI inmediatamente (sin esperar)
         btn.classList.remove("bg-gray-500");
         btn.classList.add("bg-green-500", "hover:bg-green-600");
         span.innerHTML = '<i class="fas fa-circle online-dot mr-1"></i> En línea';
-        mostrarToast("✅ Estás en línea - Los clientes verán que estás disponible");
+        mostrarToast("✅ Conectado - Buscando ubicación...");
         
         if(currentUser) {
             currentUser.online = true;
             localStorage.setItem('sesion_activa', JSON.stringify(currentUser));
             
-            await setDeliveryOnlineSupabase(currentUser.id, true);
+            // ✅ No esperar a Supabase para continuar
+            setDeliveryOnlineSupabase(currentUser.id, true).catch(console.error);
             
+            // ✅ Obtener ubicación INMEDIATAMENTE
             if (userMarker) {
                 const coords = userMarker.getLatLng();
                 await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, coords.lat, coords.lng, true);
+                mostrarToast("📍 Ubicación compartida");
+            } else {
+                // ✅ Si no hay marcador, forzar obtención de ubicación
+                setTimeout(() => {
+                    if (!userMarker) {
+                        startLocationTracking();
+                    }
+                }, 500);
             }
         }
-        cargarPedidos(true);
         
+        // ✅ Cargar pedidos inmediatamente (sin esperar throttling)
+        await cargarPedidos(true);
+        
+        // ✅ Iniciar intervalo de actualización de ubicación (cada 8 segundos, no 4)
         if(ubicacionInterval) clearInterval(ubicacionInterval);
         ubicacionInterval = setInterval(async () => {
-            if(userMarker && currentUser && isOnline) {
-                const coords = userMarker.getLatLng();
-                await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, coords.lat, coords.lng, true);
+            if(userMarker && currentUser && isOnline && ultimaUbicacionEnviada) {
+                await guardarUbicacionConThrottle(
+                    currentUser.id, 
+                    currentUser.nombre, 
+                    ultimaUbicacionEnviada.lat, 
+                    ultimaUbicacionEnviada.lng, 
+                    true
+                );
             }
-        }, 4000);
+        }, 8000); // ✅ Reducido de 4s a 8s
+        
     } else {
         btn.classList.remove("bg-green-500", "hover:bg-green-600");
         btn.classList.add("bg-gray-500");
         span.innerHTML = 'Conectarse';
-        mostrarToast("📴 Estás offline - No recibirás pedidos");
+        mostrarToast("📴 Offline - No recibirás pedidos");
         
         if(currentUser) {
             currentUser.online = false;
             localStorage.setItem('sesion_activa', JSON.stringify(currentUser));
             
-            await setDeliveryOnlineSupabase(currentUser.id, false);
+            setDeliveryOnlineSupabase(currentUser.id, false).catch(console.error);
             
-            if (userMarker) {
-                const coords = userMarker.getLatLng();
-                await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, coords.lat, coords.lng, false);
+            if (userMarker && ultimaUbicacionEnviada) {
+                await guardarUbicacionEnSupabase(
+                    currentUser.id, 
+                    currentUser.nombre, 
+                    ultimaUbicacionEnviada.lat, 
+                    ultimaUbicacionEnviada.lng, 
+                    false
+                );
             }
         }
         if(ubicacionInterval) clearInterval(ubicacionInterval);
@@ -921,30 +1032,88 @@ async function verHistorial() {
 
 function verPerfil() { alert(`👤 ${currentUser?.nombre}\n📧 ${currentUser?.email}\n🏍️ Delivery`); }
 
-function cerrarSesion() { 
-    if(watchId) navigator.geolocation.clearWatch(watchId);
+// ==================== MODAL DE CONFIRMACIÓN MEJORADO ====================
+function mostrarModalConfirmacionDeliveryPersonalizado(titulo, mensaje, onConfirm) {
+    // Eliminar modal existente si hay
+    let modalExistente = document.getElementById("modalConfirmacionDeliveryPersonalizado");
+    if (modalExistente) modalExistente.remove();
     
-    if(ubicacionInterval) {
-        clearInterval(ubicacionInterval);
-        ubicacionInterval = null;
-    }
+    const modal = document.createElement('div');
+    modal.id = "modalConfirmacionDeliveryPersonalizado";
+    modal.className = "fixed inset-0 bg-black bg-opacity-95 flex items-center justify-center z-[100000] p-4";
+    modal.innerHTML = `
+        <div class="bg-gray-800 rounded-3xl max-w-sm w-full modal-uber text-center p-6" style="animation: slideUp 0.3s ease-out;">
+            <div class="w-20 h-20 bg-orange-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                <i class="fas fa-motorcycle text-4xl text-orange-500"></i>
+            </div>
+            <h3 class="text-2xl font-bold text-white mb-3">${titulo}</h3>
+            <p class="text-gray-300 text-base mb-8">${mensaje}</p>
+            <div class="flex gap-3">
+                <button id="btnCancelarConfirmDelivery" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-3 rounded-xl transition-all text-base">
+                    Cancelar
+                </button>
+                <button id="btnAceptarConfirmDelivery" class="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3 rounded-xl transition-all text-base">
+                    <i class="fas fa-sign-out-alt mr-2"></i>SALIR
+                </button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // Eventos
+    document.getElementById("btnAceptarConfirmDelivery").onclick = () => {
+        modal.remove();
+        if (onConfirm) onConfirm();
+    };
+    
+    document.getElementById("btnCancelarConfirmDelivery").onclick = () => {
+        modal.remove();
+    };
+    
+    // Cerrar al hacer clic fuera
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.remove();
+        }
+    });
+}
 
-    if(cargaPedidosInterval) {
-        clearInterval(cargaPedidosInterval);
-        cargaPedidosInterval = null;
-    }
-    
-    limpiarRutasYMarcadores();
-    
-    if(currentUser && typeof guardarUbicacionEnSupabase !== 'undefined' && userMarker) {
-        const coords = userMarker.getLatLng();
-        guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, coords.lat, coords.lng, false);
-    }
-    
-    if(confirm("¿Cerrar sesión?")){ 
-        localStorage.removeItem('sesion_activa'); 
-        window.location.href = "index.html"; 
-    } 
+function cerrarSesion() { 
+    mostrarModalConfirmacionDeliveryPersonalizado(
+        "Cerrar Sesión",
+        "¿Estás seguro de que deseas cerrar sesión?",
+        () => {
+            // Limpiar recursos
+            if(watchId) navigator.geolocation.clearWatch(watchId);
+            
+            if(ubicacionInterval) {
+                clearInterval(ubicacionInterval);
+                ubicacionInterval = null;
+            }
+
+            if(cargaPedidosInterval) {
+                clearInterval(cargaPedidosInterval);
+                cargaPedidosInterval = null;
+            }
+            
+            limpiarRutasYMarcadores();
+            
+            // Actualizar estado offline en Supabase
+            if(currentUser && typeof guardarUbicacionEnSupabase !== 'undefined' && userMarker) {
+                const coords = userMarker.getLatLng();
+                guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, coords.lat, coords.lng, false);
+            }
+            
+            if(currentUser && isOnline && supabaseClient) {
+                setDeliveryOnlineSupabase(currentUser.id, false).catch(console.error);
+            }
+            
+            // Limpiar sesión y redirigir
+            localStorage.removeItem('sesion_activa'); 
+            window.location.href = "index.html"; 
+        }
+    );
 }
 
 async function actualizarColorMarcador() {
@@ -1187,4 +1356,12 @@ function mostrarModalConfirmacionDelivery(titulo, mensaje) {
 window.onload = () => { 
     loadUser(); 
     initMap();
+    
+    // ✅ Si ya está online, conectar ubicación inmediatamente
+    if (isOnline) {
+        setTimeout(() => {
+            startLocationTracking();
+            cargarPedidos(true);
+        }, 500);
+    }
 };
