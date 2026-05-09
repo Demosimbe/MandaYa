@@ -2,6 +2,9 @@
 const SUPABASE_URL = 'https://ewjljddexyajxuzzzssp.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3amxqZGRleHlhanh1enp6c3NwIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3ODAyMDExOSwiZXhwIjoyMDkzNTk2MTE5fQ.Xcb3vGH7a7Q0RA9-RlnZ1wUrWNXAV7YxEWiTPGsOMPU';
 
+// ========== STADIA MAPS API KEY ==========
+const STADIA_API_KEY = '6da7a1a6-f0dd-4838-acd7-c3926d763794';
+
 let supabaseClient = null;
 
 // Inicializar Supabase
