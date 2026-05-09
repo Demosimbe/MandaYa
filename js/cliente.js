@@ -14,8 +14,15 @@ let rutaActualTipo = null;
 let rutaDestinoActual = null;
 let isUserInteracting = false;
 let ultimoCentroDelivery = null;
+let ultimaRutaDibujada = null;
 // Variable para evitar agregar listeners múltiples veces
 let listenersAgregados = false;
+let userMarker = null;
+let watchId = null;
+let ultimaUbicacionEnviada = null;
+let locationTrackingActive = false;
+let ultimaPosicionDelivery = null;  // ← NUEVA VARIABLE GLOBAL
+let ultimoZoom = null;              // ← NUEVA: Detecta cambios de zoom
 
 // Usuario y pedidos
 let currentUser = null;
@@ -434,7 +441,113 @@ function crearMarcadoresIniciales() {
               setTimeout(() => actualizarRutaYTarifa(), 500);
               console.log("✅ Marcadores creados correctamente");
           }
-            
+
+
+            // ==================== INICIAR SEGUIMIENTO DE UBICACIÓN (CLIENTE) ====================
+function startLocationTracking(intentos = 0) {
+    const maxIntentos = 6;
+
+    if (locationTrackingActive && intentos === 0) return;
+    if (intentos === 0) locationTrackingActive = true;
+
+    if (!map || !map.loaded()) {
+        if (intentos < maxIntentos) {
+            setTimeout(() => startLocationTracking(intentos + 1), 1000);
+            return;
+        }
+        console.error("❌ Mapa no cargó");
+        return;
+    }
+
+    console.log("📍 Iniciando geolocalización para cliente...");
+
+    const options = {
+        enableHighAccuracy: true,
+        maximumAge: 0,
+        timeout: 15000
+    };
+
+    if (watchId) navigator.geolocation.clearWatch(watchId);
+
+    // Primera ubicación
+    navigator.geolocation.getCurrentPosition(
+        (pos) => {
+            const lng = pos.coords.longitude;
+            const lat = pos.coords.latitude;
+
+            console.log(`📍 Ubicación del cliente: [${lng}, ${lat}]`);
+
+            ultimaUbicacionEnviada = { lat, lng };
+
+            // Crear / actualizar marcador del cliente
+            if (userMarker) userMarker.remove();
+
+            const primerNombre = (currentUser?.nombre || 'Cliente').split(' ')[0];
+
+            const markerDiv = document.createElement('div');
+            markerDiv.innerHTML = `
+                <div style="position:relative; display:flex; flex-direction:column; align-items:center;">
+                    <div style="background:rgba(0,0,0,0.8); color:white; font-size:12px; padding:4px 12px; border-radius:20px; margin-bottom:6px;">
+                        ${primerNombre}
+                    </div>
+                    <div style="background:#3B82F6; width:38px; height:38px; border-radius:50%; border:3px solid white; display:flex; align-items:center; justify-content:center;">
+                        <i class="fas fa-user" style="color:white; font-size:20px;"></i>
+                    </div>
+                </div>
+            `;
+
+            userMarker = new maplibregl.Marker({
+                element: markerDiv,
+                anchor: 'bottom'
+            })
+            .setLngLat([lng, lat])
+            .addTo(map);
+
+            // Centrar correctamente (opcional - el cliente puede ver todo el mapa)
+            // Solo centrar si es la primera vez o si el usuario no ha interactuado
+            if (!isUserInteracting) {
+                map.flyTo({
+                    center: [lng, lat],
+                    zoom: 15,
+                    duration: 1400,
+                    essential: true
+                });
+            }
+
+            mostrarToast("📍 Tu ubicación detectada");
+
+            // Watch continuo (solo para mover el marcador del cliente en el mapa)
+            watchId = navigator.geolocation.watchPosition(
+                (pos2) => {
+                    if (!userMarker) return;
+                    
+                    const newLng = pos2.coords.longitude;
+                    const newLat = pos2.coords.latitude;
+
+                    if (ultimaUbicacionEnviada) {
+                        const dist = calcularDistanciaMetros(ultimaUbicacionEnviada.lat, ultimaUbicacionEnviada.lng, newLat, newLng);
+                        if (dist < 18) return; // Solo actualizar si se movió más de 18 metros
+                    }
+
+                    ultimaUbicacionEnviada = { lat: newLat, lng: newLng };
+                    userMarker.setLngLat([newLng, newLat]);
+                    console.log(`📍 Cliente se movió a: [${newLng.toFixed(6)}, ${newLat.toFixed(6)}]`);
+                },
+                (err) => console.error("Error watchPosition cliente:", err),
+                options
+            );
+        },
+        (err) => {
+            console.error("Error getCurrentPosition:", err);
+            if (err.code === 1) {
+                mostrarToast("❌ Debes permitir el acceso a la ubicación para ver tu posición", true);
+            } else if (intentos < 4) {
+                setTimeout(() => startLocationTracking(intentos + 1), 2000);
+            }
+        },
+        options
+    );
+}
 
 // CORREGIR en cliente.js
 function actualizarMarcadorOrigen(lat, lng) {
@@ -710,25 +823,22 @@ function crearMarcadorDelivery(delivery) {
     }
     
     try {
-        // Extraer solo el primer nombre
         let nombreMostrar = delivery.nombre || 'Delivery';
         const primerNombre = nombreMostrar.trim().split(' ')[0];
         
         const markerDiv = document.createElement('div');
         const color = delivery.online ? '#10B981' : '#6B7280';
         
+        // ✅ Versión CORREGIDA - con optimizaciones para evitar movimiento durante zoom
         markerDiv.innerHTML = `
-            <div style="position: relative; transform: translateY(-100%); display: flex; flex-direction: column; align-items: center;">
-                <!-- Nombre con fondo más suave y bordes redondeados -->
+            <div style="position: relative; transform: translateY(-100%); display: flex; flex-direction: column; align-items: center; will-change: transform; transform: translateZ(0);">
                 <div style="background:rgba(0,0,0,0.7); backdrop-filter: blur(4px); color:white; font-size:11px; font-weight:500; padding:4px 10px; border-radius:20px; margin-bottom:6px; white-space:nowrap; box-shadow: 0 1px 4px rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.2);">
                     ${primerNombre}
                 </div>
-                <!-- Círculo de la moto -->
-                <div style="background-color: ${color}; width:32px; height:32px; border-radius:50%; border:2.5px solid white; display:flex; align-items:center; justify-content:center; box-shadow: 0 2px 6px rgba(0,0,0,0.3);">
+                <div style="background-color: ${color}; width:32px; height:32px; border-radius:50%; border:2.5px solid white; display:flex; align-items:center; justify-content:center; box-shadow: 0 2px 6px rgba(0,0,0,0.3); transition: none; transform: translateZ(0);">
                     <i class="fas fa-motorcycle" style="color:white; font-size:16px;"></i>
                 </div>
-                <!-- Punta hacia abajo -->
-                <div style="position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%);
+                <div style="position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%); transition: none;
                             width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent;
                             border-top: 8px solid ${color};">
                 </div>
@@ -741,6 +851,7 @@ function crearMarcadorDelivery(delivery) {
             anchor: 'bottom'
         }).setLngLat([delivery.lng, delivery.lat]).addTo(map);
         
+        // Popup con estado
         const estado = delivery.online ? '🟢 En línea' : '⚫ Desconectado';
         const popup = new maplibregl.Popup({ offset: [0, -40] })
             .setHTML(`<b>🏍️ ${primerNombre}</b><br>${estado}`);
@@ -748,7 +859,7 @@ function crearMarcadorDelivery(delivery) {
         
         return marker;
     } catch(e) {
-        console.error("❌ Error:", e);
+        console.error("❌ Error creando marcador delivery:", e);
         return null;
     }
 }
@@ -1267,7 +1378,7 @@ function iniciarSeguimientoDelivery() {
     }, 3000);
 }
 
-// ==================== SEGUIMIENTO DEL DELIVERY (IGUAL A DELIVERY.JS) ====================
+// ==================== SEGUIMIENTO DEL DELIVERY (VERSIÓN CORREGIDA - SIN MOVIMIENTO FANTASMA) ====================
 function seguirUbicacionDelivery(deliveryId) {
     if (ubicacionInterval) {
         clearInterval(ubicacionInterval);
@@ -1275,95 +1386,122 @@ function seguirUbicacionDelivery(deliveryId) {
     }
 
     ubicacionInterval = setInterval(async () => {
-        if (!pedidoActual || !deliveryId || !map) return;
+        if (!pedidoActual || !map) return;
+
+        // ✅ DETECTAR SI EL USUARIO ESTÁ HACIENDO ZOOM
+        if (map.isMoving() || map.isZooming()) {
+            console.log("⏸️ Usuario haciendo zoom - NO actualizar marcador");
+            return; // No actualizar durante zoom o movimiento
+        }
 
         const ubicacion = await obtenerUbicacionDeSupabase(deliveryId);
-        if (!ubicacion || !ubicacion.lat || !ubicacion.lng) return;
+        if (!ubicacion?.lat || !ubicacion?.lng) return;
 
-        const deliveryPos = { lng: ubicacion.lng, lat: ubicacion.lat };
-
-        // Actualizar marcador
-        if (deliveryMarker) {
-            deliveryMarker.setLngLat([deliveryPos.lng, deliveryPos.lat]);
+        let cambioSignificativo = false;
+        
+        if (!ultimaPosicionDelivery) {
+            cambioSignificativo = true;
         } else {
-            deliveryMarker = crearMarcadorDelivery({
-                id: deliveryId,
-                nombre: pedidoActual?.delivery_nombre || 'Delivery',
-                lat: deliveryPos.lat,
-                lng: deliveryPos.lng,
-                online: true
-            });
-            if (deliveryMarker) deliveryMarker.addTo(map);
+            const distanciaMovida = calcularDistanciaMetros(
+                ultimaPosicionDelivery.lat, 
+                ultimaPosicionDelivery.lng, 
+                ubicacion.lat, 
+                ubicacion.lng
+            );
+            cambioSignificativo = distanciaMovida > 8;
         }
 
-        // ✅ ACTUALIZAR RUTA SIN MOVER EL MAPA (esto era el culpable del temblor)
-        if (pedidoActual) {
-            let destinoRuta = null;
-            let tipoRuta = pedidoActual.estado === 'asignado' ? 'recogida' : 'entrega';
-
-            if (pedidoActual.estado === 'asignado' && pedidoActual.origen_lat) {
-                destinoRuta = { lat: pedidoActual.origen_lat, lng: pedidoActual.origen_lng };
-            } else if (pedidoActual.estado === 'recogido' && pedidoActual.destino_lat) {
-                destinoRuta = { lat: pedidoActual.destino_lat, lng: pedidoActual.destino_lng };
+        if (cambioSignificativo) {
+            ultimaPosicionDelivery = { lat: ubicacion.lat, lng: ubicacion.lng };
+            
+            if (deliveryMarker) {
+                deliveryMarker.setLngLat([ubicacion.lng, ubicacion.lat]);
+            } else {
+                deliveryMarker = crearMarcadorDelivery({
+                    id: deliveryId,
+                    nombre: pedidoActual?.delivery_nombre || 'Delivery',
+                    lat: ubicacion.lat,
+                    lng: ubicacion.lng,
+                    online: true
+                });
+                if (deliveryMarker) deliveryMarker.addTo(map);
             }
 
-            if (destinoRuta) {
-                await dibujarRutaDeliverySinCentrar(deliveryPos, destinoRuta, tipoRuta);
+            if (pedidoActual) {
+                let destinoRuta = null;
+                let tipoRuta = pedidoActual.estado === 'asignado' ? 'recogida' : 'entrega';
+
+                if (pedidoActual.estado === 'asignado' && pedidoActual.origen_lat) {
+                    destinoRuta = { lat: pedidoActual.origen_lat, lng: pedidoActual.origen_lng };
+                } else if (pedidoActual.estado === 'recogido' && pedidoActual.destino_lat) {
+                    destinoRuta = { lat: pedidoActual.destino_lat, lng: pedidoActual.destino_lng };
+                }
+
+                if (destinoRuta) {
+                    await dibujarRutaDeliverySinCentrar(
+                        { lng: ubicacion.lng, lat: ubicacion.lat }, 
+                        destinoRuta, 
+                        tipoRuta
+                    );
+                }
             }
         }
-    }, 3000); // ← Cada 3 segundos es suficiente
+        
+    }, 5000);
 }
 
-// Nueva función que NO fuerza el centro del mapa (Versión optimizada)
-async function dibujarRutaDeliverySinCentrar(ubicacionDelivery, destinoCoords, tipo) {
-    if (!ubicacionDelivery || !destinoCoords || !map) {
-        console.log("❌ Faltan coordenadas o mapa no listo");
+// Función auxiliar para calcular distancia en metros
+function calcularDistanciaMetros(lat1, lon1, lat2, lon2) {
+    const R = 6371; // Radio de la Tierra en km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c * 1000; // Distancia en metros
+}
+
+async function dibujarRutaDeliverySinCentrar(origin, dest, tipo) {
+    if (!map || !origin || !dest) return;
+
+    // ✅ VERIFICAR SI LA RUTA YA ESTÁ DIBUJADA Y NO CAMBIÓ
+    const claveRuta = `${origin.lat.toFixed(6)},${origin.lng.toFixed(6)}-${dest.lat.toFixed(6)},${dest.lng.toFixed(6)}-${tipo}`;
+    
+    if (ultimaRutaDibujada === claveRuta) {
+        console.log("🟢 Ruta idéntica - No redibujar");
         return;
     }
     
+    ultimaRutaDibujada = claveRuta;
+    console.log("🔄 Redibujando ruta del delivery...");
+
     const color = tipo === 'recogida' ? '#10B981' : '#FF6200';
     const layerId = 'delivery-route';
 
-    // Limpiar ruta anterior
+    // Limpiar anterior
     try {
         if (map.getLayer(layerId)) map.removeLayer(layerId);
         if (map.getSource(layerId)) map.removeSource(layerId);
     } catch(e) {}
 
     try {
-        const response = await fetch(
-            `https://router.project-osrm.org/route/v1/driving/${ubicacionDelivery.lng},${ubicacionDelivery.lat};${destinoCoords.lng},${destinoCoords.lat}?overview=full&geometries=geojson`
-        );
-        
+        const response = await fetch(`https://router.project-osrm.org/route/v1/driving/${origin.lng},${origin.lat};${dest.lng},${dest.lat}?overview=full&geometries=geojson`);
         const data = await response.json();
-        
+
         if (data.routes && data.routes[0]) {
-            const route = data.routes[0];
-
-            map.addSource(layerId, {
-                type: 'geojson',
-                data: route.geometry
-            });
-
+            map.addSource(layerId, { type: 'geojson', data: data.routes[0].geometry });
             map.addLayer({
                 id: layerId,
                 type: 'line',
                 source: layerId,
-                layout: {
-                    'line-join': 'round',
-                    'line-cap': 'round'
-                },
-                paint: {
-                    'line-color': color,
-                    'line-width': 5.5,      // Un poco más visible
-                    'line-opacity': 0.85
-                }
+                layout: { 'line-join': 'round', 'line-cap': 'round' },
+                paint: { 'line-color': color, 'line-width': 5.5, 'line-opacity': 0.85 }
             });
-
-            console.log(`✅ Ruta ${tipo} actualizada (${(route.distance / 1000).toFixed(2)} km)`);
+            console.log("✅ Ruta del delivery dibujada/actualizada");
         }
     } catch(e) {
-        console.error('Error dibujando ruta delivery:', e);
+        console.error("❌ Error dibujando ruta delivery:", e);
     }
 }
 
