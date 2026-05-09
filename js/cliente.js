@@ -15,24 +15,25 @@ let rutaDestinoActual = null;
 let isUserInteracting = false;
 let ultimoCentroDelivery = null;
 let ultimaRutaDibujada = null;
-// Variable para evitar agregar listeners múltiples veces
 let listenersAgregados = false;
 let userMarker = null;
 let watchId = null;
 let ultimaUbicacionEnviada = null;
 let locationTrackingActive = false;
-let ultimaPosicionDelivery = null;  // ← NUEVA VARIABLE GLOBAL
-let ultimoZoom = null;              // ← NUEVA: Detecta cambios de zoom
+let ultimaPosicionDelivery = null;
+let ultimoZoom = null;
+let actualizandoDelivery = false;
+let ultimoZoomEnd = Date.now();
 
 // Usuario y pedidos
 let currentUser = null;
 let pedidoActual = null;
 let pedidoPendiente = null;
 let ultimoEstadoPedido = null;
-let deliveryMarker = null;  // ✅ Agregar
+let deliveryMarker = null;
 
 // Modos y control UI
-let selectMode = 'origen';  // 'origen' o 'destino'
+let selectMode = 'origen';
 let clienteRouteControl = null;
 
 // Intervalos y seguimiento
@@ -44,14 +45,13 @@ let deliverysInterval = null;
 let ultimaPeticionTime = 0;
 let ultimaPeticionDeliverys = 0;
 let paginaVisible = true;
-// ✅ Array para marcadores de deliverys (VERSIÓN GLOBAL)
 window.deliveryMarkers = [];
 
 // ==================== OBTENER UBICACIÓN DE DELIVERY DESDE SUPABASE ====================
 async function obtenerUbicacionDeSupabase(deliveryId) {
-    const supabase = supabaseClient;
+    const supabase = window.supabaseClient;
     if (!supabase) {
-        console.warn("⚠️ Supabase no disponible para obtener ubicación");
+        console.warn("⚠️ Supabase no disponible");
         return null;
     }
     
@@ -60,7 +60,7 @@ async function obtenerUbicacionDeSupabase(deliveryId) {
             .from('ubicaciones')
             .select('lat, lng, updated_at, online')
             .eq('delivery_id', deliveryId)
-            .maybeSingle();  // Usar maybeSingle para evitar error si no existe
+            .maybeSingle();
         
         if (error) {
             console.error("❌ Error obteniendo ubicación:", error);
@@ -68,21 +68,8 @@ async function obtenerUbicacionDeSupabase(deliveryId) {
         }
         
         if (!data) {
-            console.log(`⏳ No hay ubicación registrada para delivery ${deliveryId}`);
             return null;
         }
-        
-        // Verificar si la ubicación es reciente (menos de 30 segundos)
-        const updatedAt = new Date(data.updated_at);
-        const ahora = new Date();
-        const segundosDesdeActualizacion = (ahora - updatedAt) / 1000;
-        
-        if (segundosDesdeActualizacion > 30) {
-            console.log(`⚠️ Ubicación de delivery ${deliveryId} no es reciente (${segundosDesdeActualizacion}s)`);
-            // Aún así devolvemos la ubicación, pero con advertencia
-        }
-        
-        console.log(`📍 Ubicación obtenida: delivery ${deliveryId} -> [${data.lng}, ${data.lat}]`);
         
         return {
             lat: data.lat,
@@ -92,7 +79,7 @@ async function obtenerUbicacionDeSupabase(deliveryId) {
         };
         
     } catch(e) {
-        console.error('❌ Error en obtenerUbicacionDeSupabase:', e);
+        console.error('❌ Error:', e);
         return null;
     }
 }
@@ -102,8 +89,7 @@ function bloquearUIporPedidoActivo(bloquear) {
     const elementos = {
         inputs: ['origen', 'destino'],
         select: 'tipoEnvio',
-        botones: ['btnOrigen', 'btnDestino'],
-        botonSolicitar: 'solicitarEnvio'
+        botones: ['btnOrigen', 'btnDestino']
     };
     
     if (bloquear) {
@@ -136,26 +122,13 @@ function bloquearUIporPedidoActivo(bloquear) {
             map.getCanvas().style.cursor = 'default';
         }
         
-        const btnSolicitar = document.querySelector('button[onclick="solicitarEnvio()"], button[onclick="solicitarEnvioMobile()"]');
+        const btnSolicitar = document.querySelector('button[onclick="solicitarEnvio()"]');
         if (btnSolicitar) {
             btnSolicitar.disabled = true;
             btnSolicitar.classList.add('opacity-50', 'cursor-not-allowed');
         }
         
-        const origenInput = document.getElementById('origen');
-        if (origenInput && !origenInput.placeholder.includes('(Bloqueado)')) {
-            origenInput.placeholder = '📍 Origen (bloqueado - pedido en curso)';
-        }
-        const destinoInput = document.getElementById('destino');
-        if (destinoInput && !destinoInput.placeholder.includes('(Bloqueado)')) {
-            destinoInput.placeholder = '🏁 Destino (bloqueado - pedido en curso)';
-        }
-
-        if (typeof sincronizarBloqueoMobile === 'function') {
-            sincronizarBloqueoMobile(true);
-        }
-        
-        console.log("🔒 UI bloqueada - Pedido activo en curso");
+        console.log("🔒 UI bloqueada");
         
     } else {
         elementos.inputs.forEach(id => {
@@ -163,7 +136,6 @@ function bloquearUIporPedidoActivo(bloquear) {
             if (input) {
                 input.disabled = false;
                 input.classList.remove('bg-gray-100', 'cursor-not-allowed', 'opacity-70');
-                input.placeholder = id === 'origen' ? 'Buscar dirección o arrastra el marcador' : 'Buscar dirección o arrastra el marcador';
             }
         });
         
@@ -188,17 +160,13 @@ function bloquearUIporPedidoActivo(bloquear) {
             map.getCanvas().style.cursor = 'crosshair';
         }
         
-        const btnSolicitar = document.querySelector('button[onclick="solicitarEnvio()"], button[onclick="solicitarEnvioMobile()"]');
+        const btnSolicitar = document.querySelector('button[onclick="solicitarEnvio()"]');
         if (btnSolicitar) {
             btnSolicitar.disabled = false;
             btnSolicitar.classList.remove('opacity-50', 'cursor-not-allowed');
         }
-
-        if (typeof sincronizarBloqueoMobile === 'function') {
-            sincronizarBloqueoMobile(false);
-        }
         
-        console.log("🔓 UI reactivada - Sin pedido activo");
+        console.log("🔓 UI reactivada");
     }
 }
 
@@ -206,29 +174,14 @@ function bloquearUIporPedidoActivo(bloquear) {
 document.addEventListener('visibilitychange', () => {
     paginaVisible = !document.hidden;
     if (paginaVisible) {
-        console.log("🟢 Página visible - Reactivando actualizaciones");
-        if (typeof cargarPedidos === 'function') cargarPedidos();
-        if (typeof cargarDeliverysEnLinea === 'function') cargarDeliverysEnLinea();
+        console.log("🟢 Página visible");
+        cargarDeliverysEnLinea();
     } else {
-        console.log("🔴 Página oculta - Reduciendo actualizaciones");
+        console.log("🔴 Página oculta");
     }
 });
 
-async function peticionConThrottling(funcion, nombre, intervaloMinimo = 3000) {
-    const ahora = Date.now();
-    if (!paginaVisible) {
-        console.log(`⏸️ Página oculta, omitiendo ${nombre}`);
-        return null;
-    }
-    if (ahora - ultimaPeticionTime < intervaloMinimo) {
-        console.log(`⏳ Throttling: ${nombre} - muy rápido`);
-        return null;
-    }
-    ultimaPeticionTime = ahora;
-    return await funcion();
-}
-
-// ==================== INICIALIZACIÓN CON MAPLIBRE (CLIENTE) ====================
+// ==================== INICIALIZACIÓN CON MAPLIBRE ====================
 function initMap() {
     if (map) {
         console.log("⚠️ Mapa ya inicializado");
@@ -246,7 +199,7 @@ function initMap() {
                     type: 'raster',
                     tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
                     tileSize: 256,
-                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                    attribution: '&copy; OpenStreetMap contributors'
                 }
             },
             layers: [{
@@ -266,54 +219,39 @@ function initMap() {
     window.map = map;
     map.addControl(new maplibregl.NavigationControl(), 'top-right');
 
-   map.on('load', () => {
-    console.log('✅ Mapa Cliente cargado correctamente');
-    
-    crearMarcadoresIniciales();
-    
-    // ✅ Cargar deliverys SOLO después de que el mapa está listo
-    setTimeout(() => {
-        if (typeof cargarDeliverysEnLinea === 'function') {
-            cargarDeliverysEnLinea();  // ← Llamada directa, sin verificación extra
-        }
-    }, 1000);  // ← Reducido a 1 segundo
-
-            console.log("👆 Listeners de interacción del usuario activados");
-    });
-
-    // ==================== LIMITADOR SUAVE DE BOUNDS ====================
-    let ajustando = false;
-
-    map.on('moveend', () => {
-        if (ajustando) return;
-
-        const center = map.getCenter();
+    map.on('load', () => {
+        console.log('✅ Mapa Cliente cargado');
+        crearMarcadoresIniciales();
         
-        if (center.lng < -91.98 || center.lng > -91.65 || 
-            center.lat < 18.45 || center.lat > 18.80) {
-            
-            ajustando = true;
-            
-            map.flyTo({
-                center: [-91.8249, 18.6456],
-                zoom: Math.min(map.getZoom(), 15),
-                duration: 900,
-                essential: true
-            });
-            
-            setTimeout(() => ajustando = false, 1200);
-        }
+        setTimeout(() => {
+            cargarDeliverysEnLinea();
+            startLocationTracking();
+        }, 1000);
+    });
+
+    // Escuchar eventos de zoom
+    map.on('zoomstart', () => {
+        ultimoZoomEnd = 0;
     });
     
-    console.log("✅ Mapa Cliente inicializado (estilo Delivery)");
+    map.on('zoomend', () => {
+        ultimoZoomEnd = Date.now();
+    });
+    
+    map.on('movestart', () => {
+        // No hacer nada, solo registrar
+    });
+    
+    map.on('moveend', () => {
+        ultimoZoomEnd = Date.now();
+    });
 }
 
-// Agregar en cliente.js
+// ==================== CALCULAR TARIFA ====================
 function calculateShippingRate(distanceKm, tipo) {
     const km = parseFloat(distanceKm);
     let baseRate = 0;
     
-    // Tarifa base por distancia
     if (km <= 1) baseRate = 30;
     else if (km <= 2) baseRate = 35;
     else if (km <= 3) baseRate = 40;
@@ -323,23 +261,20 @@ function calculateShippingRate(distanceKm, tipo) {
     else if (km <= 7) baseRate = 70;
     else baseRate = 70 + ((km - 7) * 10);
     
-    // Ajuste por tipo de envío
     if (tipo === 'comida') baseRate += 5;
     else if (tipo === 'farmacia') baseRate += 5;
     else if (tipo === 'mercancia') baseRate += 10;
     
     return { 
         total: Math.round(baseRate), 
-        base: Math.round(baseRate), 
-        porKm: null 
+        base: Math.round(baseRate)
     };
 }
 
-// CORREGIR en cliente.js - Usar la función correcta
+// ==================== CREAR MARCADORES INICIALES ====================
 function crearMarcadoresIniciales() {
-    console.log("🟢 Creando marcadores arrastrables...");
+    console.log("🟢 Creando marcadores...");
     
-    // Limpiar marcadores existentes
     if (originMarker) {
         try { originMarker.remove(); } catch(e) {}
         originMarker = null;
@@ -349,65 +284,53 @@ function crearMarcadoresIniciales() {
         destMarker = null;
     }
     
-    // Crear marcador ORIGEN usando la función global
-    if (typeof crearMarcadorCirculo !== 'undefined') {
-        originMarker = crearMarcadorCirculo(map, -91.8249, 18.6456, '#FF6200', 'fa-circle', 'ORIGEN');
-    } else {
-        // Fallback si no existe la función
-        const el = document.createElement('div');
-        el.style.cssText = 'background:#FF6200; width:32px; height:32px; border-radius:50%; border:3px solid white; cursor:grab;';
-        originMarker = new maplibregl.Marker({ element: el, draggable: true })
-            .setLngLat([-91.8249, 18.6456])
-            .addTo(map);
-    }
+    // Marcador ORIGEN
+    const elOrigen = document.createElement('div');
+    elOrigen.style.cssText = 'background:#FF6200; width:32px; height:32px; border-radius:50%; border:3px solid white; cursor:grab; display:flex; align-items:center; justify-content:center;';
+    elOrigen.innerHTML = '<i class="fas fa-circle" style="color:white; font-size:14px;"></i>';
     
-    // Evento dragend para origen
-    if (originMarker) {
-        originMarker.on('dragend', () => {
-            const { lng, lat } = originMarker.getLngLat();
-            if (lat >= 18.58 && lat <= 18.70 && lng >= -91.88 && lng <= -91.75) {
-                originCoords = { lat, lng };
-                reverseGeocode(originCoords, (addr) => {
-                    document.getElementById("origen").value = addr;
-                    if (document.getElementById("origenMobile")) document.getElementById("origenMobile").value = addr;
-                });
-                actualizarRutaYTarifa();
-                mostrarToast("📍 Origen actualizado");
-            } else {
-                mostrarToast("❌ Ubicación fuera de Ciudad del Carmen", true);
-                if (originCoords) originMarker.setLngLat([originCoords.lng, originCoords.lat]);
-            }
-        });
-    }
+    originMarker = new maplibregl.Marker({ element: elOrigen, draggable: true })
+        .setLngLat([-91.8249, 18.6456])
+        .addTo(map);
     
-    // Crear marcador DESTINO
-    if (typeof crearMarcadorCirculo !== 'undefined') {
-        destMarker = crearMarcadorCirculo(map, -91.8149, 18.6556, '#3B82F6', 'fa-flag-checkered', 'DESTINO');
-    } else {
-        const el = document.createElement('div');
-        el.style.cssText = 'background:#3B82F6; width:32px; height:32px; border-radius:50%; border:3px solid white; cursor:grab;';
-        destMarker = new maplibregl.Marker({ element: el, draggable: true })
-            .setLngLat([-91.8149, 18.6556])
-            .addTo(map);
-    }
+    originMarker.on('dragend', () => {
+        const { lng, lat } = originMarker.getLngLat();
+        if (lat >= 18.58 && lat <= 18.70 && lng >= -91.88 && lng <= -91.75) {
+            originCoords = { lat, lng };
+            reverseGeocode(originCoords, (addr) => {
+                document.getElementById("origen").value = addr;
+            });
+            actualizarRutaYTarifa();
+            mostrarToast("📍 Origen actualizado");
+        } else {
+            mostrarToast("❌ Ubicación fuera de Ciudad del Carmen", true);
+            if (originCoords) originMarker.setLngLat([originCoords.lng, originCoords.lat]);
+        }
+    });
     
-    if (destMarker) {
-        destMarker.on('dragend', () => {
-            const { lng, lat } = destMarker.getLngLat();
-            if (lat >= 18.58 && lat <= 18.70 && lng >= -91.88 && lng <= -91.75) {
-                destCoords = { lat, lng };
-                reverseGeocode(destCoords, (addr) => {
-                    document.getElementById("destino").value = addr;
-                    if (document.getElementById("destinoMobile")) document.getElementById("destinoMobile").value = addr;
-                });
-                actualizarRutaYTarifa();
-                mostrarToast("🏁 Destino actualizado");
-            } else {
-                mostrarToast("❌ Ubicación fuera de Ciudad del Carmen", true);
-                if (destCoords) destMarker.setLngLat([destCoords.lng, destCoords.lat]);
-            }
-        });
-    }
+    // Marcador DESTINO
+    const elDestino = document.createElement('div');
+    elDestino.style.cssText = 'background:#3B82F6; width:32px; height:32px; border-radius:50%; border:3px solid white; cursor:grab; display:flex; align-items:center; justify-content:center;';
+    elDestino.innerHTML = '<i class="fas fa-flag-checkered" style="color:white; font-size:14px;"></i>';
+    
+    destMarker = new maplibregl.Marker({ element: elDestino, draggable: true })
+        .setLngLat([-91.8149, 18.6556])
+        .addTo(map);
+    
+    destMarker.on('dragend', () => {
+        const { lng, lat } = destMarker.getLngLat();
+        if (lat >= 18.58 && lat <= 18.70 && lng >= -91.88 && lng <= -91.75) {
+            destCoords = { lat, lng };
+            reverseGeocode(destCoords, (addr) => {
+                document.getElementById("destino").value = addr;
+            });
+            actualizarRutaYTarifa();
+            mostrarToast("🏁 Destino actualizado");
+        } else {
+            mostrarToast("❌ Ubicación fuera de Ciudad del Carmen", true);
+            if (destCoords) destMarker.setLngLat([destCoords.lng, destCoords.lat]);
+        }
+    });
     
     // Inicializar coordenadas
     originCoords = { lat: 18.6456, lng: -91.8249 };
@@ -415,71 +338,40 @@ function crearMarcadoresIniciales() {
     
     reverseGeocode(originCoords, (addr) => {
         document.getElementById("origen").value = addr;
-        if (document.getElementById("origenMobile")) document.getElementById("origenMobile").value = addr;
     });
     reverseGeocode(destCoords, (addr) => {
         document.getElementById("destino").value = addr;
-        if (document.getElementById("destinoMobile")) document.getElementById("destinoMobile").value = addr;
     });
     
-    // Ajustar vista para ver ambos marcadores - Versión suave como en delivery
-          setTimeout(() => {
-              if (!originCoords || !destCoords) return;
-          
-              const bounds = new maplibregl.LngLatBounds()
-                  .extend([originCoords.lng, originCoords.lat])
-                  .extend([destCoords.lng, destCoords.lat]);
-          
-              map.fitBounds(bounds, { 
-                  padding: 80,
-                  duration: 1600,      // Más suave
-                  maxZoom: 16.5,       // Evita zoom excesivo
-                  essential: true
-              });
-          }, 800);
-              
-              setTimeout(() => actualizarRutaYTarifa(), 500);
-              console.log("✅ Marcadores creados correctamente");
-          }
-
-
-            // ==================== INICIAR SEGUIMIENTO DE UBICACIÓN (CLIENTE) ====================
-function startLocationTracking(intentos = 0) {
-    const maxIntentos = 6;
-
-    if (locationTrackingActive && intentos === 0) return;
-    if (intentos === 0) locationTrackingActive = true;
-
-    if (!map || !map.loaded()) {
-        if (intentos < maxIntentos) {
-            setTimeout(() => startLocationTracking(intentos + 1), 1000);
-            return;
+    setTimeout(() => {
+        if (originCoords && destCoords) {
+            const bounds = new maplibregl.LngLatBounds()
+                .extend([originCoords.lng, originCoords.lat])
+                .extend([destCoords.lng, destCoords.lat]);
+            map.fitBounds(bounds, { padding: 80, duration: 1600, maxZoom: 16.5 });
         }
-        console.error("❌ Mapa no cargó");
+    }, 800);
+    
+    setTimeout(() => actualizarRutaYTarifa(), 500);
+}
+
+// ==================== INICIAR SEGUIMIENTO DE UBICACIÓN ====================
+function startLocationTracking() {
+    if (!map || !map.loaded()) {
+        setTimeout(() => startLocationTracking(), 1000);
         return;
     }
 
-    console.log("📍 Iniciando geolocalización para cliente...");
+    if (!navigator.geolocation) {
+        mostrarToast("❌ Tu navegador no soporta geolocalización", true);
+        return;
+    }
 
-    const options = {
-        enableHighAccuracy: true,
-        maximumAge: 0,
-        timeout: 15000
-    };
-
-    if (watchId) navigator.geolocation.clearWatch(watchId);
-
-    // Primera ubicación
     navigator.geolocation.getCurrentPosition(
         (pos) => {
             const lng = pos.coords.longitude;
             const lat = pos.coords.latitude;
 
-            console.log(`📍 Ubicación del cliente: [${lng}, ${lat}]`);
-
-            ultimaUbicacionEnviada = { lat, lng };
-
-            // Crear / actualizar marcador del cliente
             if (userMarker) userMarker.remove();
 
             const primerNombre = (currentUser?.nombre || 'Cliente').split(' ')[0];
@@ -503,75 +395,20 @@ function startLocationTracking(intentos = 0) {
             .setLngLat([lng, lat])
             .addTo(map);
 
-            // Centrar correctamente (opcional - el cliente puede ver todo el mapa)
-            // Solo centrar si es la primera vez o si el usuario no ha interactuado
             if (!isUserInteracting) {
-                map.flyTo({
-                    center: [lng, lat],
-                    zoom: 15,
-                    duration: 1400,
-                    essential: true
-                });
+                map.flyTo({ center: [lng, lat], zoom: 15, duration: 1400 });
             }
 
             mostrarToast("📍 Tu ubicación detectada");
-
-            // Watch continuo (solo para mover el marcador del cliente en el mapa)
-            watchId = navigator.geolocation.watchPosition(
-                (pos2) => {
-                    if (!userMarker) return;
-                    
-                    const newLng = pos2.coords.longitude;
-                    const newLat = pos2.coords.latitude;
-
-                    if (ultimaUbicacionEnviada) {
-                        const dist = calcularDistanciaMetros(ultimaUbicacionEnviada.lat, ultimaUbicacionEnviada.lng, newLat, newLng);
-                        if (dist < 18) return; // Solo actualizar si se movió más de 18 metros
-                    }
-
-                    ultimaUbicacionEnviada = { lat: newLat, lng: newLng };
-                    userMarker.setLngLat([newLng, newLat]);
-                    console.log(`📍 Cliente se movió a: [${newLng.toFixed(6)}, ${newLat.toFixed(6)}]`);
-                },
-                (err) => console.error("Error watchPosition cliente:", err),
-                options
-            );
         },
         (err) => {
-            console.error("Error getCurrentPosition:", err);
+            console.error("Error de geolocalización:", err);
             if (err.code === 1) {
-                mostrarToast("❌ Debes permitir el acceso a la ubicación para ver tu posición", true);
-            } else if (intentos < 4) {
-                setTimeout(() => startLocationTracking(intentos + 1), 2000);
+                mostrarToast("❌ Permite el acceso a tu ubicación", true);
             }
         },
-        options
+        { enableHighAccuracy: true, timeout: 10000 }
     );
-}
-
-// CORREGIR en cliente.js
-function actualizarMarcadorOrigen(lat, lng) {
-    if (originMarker) {
-        originMarker.setLngLat([lng, lat]);
-    }
-    originCoords = { lat, lng };
-    reverseGeocode(originCoords, (addr) => {
-        document.getElementById("origen").value = addr;
-        if (document.getElementById("origenMobile")) document.getElementById("origenMobile").value = addr;
-    });
-    actualizarRutaYTarifa();
-}
-
-function actualizarMarcadorDestino(lat, lng) {
-    if (destMarker) {
-        destMarker.setLngLat([lng, lat]);
-    }
-    destCoords = { lat, lng };
-    reverseGeocode(destCoords, (addr) => {
-        document.getElementById("destino").value = addr;
-        if (document.getElementById("destinoMobile")) document.getElementById("destinoMobile").value = addr;
-    });
-    actualizarRutaYTarifa();
 }
 
 function loadUser() {
@@ -591,72 +428,45 @@ function centrarMapa() {
         map.setCenter([-91.8249, 18.6456]);
         map.setZoom(13);
     }
-    mostrarToast("📍 Mapa centrado en Ciudad del Carmen");
+    mostrarToast("📍 Mapa centrado");
 }
 
 function setSelectMode(mode) {
     selectMode = mode;
-    document.getElementById('btnOrigen').className = mode === 'origen' ? 'mode-btn active' : 'mode-btn inactive';
-    document.getElementById('btnDestino').className = mode === 'destino' ? 'mode-btn active' : 'mode-btn inactive';
+    const btnOrigen = document.getElementById('btnOrigen');
+    const btnDestino = document.getElementById('btnDestino');
+    
+    if (btnOrigen) btnOrigen.className = mode === 'origen' ? 'bg-orange-500 text-white' : 'bg-gray-200 text-gray-700';
+    if (btnDestino) btnDestino.className = mode === 'destino' ? 'bg-orange-500 text-white' : 'bg-gray-200 text-gray-700';
     
     if (mode === 'origen') {
-        if (originMarker) originMarker.togglePopup();
-        mostrarToast("📍 Modo ORIGEN - Haz clic en el mapa o arrastra el marcador naranja");
+        mostrarToast("📍 Modo ORIGEN - Selecciona en el mapa");
     } else {
-        if (destMarker) destMarker.togglePopup();
-        mostrarToast("🏁 Modo DESTINO - Haz clic en el mapa o arrastra el marcador azul");
+        mostrarToast("🏁 Modo DESTINO - Selecciona en el mapa");
     }
 }
 
-// CORREGIR en cliente.js
+// ==================== LIMPIAR RUTA ====================
 function limpiarRutaCliente() {
     if (!map) return;
     
-    // Capas y fuentes de ruta a limpiar
-    const routeLayers = ['current-route', 'route-layer', 'delivery-route', 'fallback-line'];
+    const routeLayers = ['current-route', 'route-layer', 'delivery-route', 'delivery-route-source', 'fallback-line'];
     const routeSources = ['current-route', 'route-source', 'delivery-route', 'fallback-line'];
     
     routeLayers.forEach(layerId => {
-        try {
-            if (map.getLayer(layerId)) {
-                map.removeLayer(layerId);
-            }
-        } catch(e) { /* ignorar */ }
+        try { if (map.getLayer(layerId)) map.removeLayer(layerId); } catch(e) {}
     });
     
     routeSources.forEach(sourceId => {
-        try {
-            if (map.getSource(sourceId)) {
-                map.removeSource(sourceId);
-            }
-        } catch(e) { /* ignorar */ }
+        try { if (map.getSource(sourceId)) map.removeSource(sourceId); } catch(e) {}
     });
 }
 
-// CORREGIR en cliente.js
+// ==================== DIBUJAR RUTA ====================
 async function dibujarRutaMapLibre(origin, dest, color, weight = 5) {
     if (!map || !origin || !dest) return null;
     
-    // ✅ Limpiar ruta anterior correctamente
-    try {
-        // Primero eliminar la capa
-        if (map.getLayer('current-route')) {
-            map.removeLayer('current-route');
-        }
-        // Luego eliminar la fuente
-        if (map.getSource('current-route')) {
-            map.removeSource('current-route');
-        }
-        // También limpiar otras posibles capas
-        if (map.getLayer('route-layer')) {
-            map.removeLayer('route-layer');
-        }
-        if (map.getSource('route-source')) {
-            map.removeSource('route-source');
-        }
-    } catch(e) {
-        console.warn("Error limpiando ruta anterior:", e);
-    }
+    limpiarRutaCliente();
     
     try {
         const response = await fetch(
@@ -666,38 +476,19 @@ async function dibujarRutaMapLibre(origin, dest, color, weight = 5) {
         
         if (data.routes && data.routes[0]) {
             const route = data.routes[0];
-            const geojson = route.geometry;
             
-            // ✅ Verificar que la fuente no exista antes de crearla
-            if (!map.getSource('current-route')) {
-                map.addSource('current-route', {
-                    type: 'geojson',
-                    data: geojson
-                });
-            } else {
-                // Si ya existe, actualizar los datos
-                map.getSource('current-route').setData(geojson);
-            }
+            map.addSource('current-route', {
+                type: 'geojson',
+                data: route.geometry
+            });
             
-            // ✅ Verificar que la capa no exista antes de crearla
-            if (!map.getLayer('current-route')) {
-                map.addLayer({
-                    id: 'current-route',
-                    type: 'line',
-                    source: 'current-route',
-                    layout: {
-                        'line-join': 'round',
-                        'line-cap': 'round'
-                    },
-                    paint: {
-                        'line-color': color,
-                        'line-width': weight,
-                        'line-opacity': 0.8
-                    }
-                });
-            }
-            
-            console.log(`✅ Ruta dibujada: ${(route.distance / 1000).toFixed(2)} km`);
+            map.addLayer({
+                id: 'current-route',
+                type: 'line',
+                source: 'current-route',
+                layout: { 'line-join': 'round', 'line-cap': 'round' },
+                paint: { 'line-color': color, 'line-width': weight, 'line-opacity': 0.8 }
+            });
             
             return {
                 distance: route.distance / 1000,
@@ -710,7 +501,7 @@ async function dibujarRutaMapLibre(origin, dest, color, weight = 5) {
     return null;
 }
 
-// CORREGIR en cliente.js
+// ==================== ACTUALIZAR RUTA Y TARIFA ====================
 async function actualizarRutaYTarifa() {
     if (originCoords && destCoords) {
         const tarifaContainer = document.getElementById("tarifaContainer");
@@ -724,70 +515,35 @@ async function actualizarRutaYTarifa() {
         const routeResult = await dibujarRutaMapLibre(originCoords, destCoords, '#FF6200', 5);
         
         if (routeResult) {
-            const distance = routeResult.distance;
-            const rate = calculateShippingRate(distance, tipoEnvio);
+            const rate = calculateShippingRate(routeResult.distance, tipoEnvio);
             
             currentRouteData = { 
-                distance: distance, 
+                distance: routeResult.distance, 
                 duration: routeResult.duration,
                 extras: currentRouteData?.extras || { lluvia: false, noche: false, espera: false }
             };
             
             let tarifaMostrar = rate.total;
-            if (currentRouteData.extras) {
-                if (currentRouteData.extras.lluvia) tarifaMostrar += 10;
-                if (currentRouteData.extras.noche) tarifaMostrar += 10;
-                if (currentRouteData.extras.espera) tarifaMostrar += 10;
-            }
+            if (currentRouteData.extras.lluvia) tarifaMostrar += 10;
+            if (currentRouteData.extras.noche) tarifaMostrar += 10;
+            if (currentRouteData.extras.espera) tarifaMostrar += 10;
             
             if (tarifaValue) tarifaValue.innerHTML = `$${tarifaMostrar} MXN`;
-            mostrarToast(`📏 Distancia: ${distance.toFixed(2)} km • ⏱️ ${formatDuration(routeResult.duration)}`);
-            
-            // Actualizar mobile
-            const tarifaContainerMobile = document.getElementById("tarifaContainerMobile");
-            const tarifaValueMobile = document.getElementById("tarifaValueMobile");
-            if (tarifaContainerMobile) tarifaContainerMobile.classList.remove("hidden");
-            if (tarifaValueMobile) tarifaValueMobile.innerHTML = `$${tarifaMostrar} MXN`;
+            mostrarToast(`📏 Distancia: ${routeResult.distance.toFixed(2)} km`);
             
         } else {
-            // Fallback: calcular distancia lineal
             const distance = calcularDistancia();
             const rate = calculateShippingRate(distance, tipoEnvio);
             if (tarifaValue) tarifaValue.innerHTML = `$${rate.total} MXN (estimado)`;
-            mostrarToast(`⚠️ Usando distancia estimada: ${distance.toFixed(2)} km`, true);
         }
     }
 }
 
-// Agregar en cliente.js - Funciones auxiliares faltantes
 function formatDuration(minutes) {
     if (minutes < 60) return `${Math.round(minutes)} min`;
     const hours = Math.floor(minutes / 60);
     const mins = Math.round(minutes % 60);
     return `${hours}h ${mins}min`;
-}
-
-async function getRealDistanceAndTime(origin, dest) {
-    if (!origin || !dest) return null;
-    
-    try {
-        const response = await fetch(`https://router.project-osrm.org/route/v1/driving/${origin.lng},${origin.lat};${dest.lng},${dest.lat}?overview=false`);
-        const data = await response.json();
-        
-        if (data.routes && data.routes[0]) {
-            const distance = data.routes[0].distance / 1000;
-            const duration = data.routes[0].duration / 60;
-            return {
-                distance: distance,
-                distanceKm: distance.toFixed(2),
-                duration: duration,
-                durationText: formatDuration(duration)
-            };
-        }
-    } catch(e) {
-        console.error('Error obteniendo distancia:', e);
-    }
-    return null;
 }
 
 function calcularDistancia() {
@@ -811,36 +567,24 @@ function reverseGeocode(latlng, callback) {
         .catch(() => callback(`${latlng.lat.toFixed(4)}, ${latlng.lng.toFixed(4)}`));
 }
 
+// ==================== CREAR MARCADOR DELIVERY ====================
 function crearMarcadorDelivery(delivery) {
-    if (!map || typeof map.addSource !== 'function') {
-        console.warn("⏳ Mapa no listo");
-        return null;
-    }
-    
-    if (!delivery || typeof delivery.lat !== 'number' || typeof delivery.lng !== 'number') {
-        console.warn("⚠️ Datos inválidos:", delivery);
+    if (!map || !delivery || typeof delivery.lat !== 'number' || typeof delivery.lng !== 'number') {
         return null;
     }
     
     try {
-        let nombreMostrar = delivery.nombre || 'Delivery';
-        const primerNombre = nombreMostrar.trim().split(' ')[0];
-        
-        const markerDiv = document.createElement('div');
+        const primerNombre = (delivery.nombre || 'Delivery').split(' ')[0];
         const color = delivery.online ? '#10B981' : '#6B7280';
         
-        // ✅ Versión CORREGIDA - con optimizaciones para evitar movimiento durante zoom
+        const markerDiv = document.createElement('div');
         markerDiv.innerHTML = `
-            <div style="position: relative; transform: translateY(-100%); display: flex; flex-direction: column; align-items: center; will-change: transform; transform: translateZ(0);">
-                <div style="background:rgba(0,0,0,0.7); backdrop-filter: blur(4px); color:white; font-size:11px; font-weight:500; padding:4px 10px; border-radius:20px; margin-bottom:6px; white-space:nowrap; box-shadow: 0 1px 4px rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.2);">
+            <div style="position: relative; transform: translateY(-100%); display: flex; flex-direction: column; align-items: center;">
+                <div style="background:rgba(0,0,0,0.7); color:white; font-size:11px; padding:4px 10px; border-radius:20px; margin-bottom:6px; white-space:nowrap;">
                     ${primerNombre}
                 </div>
-                <div style="background-color: ${color}; width:32px; height:32px; border-radius:50%; border:2.5px solid white; display:flex; align-items:center; justify-content:center; box-shadow: 0 2px 6px rgba(0,0,0,0.3); transition: none; transform: translateZ(0);">
+                <div style="background-color: ${color}; width:32px; height:32px; border-radius:50%; border:2.5px solid white; display:flex; align-items:center; justify-content:center;">
                     <i class="fas fa-motorcycle" style="color:white; font-size:16px;"></i>
-                </div>
-                <div style="position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%); transition: none;
-                            width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent;
-                            border-top: 8px solid ${color};">
                 </div>
             </div>
         `;
@@ -851,46 +595,34 @@ function crearMarcadorDelivery(delivery) {
             anchor: 'bottom'
         }).setLngLat([delivery.lng, delivery.lat]).addTo(map);
         
-        // Popup con estado
-        const estado = delivery.online ? '🟢 En línea' : '⚫ Desconectado';
-        const popup = new maplibregl.Popup({ offset: [0, -40] })
-            .setHTML(`<b>🏍️ ${primerNombre}</b><br>${estado}`);
-        marker.setPopup(popup);
-        
         return marker;
     } catch(e) {
-        console.error("❌ Error creando marcador delivery:", e);
+        console.error("Error creando marcador:", e);
         return null;
     }
 }
 
+// ==================== SOLICITAR ENVÍO ====================
 async function solicitarEnvio() {
     const origen = document.getElementById("origen").value;
     const destino = document.getElementById("destino").value;
     const tipo = document.getElementById("tipoEnvio").value;
     
     if (!originCoords || !destCoords) {
-        mostrarToast("❌ Error: No se han seleccionado origen o destino válidos", true);
+        mostrarToast("❌ Selecciona origen y destino válidos", true);
         return;
     }
     
-    if (!tipo || tipo === '') {
-        mostrarToast("❌ Por favor, selecciona qué vas a enviar (Comida, Paquete, Mercancía o Farmacia)", true);
-        const selectTipo = document.getElementById("tipoEnvio");
-        selectTipo.style.border = "2px solid #dc2626";
-        setTimeout(() => {
-            selectTipo.style.border = "";
-        }, 2000);
+    if (!tipo) {
+        mostrarToast("❌ Selecciona qué vas a enviar", true);
         return;
     }
     
     let distancia = currentRouteData ? currentRouteData.distance : calcularDistancia();
     const rate = calculateShippingRate(distancia, tipo);
-    let tarifaBase = rate.total;
+    let tarifaFinal = rate.total;
     
-    let tarifaFinal = tarifaBase;
     if (currentRouteData && currentRouteData.extras) {
-        tarifaFinal = tarifaBase;
         if (currentRouteData.extras.lluvia) tarifaFinal += 10;
         if (currentRouteData.extras.noche) tarifaFinal += 10;
         if (currentRouteData.extras.espera) tarifaFinal += 10;
@@ -909,7 +641,7 @@ async function solicitarEnvio() {
         tipo: tipo,
         distancia_real: distancia.toFixed(2),
         tarifa: tarifaFinal,
-        extras: currentRouteData?.extras || { lluvia: false, noche: false, espera: false },
+        extras: currentRouteData?.extras || {},
         estado: 'pendiente',
         fecha: new Date().toISOString()
     };
@@ -921,8 +653,7 @@ async function solicitarEnvio() {
 function seleccionarPago(metodo) { 
     cerrarModalPago(); 
     if (metodo === 'efectivo') {
-        const total = pedidoPendiente.tarifa;
-        document.getElementById("efectivoTotal").innerHTML = `$${total}`;
+        document.getElementById("efectivoTotal").innerHTML = `$${pedidoPendiente.tarifa}`;
         document.getElementById("montoPaga").value = '';
         document.getElementById("cambioTotal").innerHTML = '$0';
         document.getElementById("modalEfectivo").classList.remove("hidden");
@@ -946,32 +677,15 @@ async function confirmarPagoEfectivo() {
     const paga = parseFloat(document.getElementById("montoPaga").value) || 0;
     
     if (paga < total) {
-        mostrarToast(`❌ El monto es insuficiente. Faltan $${(total - paga).toFixed(2)}`, true);
+        mostrarToast(`❌ Faltan $${(total - paga).toFixed(2)}`, true);
         return;
-    }
-    
-    const cambio = paga - total;
-    if (cambio > 0) {
-        mostrarToast(`✅ Cambio a devolver: $${cambio.toFixed(2)}`);
     }
     
     await guardarPedidoEnSupabase();
     cerrarModalEfectivo();
 }
 
-// ==================== EXTRAS ====================
-let extrasSeleccionados = { lluvia: false, noche: false, espera: false };
-let tarifaBaseSinExtras = 0;
-
-function calcularTotalConExtras(tarifaBase) {
-    let total = tarifaBase;
-    if (extrasSeleccionados.lluvia) total += 10;
-    if (extrasSeleccionados.noche) total += 10;
-    if (extrasSeleccionados.espera) total += 10;
-    return total;
-}
-
-// ==================== PANEL DE ESTADO DEL PEDIDO ====================
+// ==================== PANEL DE ESTADO ====================
 function mostrarPanelEstado(pedido) {
     const panel = document.getElementById("panelEstadoPedido");
     if (!panel) return;
@@ -990,228 +704,314 @@ function actualizarEstadoPanel(estado, deliveryNombre = null) {
     const estadoIcono = document.getElementById("estadoIcono");
     const estadoDetalle = document.getElementById("estadoDetalle");
     
-    const estadoTextoMobile = document.getElementById("estadoTextoMobile");
-    const estadoIconoMobile = document.getElementById("estadoIconoMobile");
-    const estadoDetalleMobile = document.getElementById("estadoDetalleMobile");
-    
     switch(estado) {
         case 'pendiente':
             if(estadoTexto) estadoTexto.innerText = "⏳ Pedido pendiente";
             if(estadoIcono) estadoIcono.className = "fas fa-clock text-yellow-500";
-            if(estadoDetalle) estadoDetalle.innerText = "Esperando a que un delivery tome tu pedido...";
-            if(estadoTextoMobile) estadoTextoMobile.innerText = "⏳ Pedido pendiente";
-            if(estadoIconoMobile) estadoIconoMobile.className = "fas fa-clock text-yellow-500";
-            if(estadoDetalleMobile) estadoDetalleMobile.innerText = "Esperando a que un delivery tome tu pedido...";
+            if(estadoDetalle) estadoDetalle.innerText = "Esperando delivery...";
             break;
-            
         case 'asignado':
             if(estadoTexto) estadoTexto.innerText = "🚚 En camino a recoger";
             if(estadoIcono) estadoIcono.className = "fas fa-motorcycle text-orange-500";
-            if(estadoDetalle) estadoDetalle.innerHTML = `🏍️ <strong>${deliveryNombre || 'Delivery'}</strong> ya se dirige a recoger tu paquete.`;
-            if(estadoTextoMobile) estadoTextoMobile.innerText = "🚚 En camino a recoger";
-            if(estadoIconoMobile) estadoIconoMobile.className = "fas fa-motorcycle text-orange-500";
-            if(estadoDetalleMobile) estadoDetalleMobile.innerHTML = `🏍️ <strong>${deliveryNombre || 'Delivery'}</strong> ya se dirige a recoger tu paquete.`;
+            if(estadoDetalle) estadoDetalle.innerHTML = `🏍️ <strong>${deliveryNombre || 'Delivery'}</strong> va a recoger tu paquete`;
             break;
-            
         case 'recogido':
             if(estadoTexto) estadoTexto.innerText = "📦 Paquete recogido";
             if(estadoIcono) estadoIcono.className = "fas fa-box-open text-purple-500";
-            if(estadoDetalle) estadoDetalle.innerHTML = `🏍️ <strong>${deliveryNombre || 'Delivery'}</strong> ya recogió tu paquete y va en camino.`;
-            if(estadoTextoMobile) estadoTextoMobile.innerText = "📦 Paquete recogido";
-            if(estadoIconoMobile) estadoIconoMobile.className = "fas fa-box-open text-purple-500";
-            if(estadoDetalleMobile) estadoDetalleMobile.innerHTML = `🏍️ <strong>${deliveryNombre || 'Delivery'}</strong> ya recogió tu paquete y va en camino.`;
+            if(estadoDetalle) estadoDetalle.innerHTML = `🏍️ <strong>${deliveryNombre || 'Delivery'}</strong> va en camino`;
             break;
-            
-       case 'completado':
-           console.log("🎉 Actualizando UI para pedido COMPLETADO");
-           
-           const panel = document.getElementById("panelEstadoPedido");
-           const panelMobile = document.getElementById("panelEstadoPedidoMobile");
-           if(panel) panel.classList.add("hidden");
-           if(panelMobile) panelMobile.classList.add("hidden");
-           
-           pedidoActual = null;
-           bloquearUIporPedidoActivo(false);
-           
-           if(seguimientoInterval) {
-               clearInterval(seguimientoInterval);
-               seguimientoInterval = null;
-           }
-           if(ubicacionInterval) {
-               clearInterval(ubicacionInterval);
-               ubicacionInterval = null;
-           }
-           
-           if(deliveryMarker) {
-               map.removeLayer(deliveryMarker);
-               deliveryMarker = null;
-           }
-           
-           limpiarRutaCliente();
-           
-           const selectTipo = document.getElementById("tipoEnvio");
-           if(selectTipo) selectTipo.value = "";
-           
-           const origenInput = document.getElementById("origen");
-           const destinoInput = document.getElementById("destino");
-           if(origenInput) origenInput.value = "";
-           if(destinoInput) destinoInput.value = "";
-           
-           cargarDeliverysEnLinea();
-           
-           setTimeout(() => {
-               if(map) {
-                   map.setCenter([-91.8249, 18.6456]);
-                   map.setZoom(13);
-               }
-           }, 500);
-           
-           mostrarToast("🎉 ¡Envío completado! Gracias por usar MandaYa");
-           break;    
+        case 'completado':
+            const panel = document.getElementById("panelEstadoPedido");
+            if(panel) panel.classList.add("hidden");
+            pedidoActual = null;
+            bloquearUIporPedidoActivo(false);
+            if(seguimientoInterval) clearInterval(seguimientoInterval);
+            if(ubicacionInterval) clearInterval(ubicacionInterval);
+            if(deliveryMarker) { deliveryMarker.remove(); deliveryMarker = null; }
+            limpiarRutaCliente();
+            cargarDeliverysEnLinea();
+            mostrarToast("🎉 ¡Envío completado!");
+            break;
     }
 }
 
-async function cancelarPedido() {
-    if (!pedidoActual || pedidoActual.estado !== 'pendiente') {
-        mostrarToast("❌ No se puede cancelar este pedido porque ya está en camino o completado", true);
+// ==================== MOSTRAR RESUMEN DE RUTA ====================
+function mostrarResumenRuta() {
+    if (!originCoords || !destCoords) {
+        mostrarToast("❌ Selecciona origen y destino primero", true);
         return;
     }
     
-    mostrarModalConfirmacion(
-        "Cancelar pedido",
-        `¿Estás seguro de cancelar el pedido #${pedidoActual.id}? Esta acción no se puede deshacer.`,
-        async () => {
-            const supabase = supabaseClient;
-            if (!supabase) return;
+    const distancia = currentRouteData ? currentRouteData.distance : calcularDistancia();
+    const tipo = document.getElementById("tipoEnvio")?.value || 'paquete';
+    const rate = calculateShippingRate(distancia, tipo);
+    
+    // Crear modal de resumen
+    let modalExistente = document.getElementById("modalResumenRuta");
+    if (modalExistente) modalExistente.remove();
+    
+    const modal = document.createElement('div');
+    modal.id = "modalResumenRuta";
+    modal.className = "fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[10001] p-4";
+    modal.innerHTML = `
+        <div class="bg-gray-800 rounded-2xl max-w-sm w-full">
+            <div class="text-center pt-4 pb-2 border-b border-gray-700">
+                <div class="w-12 h-12 bg-orange-500 rounded-full flex items-center justify-center mx-auto mb-2">
+                    <i class="fas fa-route text-white text-xl"></i>
+                </div>
+                <h2 class="text-lg font-bold text-white">Resumen de Ruta</h2>
+            </div>
             
-            try {
-                const { error } = await supabase
-                    .from('pedidos')
-                    .delete()
-                    .eq('id', pedidoActual.id);
+            <div class="p-4 space-y-3">
+                <div class="bg-gray-700 rounded-lg p-3">
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-400">📏 Distancia</span>
+                        <span class="text-white font-bold">${distancia.toFixed(2)} km</span>
+                    </div>
+                    <div class="flex justify-between items-center mt-2">
+                        <span class="text-gray-400">💰 Tarifa base</span>
+                        <span class="text-white font-bold">$${rate.total} MXN</span>
+                    </div>
+                </div>
                 
-                if (error) throw error;
+                <div class="bg-gray-700 rounded-lg p-3">
+                    <p class="text-gray-400 text-xs mb-2">📦 Extras (+$10 c/u)</p>
+                    <div class="flex gap-3 justify-center">
+                        <label class="flex flex-col items-center cursor-pointer">
+                            <i class="fas fa-cloud-rain text-blue-400 text-xl"></i>
+                            <span class="text-white text-xs">Lluvia</span>
+                            <input type="checkbox" id="extraLluvia" class="mt-1" onchange="actualizarTotalResumen()">
+                        </label>
+                        <label class="flex flex-col items-center cursor-pointer">
+                            <i class="fas fa-moon text-yellow-400 text-xl"></i>
+                            <span class="text-white text-xs">Noche</span>
+                            <input type="checkbox" id="extraNoche" class="mt-1" onchange="actualizarTotalResumen()">
+                        </label>
+                        <label class="flex flex-col items-center cursor-pointer">
+                            <i class="fas fa-clock text-purple-400 text-xl"></i>
+                            <span class="text-white text-xs">Espera</span>
+                            <input type="checkbox" id="extraEspera" class="mt-1" onchange="actualizarTotalResumen()">
+                        </label>
+                    </div>
+                </div>
                 
-                mostrarToast(`✅ Pedido #${pedidoActual.id} cancelado correctamente`);
-                bloquearUIporPedidoActivo(false);
-                limpiarYResetearUI();
+                <div class="bg-orange-500 rounded-lg p-3 flex justify-between items-center">
+                    <span class="text-white font-bold">💰 Total</span>
+                    <span class="text-white font-bold text-xl" id="totalResumen">$${rate.total} MXN</span>
+                </div>
+            </div>
+            
+            <div class="px-4 pb-4 flex gap-2">
+                <button onclick="cerrarModalResumen()" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-2 rounded-lg">Cancelar</button>
+                <button onclick="confirmarResumenYPagar()" class="flex-1 bg-orange-500 hover:bg-orange-600 text-white py-2 rounded-lg">✅ Aceptar</button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // Guardar datos globales
+    window.tarifaBaseResumen = rate.total;
+    window.distanciaResumen = distancia;
+    
+    // Actualizar el total inicial
+    actualizarTotalResumen();
+}
+
+function actualizarTotalResumen() {
+    const extraLluvia = document.getElementById("extraLluvia")?.checked || false;
+    const extraNoche = document.getElementById("extraNoche")?.checked || false;
+    const extraEspera = document.getElementById("extraEspera")?.checked || false;
+    
+    let total = window.tarifaBaseResumen || 0;
+    if (extraLluvia) total += 10;
+    if (extraNoche) total += 10;
+    if (extraEspera) total += 10;
+    
+    const totalSpan = document.getElementById("totalResumen");
+    if (totalSpan) totalSpan.innerHTML = `$${total} MXN`;
+    
+    // Guardar extras seleccionados
+    window.extrasSeleccionadosResumen = {
+        lluvia: extraLluvia,
+        noche: extraNoche,
+        espera: extraEspera
+    };
+}
+
+function confirmarResumenYPagar() {
+    console.log("✅ Confirmando resumen...");
+    
+    // Guardar extras en currentRouteData
+    if (currentRouteData) {
+        currentRouteData.extras = window.extrasSeleccionadosResumen || { lluvia: false, noche: false, espera: false };
+    }
+    
+    // Actualizar tarifa mostrada
+    const totalSpan = document.getElementById("totalResumen");
+    let totalFinal = window.tarifaBaseResumen || 0;
+    
+    if (window.extrasSeleccionadosResumen) {
+        if (window.extrasSeleccionadosResumen.lluvia) totalFinal += 10;
+        if (window.extrasSeleccionadosResumen.noche) totalFinal += 10;
+        if (window.extrasSeleccionadosResumen.espera) totalFinal += 10;
+    }
+    
+    const tarifaElement = document.getElementById("tarifaValue");
+    if (tarifaElement) tarifaElement.innerHTML = `$${totalFinal} MXN`;
+    
+    const tarifaElementMobile = document.getElementById("tarifaValueMobile");
+    if (tarifaElementMobile) tarifaElementMobile.innerHTML = `$${totalFinal} MXN`;
+    
+    // Cerrar modal y abrir pago
+    cerrarModalResumen();
+    
+    // Si hay pedido pendiente, actualizar tarifa
+    if (pedidoPendiente) {
+        pedidoPendiente.tarifa = totalFinal;
+        pedidoPendiente.extras = window.extrasSeleccionadosResumen || {};
+    }
+    
+    mostrarToast(`💰 Total: $${totalFinal} MXN`);
+    
+    // Abrir modal de pago
+    const modalPago = document.getElementById("modalPago");
+    if (modalPago) {
+        modalPago.classList.remove("hidden");
+        modalPago.classList.add("flex");
+    } else {
+        // Si no hay modal de pago, crear uno
+        mostrarModalPagoSimple(totalFinal);
+    }
+}
+
+function mostrarModalPagoSimple(total) {
+    let modalExistente = document.getElementById("modalPagoSimple");
+    if (modalExistente) modalExistente.remove();
+    
+    const modal = document.createElement('div');
+    modal.id = "modalPagoSimple";
+    modal.className = "fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[10001] p-4";
+    modal.innerHTML = `
+        <div class="bg-gray-800 rounded-2xl max-w-sm w-full p-6 text-center">
+            <div class="w-16 h-16 bg-orange-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                <i class="fas fa-money-bill-wave text-white text-2xl"></i>
+            </div>
+            <h2 class="text-xl font-bold text-white mb-2">Método de Pago</h2>
+            <p class="text-gray-400 mb-4">Total: <span class="text-orange-400 font-bold">$${total}</span> MXN</p>
+            
+            <div class="space-y-3">
+                <button onclick="seleccionarPagoSimple('efectivo', ${total})" class="w-full bg-green-500 hover:bg-green-600 text-white py-3 rounded-xl font-medium">
+                    💵 Efectivo
+                </button>
+                <button onclick="seleccionarPagoSimple('transferencia', ${total})" class="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-xl font-medium">
+                    📱 Transferencia
+                </button>
+                <button onclick="cerrarModalPagoSimple()" class="w-full bg-gray-700 hover:bg-gray-600 text-white py-3 rounded-xl font-medium">
+                    Cancelar
+                </button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+}
+
+function seleccionarPagoSimple(metodo, total) {
+    cerrarModalPagoSimple();
+    
+    if (metodo === 'efectivo') {
+        // Mostrar modal de efectivo
+        let modalExistente = document.getElementById("modalEfectivoSimple");
+        if (modalExistente) modalExistente.remove();
+        
+        const modal = document.createElement('div');
+        modal.id = "modalEfectivoSimple";
+        modal.className = "fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[10001] p-4";
+        modal.innerHTML = `
+            <div class="bg-gray-800 rounded-2xl max-w-sm w-full p-6">
+                <h2 class="text-xl font-bold text-white mb-4 text-center">Pago en Efectivo</h2>
+                <p class="text-gray-400 text-center mb-4">Total a pagar: <span class="text-orange-400 font-bold">$${total}</span></p>
                 
-            } catch(e) {
-                console.error('Error cancelando pedido:', e);
-                mostrarToast("❌ Error al cancelar el pedido", true);
-            }
+                <div class="mb-4">
+                    <label class="text-white text-sm mb-2 block">Monto con que paga:</label>
+                    <input type="number" id="montoPagaSimple" placeholder="0" class="w-full bg-gray-700 text-white rounded-lg px-4 py-3">
+                </div>
+                
+                <div class="mb-4 text-center">
+                    <p class="text-gray-400">Cambio a devolver:</p>
+                    <p id="cambioSimple" class="text-green-400 text-2xl font-bold">$0</p>
+                </div>
+                
+                <div class="flex gap-2">
+                    <button onclick="cerrarModalEfectivoSimple()" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-2 rounded-lg">Cancelar</button>
+                    <button onclick="confirmarPagoEfectivoSimple(${total})" class="flex-1 bg-orange-500 hover:bg-orange-600 text-white py-2 rounded-lg">Pagar</button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        const montoInput = document.getElementById("montoPagaSimple");
+        if (montoInput) {
+            montoInput.addEventListener('input', () => {
+                const paga = parseFloat(montoInput.value) || 0;
+                const cambio = paga - total;
+                const cambioSpan = document.getElementById("cambioSimple");
+                if (cambioSpan) cambioSpan.innerHTML = `$${cambio >= 0 ? cambio : 0}`;
+            });
         }
-    );
+        
+    } else if (metodo === 'transferencia') {
+        mostrarToast("✅ Transferencia seleccionada. Confirma tu pedido.");
+        confirmarPagoTransferenciaSimple();
+    }
 }
 
-function limpiarYResetearUI() {
-    bloquearUIporPedidoActivo(false);
+function confirmarPagoEfectivoSimple(total) {
+    const montoInput = document.getElementById("montoPagaSimple");
+    const paga = parseFloat(montoInput?.value) || 0;
     
-    if (seguimientoInterval) {
-        clearInterval(seguimientoInterval);
-        seguimientoInterval = null;
-    }
-    if (ubicacionInterval) {
-        clearInterval(ubicacionInterval);
-        ubicacionInterval = null;
-    }
-    if (deliverysInterval) {
-        clearInterval(deliverysInterval);
-        deliverysInterval = null;
+    if (paga < total) {
+        mostrarToast(`❌ Faltan $${(total - paga).toFixed(2)}`, true);
+        return;
     }
     
-    document.getElementById("origen").value = "";
-    document.getElementById("destino").value = "";
-    document.getElementById("tipoEnvio").value = "";
-    document.getElementById("tarifaContainer").classList.add("hidden");
-    
-    if (originMarker && destMarker) {
-        originCoords = { lat: 18.6456, lng: -91.8249 };
-        destCoords = { lat: 18.6556, lng: -91.8149 };
-        originMarker.setLngLat([originCoords.lng, originCoords.lat]);
-        destMarker.setLngLat([destCoords.lng, destCoords.lat]);
-        reverseGeocode(originCoords, (addr) => document.getElementById("origen").value = addr);
-        reverseGeocode(destCoords, (addr) => document.getElementById("destino").value = addr);
-    }
-    
-    limpiarRutaCliente();
-    
-    if (map && map.getLayer('fallback-line')) map.removeLayer('fallback-line');
-    if (map && map.getSource('fallback-line')) map.removeSource('fallback-line');
-    
-    if (deliveryMarker) {
-        map.removeLayer(deliveryMarker);
-        deliveryMarker = null;
-    }
-    
-    document.getElementById("panelEstadoPedido").classList.add("hidden");
-    pedidoActual = null;
-    pedidoPendiente = null;
-    
-    if (currentUser && currentUser.rol === 'cliente') {
-        if (deliverysInterval) clearInterval(deliverysInterval);
-        deliverysInterval = setInterval(() => cargarDeliverysEnLinea(), 5000);
-        cargarDeliverysEnLinea();
-    }
-    mostrarToast("🔄 Todo listo. Puedes hacer un nuevo envío.");
+    cerrarModalEfectivoSimple();
+    guardarPedidoEnSupabase();
 }
 
-function forzarReactivacionUI() {
-    console.log("🔄 Forzando reactivación de UI");
-    
-    const origenInput = document.getElementById("origen");
-    const destinoInput = document.getElementById("destino");
-    const selectTipo = document.getElementById("tipoEnvio");
-    const btnSolicitar = document.querySelector('button[onclick="solicitarEnvio()"]');
-    
-    if(origenInput) {
-        origenInput.disabled = false;
-        origenInput.classList.remove('bg-gray-100', 'cursor-not-allowed', 'opacity-70');
-    }
-    if(destinoInput) {
-        destinoInput.disabled = false;
-        destinoInput.classList.remove('bg-gray-100', 'cursor-not-allowed', 'opacity-70');
-    }
-    if(selectTipo) {
-        selectTipo.disabled = false;
-        selectTipo.classList.remove('bg-gray-100', 'cursor-not-allowed', 'opacity-70');
-    }
-    if(btnSolicitar) {
-        btnSolicitar.disabled = false;
-        btnSolicitar.classList.remove('opacity-50', 'cursor-not-allowed');
-    }
-    
-    if(originMarker) originMarker.dragging = true;
-    if(destMarker) destMarker.dragging = true;
-    
-    if (map) {
-        map.getCanvas().style.cursor = 'crosshair';
-    }
-    
-    const panel = document.getElementById("panelEstadoPedido");
-    if(panel) panel.classList.add("hidden");
-    
-    pedidoActual = null;
-    
-    mostrarToast("✅ Listo para un nuevo envío");
+function confirmarPagoTransferenciaSimple() {
+    guardarPedidoEnSupabase();
 }
 
+function cerrarModalPagoSimple() {
+    const modal = document.getElementById("modalPagoSimple");
+    if (modal) modal.remove();
+}
+
+function cerrarModalEfectivoSimple() {
+    const modal = document.getElementById("modalEfectivoSimple");
+    if (modal) modal.remove();
+}
+
+function cerrarModalResumen() {
+    const modal = document.getElementById("modalResumenRuta");
+    if (modal) modal.remove();
+}
+
+// ==================== GUARDAR PEDIDO ====================
 async function guardarPedidoEnSupabase() {
-    const supabase = supabaseClient;
+    const supabase = window.supabaseClient;
     if (!supabase) {
         mostrarToast("❌ Error de conexión", true);
         return;
     }
     
     try {
-        const pedidoAGuardar = {
-            ...pedidoPendiente,
-            extras: pedidoPendiente.extras || { lluvia: false, noche: false, espera: false }
-        };
-        
         const { error } = await supabase
             .from('pedidos')
-            .insert([pedidoAGuardar]);
+            .insert([pedidoPendiente]);
         
         if (error) throw error;
         
@@ -1222,95 +1022,61 @@ async function guardarPedidoEnSupabase() {
         cerrarModalTransferencia();
         
         mostrarPanelEstado(pedidoActual);
-        
-        mostrarToast(`✅ ¡Envío solicitado! ID: #${pedidoActual.id} - Esperando delivery`);
+        mostrarToast(`✅ Pedido #${pedidoActual.id} creado`);
         iniciarSeguimientoDelivery();
         
     } catch(e) {
-        console.error('Error creando pedido:', e);
-        mostrarToast("❌ Error al crear el pedido: " + (e.message || "Verifica la consola"), true);
+        console.error('Error:', e);
+        mostrarToast("❌ Error al crear pedido", true);
     }
 }
 
 function enviarComprobanteWhatsApp() {
-    if (!pedidoPendiente) {
-        mostrarToast("❌ No hay información del pedido", true);
-        return;
-    }
+    if (!pedidoPendiente) return;
     
-    const total = pedidoPendiente.tarifa;
-    const pedidoId = pedidoPendiente.id;
-    const numeroWhatsApp = '5219381083498';
-    
-    let mensaje = `🍔 *MANDAYA - NUEVO PEDIDO* 🍔\n\n`;
-    mensaje += `🎫 *PEDIDO:* #${pedidoId}\n`;
-    mensaje += `👤 *CLIENTE:* ${pedidoPendiente.cliente_nombre}\n`;
-    mensaje += `\n━━━━━━━━━━━━━━━\n`;
-    mensaje += `📦 *DETALLES DEL ENVÍO:*\n`;
-    mensaje += `\n📍 *ORIGEN:* ${pedidoPendiente.origen}\n`;
-    mensaje += `🏁 *DESTINO:* ${pedidoPendiente.destino}\n`;
-    mensaje += `📏 *DISTANCIA:* ${pedidoPendiente.distancia_real} km\n`;
-    mensaje += `📦 *TIPO:* ${pedidoPendiente.tipo}\n`;
-    mensaje += `\n━━━━━━━━━━━━━━━\n`;
-    mensaje += `💰 *TOTAL A PAGAR:* $${total} MXN\n`;
-    mensaje += `\n━━━━━━━━━━━━━━━\n`;
-    mensaje += `✅ *Comprobante de pago adjunto*\n`;
-    mensaje += `\n🙏 *¡Gracias por usar MandaYa!*`;
-    
-    const mensajeCodificado = encodeURIComponent(mensaje);
-    const whatsappUrl = `https://api.whatsapp.com/send?phone=${numeroWhatsApp}&text=${mensajeCodificado}`;
-    
-    window.open(whatsappUrl, '_blank');
-    mostrarToast("📱 Abriendo WhatsApp...");
+    const mensaje = `MANDAYA - Pedido #${pedidoPendiente.id}\nTotal: $${pedidoPendiente.tarifa} MXN`;
+    window.open(`https://wa.me/5219381083498?text=${encodeURIComponent(mensaje)}`, '_blank');
     confirmarPagoTransferencia();
 }
 
 async function confirmarPagoTransferencia() {
     await guardarPedidoEnSupabase();
     cerrarModalTransferencia();
-    mostrarToast("✅ ¡Pago registrado! Envía tu comprobante por WhatsApp para confirmar.");
 }
 
 function cerrarModalPago() {
     const modal = document.getElementById("modalPago");
-    modal.classList.add("hidden");
-    modal.classList.remove("flex");
+    if(modal) {
+        modal.classList.add("hidden");
+        modal.classList.remove("flex");
+    }
 }
 
 function cerrarModalEfectivo() {
     const modal = document.getElementById("modalEfectivo");
-    modal.classList.add("hidden");
-    modal.classList.remove("flex");
+    if(modal) {
+        modal.classList.add("hidden");
+        modal.classList.remove("flex");
+    }
 }
 
 function cerrarModalTransferencia() {
     const modal = document.getElementById("modalTransferencia");
-    modal.classList.add("hidden");
-    modal.classList.remove("flex");
-}
-
-function copiarDatosBancarios() {
-    const datos = `BBVA México\nCuenta: 1234 5678 9012 3456\nCLABE: 012 345 6789 01234567 8\nBeneficiario: MandaYa Servicios`;
-    navigator.clipboard.writeText(datos);
-    mostrarToast("✅ Datos bancarios copiados");
+    if(modal) {
+        modal.classList.add("hidden");
+        modal.classList.remove("flex");
+    }
 }
 
 // ==================== SEGUIMIENTO DE DELIVERY ====================
 function iniciarSeguimientoDelivery() {
-    if (!pedidoActual || !pedidoActual.id) {
-        console.error("No hay pedido actual para seguir");
-        return;
-    }
+    if (!pedidoActual) return;
 
-    if (seguimientoInterval) {
-        clearInterval(seguimientoInterval);
-        seguimientoInterval = null;
-    }
+    if (seguimientoInterval) clearInterval(seguimientoInterval);
+    if (ubicacionInterval) clearInterval(ubicacionInterval);
     
-    mostrarToast("🟢 Buscando delivery disponible...");
-
     seguimientoInterval = setInterval(async () => {
-        const supabase = supabaseClient;
+        const supabase = window.supabaseClient;
         if (!supabase) return;
         
         try {
@@ -1323,166 +1089,135 @@ function iniciarSeguimientoDelivery() {
             if (error) throw error;
             
             if (pedidoActualizado) {
-                const estadoAnterior = pedidoActual.estado;
                 pedidoActual = pedidoActualizado;
                 
                 if (pedidoActualizado.estado === 'completado') {
-                    console.log("🎉 Pedido completado detectado! Limpiando UI...");
-                    
-                    if (seguimientoInterval) {
-                        clearInterval(seguimientoInterval);
-                        seguimientoInterval = null;
-                    }
-                    if (ubicacionInterval) {
-                        clearInterval(ubicacionInterval);
-                        ubicacionInterval = null;
-                    }
-                    
                     actualizarEstadoPanel('completado');
-                    rutaYaDibujada = false;
-                    ultimoEstadoPedido = null;
-                    rutaDestinoActual = null;
-                    pedidoActual = null;
-                    bloquearUIporPedidoActivo(false);
-                    cargarDeliverysEnLinea();
-                    
+                    if (seguimientoInterval) clearInterval(seguimientoInterval);
+                    if (ubicacionInterval) clearInterval(ubicacionInterval);
+                    seguimientoInterval = null;
+                    ubicacionInterval = null;
                     return;
                 }
                 
                 if (pedidoActualizado.estado === 'asignado' && pedidoActualizado.delivery_nombre) {
                     actualizarEstadoPanel('asignado', pedidoActualizado.delivery_nombre);
+                    if (!ubicacionInterval && pedidoActualizado.delivery_id) {
+                        seguirUbicacionDelivery(pedidoActualizado.delivery_id);
+                    }
                 } else if (pedidoActualizado.estado === 'recogido' && pedidoActualizado.delivery_nombre) {
                     actualizarEstadoPanel('recogido', pedidoActualizado.delivery_nombre);
-                    if (estadoAnterior === 'asignado') {
-                        mostrarToast(`📦 ¡El delivery ${pedidoActualizado.delivery_nombre} ya recogió tu paquete!`);
-                    }
-                } else if (pedidoActualizado.estado === 'pendiente') {
-                    actualizarEstadoPanel('pendiente');
                 }
             }
-            
-            if (pedidoActualizado && 
-                (pedidoActualizado.estado === 'asignado' || pedidoActualizado.estado === 'recogido') && 
-                pedidoActualizado.delivery_id) {
-                
-                if (!ubicacionInterval) {
-                    mostrarToast(`✅ Delivery asignado: ${pedidoActualizado.delivery_nombre || 'Delivery'}`);
-                    mostrarDeliveryEnMapa(pedidoActualizado.delivery_id, pedidoActualizado.delivery_nombre);
-                    seguirUbicacionDelivery(pedidoActualizado.delivery_id);
-                }
-            }
-            
         } catch(e) {
-            console.error('Error en seguimiento:', e);
+            console.error('Error:', e);
         }
-    }, 3000);
+    }, 5000);
 }
 
-// ==================== SEGUIMIENTO DEL DELIVERY (VERSIÓN CORREGIDA - SIN MOVIMIENTO FANTASMA) ====================
+// ==================== SEGUIMIENTO UBICACIÓN DELIVERY ====================
 function seguirUbicacionDelivery(deliveryId) {
-    if (ubicacionInterval) {
-        clearInterval(ubicacionInterval);
-        ubicacionInterval = null;
-    }
+    if (ubicacionInterval) clearInterval(ubicacionInterval);
 
     ubicacionInterval = setInterval(async () => {
         if (!pedidoActual || !map) return;
 
-        // ✅ DETECTAR SI EL USUARIO ESTÁ HACIENDO ZOOM
-        if (map.isMoving() || map.isZooming()) {
-            console.log("⏸️ Usuario haciendo zoom - NO actualizar marcador");
-            return; // No actualizar durante zoom o movimiento
-        }
-
-        const ubicacion = await obtenerUbicacionDeSupabase(deliveryId);
-        if (!ubicacion?.lat || !ubicacion?.lng) return;
-
-        let cambioSignificativo = false;
+        const estaEnMovimiento = map.isMoving() || map.isZooming();
+        const acabaDeTerminarZoom = (Date.now() - ultimoZoomEnd) < 2000;
         
-        if (!ultimaPosicionDelivery) {
-            cambioSignificativo = true;
-        } else {
-            const distanciaMovida = calcularDistanciaMetros(
-                ultimaPosicionDelivery.lat, 
-                ultimaPosicionDelivery.lng, 
-                ubicacion.lat, 
-                ubicacion.lng
-            );
-            cambioSignificativo = distanciaMovida > 8;
+        if (estaEnMovimiento || acabaDeTerminarZoom || actualizandoDelivery) {
+            return;
         }
+        
+        actualizandoDelivery = true;
 
-        if (cambioSignificativo) {
-            ultimaPosicionDelivery = { lat: ubicacion.lat, lng: ubicacion.lng };
+        try {
+            const ubicacion = await obtenerUbicacionDeSupabase(deliveryId);
+            if (!ubicacion?.lat || !ubicacion?.lng) return;
+
+            let cambioSignificativo = false;
             
-            if (deliveryMarker) {
-                deliveryMarker.setLngLat([ubicacion.lng, ubicacion.lat]);
+            if (!ultimaPosicionDelivery) {
+                cambioSignificativo = true;
             } else {
-                deliveryMarker = crearMarcadorDelivery({
-                    id: deliveryId,
-                    nombre: pedidoActual?.delivery_nombre || 'Delivery',
-                    lat: ubicacion.lat,
-                    lng: ubicacion.lng,
-                    online: true
-                });
-                if (deliveryMarker) deliveryMarker.addTo(map);
+                const distanciaMovida = calcularDistanciaMetros(
+                    ultimaPosicionDelivery.lat, ultimaPosicionDelivery.lng, 
+                    ubicacion.lat, ubicacion.lng
+                );
+                cambioSignificativo = distanciaMovida > 15;
             }
 
-            if (pedidoActual) {
-                let destinoRuta = null;
-                let tipoRuta = pedidoActual.estado === 'asignado' ? 'recogida' : 'entrega';
-
-                if (pedidoActual.estado === 'asignado' && pedidoActual.origen_lat) {
-                    destinoRuta = { lat: pedidoActual.origen_lat, lng: pedidoActual.origen_lng };
-                } else if (pedidoActual.estado === 'recogido' && pedidoActual.destino_lat) {
-                    destinoRuta = { lat: pedidoActual.destino_lat, lng: pedidoActual.destino_lng };
+            if (cambioSignificativo) {
+                ultimaPosicionDelivery = { lat: ubicacion.lat, lng: ubicacion.lng };
+                
+                if (deliveryMarker) {
+                    deliveryMarker.setLngLat([ubicacion.lng, ubicacion.lat]);
+                } else {
+                    deliveryMarker = crearMarcadorDelivery({
+                        id: deliveryId,
+                        nombre: pedidoActual?.delivery_nombre || 'Delivery',
+                        lat: ubicacion.lat,
+                        lng: ubicacion.lng,
+                        online: true
+                    });
                 }
 
-                if (destinoRuta) {
-                    await dibujarRutaDeliverySinCentrar(
-                        { lng: ubicacion.lng, lat: ubicacion.lat }, 
-                        destinoRuta, 
-                        tipoRuta
-                    );
+                if (pedidoActual) {
+                    let destinoRuta = null;
+                    if (pedidoActual.estado === 'asignado' && pedidoActual.origen_lat) {
+                        destinoRuta = { lat: pedidoActual.origen_lat, lng: pedidoActual.origen_lng };
+                    } else if (pedidoActual.estado === 'recogido' && pedidoActual.destino_lat) {
+                        destinoRuta = { lat: pedidoActual.destino_lat, lng: pedidoActual.destino_lng };
+                    }
+
+                    if (destinoRuta) {
+                        await dibujarRutaDeliverySinCentrar(
+                            { lng: ubicacion.lng, lat: ubicacion.lat }, 
+                            destinoRuta, 
+                            pedidoActual.estado
+                        );
+                    }
                 }
             }
+        } catch(e) {
+            console.error("Error:", e);
+        } finally {
+            actualizandoDelivery = false;
         }
         
-    }, 5000);
+    }, 8000);
 }
 
-// Función auxiliar para calcular distancia en metros
 function calcularDistanciaMetros(lat1, lon1, lat2, lon2) {
-    const R = 6371; // Radio de la Tierra en km
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-              Math.sin(dLon/2) * Math.sin(dLon/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    return R * c * 1000; // Distancia en metros
+    if (!lat1 || !lon1 || !lat2 || !lon2) return 0;
+    const R = 6371e3;
+    const φ1 = lat1 * Math.PI / 180;
+    const φ2 = lat2 * Math.PI / 180;
+    const Δφ = (lat2 - lat1) * Math.PI / 180;
+    const Δλ = (lon2 - lon1) * Math.PI / 180;
+
+    const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ/2) * Math.sin(Δλ/2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
 async function dibujarRutaDeliverySinCentrar(origin, dest, tipo) {
     if (!map || !origin || !dest) return;
 
-    // ✅ VERIFICAR SI LA RUTA YA ESTÁ DIBUJADA Y NO CAMBIÓ
     const claveRuta = `${origin.lat.toFixed(6)},${origin.lng.toFixed(6)}-${dest.lat.toFixed(6)},${dest.lng.toFixed(6)}-${tipo}`;
     
-    if (ultimaRutaDibujada === claveRuta) {
-        console.log("🟢 Ruta idéntica - No redibujar");
-        return;
-    }
+    if (ultimaRutaDibujada === claveRuta) return;
     
     ultimaRutaDibujada = claveRuta;
-    console.log("🔄 Redibujando ruta del delivery...");
 
-    const color = tipo === 'recogida' ? '#10B981' : '#FF6200';
+    const color = tipo === 'asignado' ? '#10B981' : '#FF6200';
     const layerId = 'delivery-route';
+    const sourceId = 'delivery-route-source';
 
-    // Limpiar anterior
     try {
         if (map.getLayer(layerId)) map.removeLayer(layerId);
-        if (map.getSource(layerId)) map.removeSource(layerId);
+        if (map.getSource(sourceId)) map.removeSource(sourceId);
     } catch(e) {}
 
     try {
@@ -1490,991 +1225,40 @@ async function dibujarRutaDeliverySinCentrar(origin, dest, tipo) {
         const data = await response.json();
 
         if (data.routes && data.routes[0]) {
-            map.addSource(layerId, { type: 'geojson', data: data.routes[0].geometry });
+            map.addSource(sourceId, { type: 'geojson', data: data.routes[0].geometry });
             map.addLayer({
                 id: layerId,
                 type: 'line',
-                source: layerId,
+                source: sourceId,
                 layout: { 'line-join': 'round', 'line-cap': 'round' },
                 paint: { 'line-color': color, 'line-width': 5.5, 'line-opacity': 0.85 }
             });
-            console.log("✅ Ruta del delivery dibujada/actualizada");
         }
     } catch(e) {
-        console.error("❌ Error dibujando ruta delivery:", e);
+        console.error("Error:", e);
     }
 }
 
 function centrarEnDelivery() {
     if (!deliveryMarker) {
-        mostrarToast("❌ No hay delivery activo para centrar", true);
+        mostrarToast("❌ No hay delivery activo", true);
         return;
     }
     
     const pos = deliveryMarker.getLngLat();
-    map.flyTo({
-        center: [pos.lng, pos.lat],
-        zoom: 16,
-        duration: 1000
-    });
-    mostrarToast("🎯 Mapa centrado en el delivery");
+    map.flyTo({ center: [pos.lng, pos.lat], zoom: 16, duration: 1000 });
+    mostrarToast("🎯 Centrado en delivery");
 }
 
-function calcularDistanciaEntrePuntos(punto1, punto2) {
-    const R = 6371;
-    const dLat = (punto2.lat - punto1.lat) * Math.PI / 180;
-    const dLon = (punto2.lng - punto1.lng) * Math.PI / 180;
-    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-              Math.cos(punto1.lat * Math.PI / 180) * Math.cos(punto2.lat * Math.PI / 180) *
-              Math.sin(dLon/2) * Math.sin(dLon/2);
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-}
-
-function ocultarDeliveryInfo() {
-    document.getElementById("deliveryInfo").classList.add("hidden");
-    if (deliveryMarker) map.removeLayer(deliveryMarker);
-}
-
-// ==================== HISTORIAL Y PERFIL ====================
-async function mostrarHistorialCompleto() {
-    const supabase = supabaseClient;
-    if (!supabase) {
-        mostrarToast("Error de conexión", true);
-        return;
-    }
-    
-    try {
-        const { data: misPedidos, error } = await supabase
-            .from('pedidos')
-            .select('*')
-            .eq('cliente_id', currentUser?.id)
-            .order('fecha', { ascending: false });
-        
-        if (error) throw error;
-        
-        if (!misPedidos || misPedidos.length === 0) {
-            mostrarToast("📭 No tienes envíos anteriores");
-            return;
-        }
-        
-        let modalExistente = document.getElementById("modalHistorial");
-        if (modalExistente) modalExistente.remove();
-        
-        const modal = document.createElement('div');
-        modal.id = "modalHistorial";
-        modal.className = "fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[10000] p-4";
-        modal.innerHTML = `
-            <div class="bg-gray-800 rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-hidden modal-uber">
-                <div class="flex justify-between items-center pt-6 pb-3 px-6 border-b border-gray-700">
-                    <div>
-                        <i class="fas fa-history text-3xl text-orange-500 mb-1 block"></i>
-                        <h3 class="text-xl font-bold text-white">Mis Envíos</h3>
-                        <p class="text-gray-400 text-xs">Historial completo de tus envíos</p>
-                    </div>
-                    <button onclick="cerrarModalHistorial()" class="text-gray-400 hover:text-white text-2xl transition-all">
-                        <i class="fas fa-times-circle"></i>
-                    </button>
-                </div>
-                
-                <div class="overflow-y-auto max-h-[60vh] p-4 space-y-3">
-                    ${misPedidos.map(p => `
-                        <div class="bg-gray-700 rounded-xl p-4 ${p.estado === 'completado' ? 'border-l-4 border-green-500' : p.estado === 'pendiente' ? 'border-l-4 border-yellow-500' : 'border-l-4 border-blue-500'}">
-                            <div class="flex justify-between items-start mb-2">
-                                <div>
-                                    <span class="font-bold text-orange-400">#${p.id}</span>
-                                    <span class="text-xs ml-2 px-2 py-0.5 rounded-full ${p.estado === 'completado' ? 'bg-green-500/20 text-green-400' : p.estado === 'pendiente' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-blue-500/20 text-blue-400'}">
-                                        ${p.estado === 'completado' ? '✅ Completado' : p.estado === 'pendiente' ? '⏳ Pendiente' : '🚚 En camino'}
-                                    </span>
-                                </div>
-                                <span class="text-xs text-gray-400">${new Date(p.fecha).toLocaleDateString()}</span>
-                            </div>
-                            <p class="text-sm text-gray-300">
-                                <i class="fas fa-circle text-orange-500 text-xs mr-1"></i> ${p.origen}
-                            </p>
-                            <p class="text-sm text-gray-300 mt-1">
-                                <i class="fas fa-square text-blue-500 text-xs mr-1"></i> ${p.destino}
-                            </p>
-                            <div class="flex justify-between items-center mt-3 pt-2 border-t border-gray-600">
-                                <div class="text-sm">
-                                    <span class="text-gray-400">📏 ${p.distancia_real} km</span>
-                                    <span class="text-gray-400 ml-3">💰 $${p.tarifa}</span>
-                                </div>
-                                <button onclick="eliminarEnvio(${p.id})" class="bg-red-500/20 hover:bg-red-500 text-red-400 hover:text-white px-3 py-1 rounded-lg text-sm transition-all">
-                                    <i class="fas fa-trash-alt mr-1"></i> Eliminar
-                                </button>
-                            </div>
-                        </div>
-                    `).join('')}
-                </div>
-                
-                <div class="border-t border-gray-700 p-4">
-                    <div class="flex justify-between text-sm text-gray-400">
-                        <span>Total: ${misPedidos.length}</span>
-                        <span>✅ Completados: ${misPedidos.filter(p => p.estado === 'completado').length}</span>
-                        <span>⏳ Pendientes: ${misPedidos.filter(p => p.estado === 'pendiente').length}</span>
-                        <span>🚚 En camino: ${misPedidos.filter(p => p.estado === 'asignado').length}</span>
-                    </div>
-                </div>
-            </div>
-        `;
-        
-        document.body.appendChild(modal);
-    } catch(e) {
-        console.error('Error cargando historial:', e);
-        mostrarToast("Error al cargar historial", true);
-    }
-}
-
-function cerrarModalHistorial() {
-    const modal = document.getElementById("modalHistorial");
-    if (modal) modal.remove();
-}
-
-async function eliminarEnvio(pedidoId) {
-    const supabase = supabaseClient;
-    if (!supabase) {
-        mostrarToast("Error de conexión", true);
-        return;
-    }
-    
-    const { data: pedido } = await supabase
-        .from('pedidos')
-        .select('*')
-        .eq('id', pedidoId)
-        .single();
-    
-    if (!pedido) {
-        mostrarToast("Envío no encontrado", true);
-        return;
-    }
-    
-    let mensaje = "";
-    if (pedido.estado === 'completado') {
-        mensaje = "Este envío ya está completado. ¿Seguro que quieres eliminarlo del historial?";
-    } else if (pedido.estado === 'asignado') {
-        mensaje = "⚠️ Este envío está en camino. Si lo eliminas, el delivery ya no lo verá. ¿Estás seguro?";
-    } else {
-        mensaje = "¿Estás seguro de que quieres eliminar este envío? Esta acción no se puede deshacer.";
-    }
-    
-    mostrarModalConfirmacion(
-        "Eliminar envío",
-        mensaje,
-        async () => {
-            try {
-                const { error } = await supabase
-                    .from('pedidos')
-                    .delete()
-                    .eq('id', pedidoId);
-                
-                if (error) throw error;
-                
-                mostrarToast(`🗑️ Envío #${pedidoId} eliminado correctamente`);
-                
-                if (document.getElementById("modalHistorial")) {
-                    mostrarHistorialCompleto();
-                }
-            } catch(e) {
-                console.error('Error eliminando:', e);
-                mostrarToast("Error al eliminar el envío", true);
-            }
-        }
-    );
-}
-
-function mostrarModalConfirmacion(titulo, mensaje, onConfirm) {
-    let modalExistente = document.getElementById("modalConfirmacion");
-    if (modalExistente) modalExistente.remove();
-    
-    const modal = document.createElement('div');
-    modal.id = "modalConfirmacion";
-    modal.className = "fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[10000] p-4";
-    modal.innerHTML = `
-        <div class="bg-gray-800 rounded-3xl max-w-sm w-full modal-uber text-center p-6">
-            <div class="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                <i class="fas fa-exclamation-triangle text-3xl text-red-500"></i>
-            </div>
-            <h3 class="text-xl font-bold text-white mb-2">${titulo}</h3>
-            <p class="text-gray-400 text-sm mb-6">${mensaje}</p>
-            <div class="flex gap-3">
-                <button onclick="cerrarModalConfirmacion()" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-2 rounded-xl transition-all">
-                    Cancelar
-                </button>
-                <button id="confirmarBtn" class="flex-1 bg-red-500 hover:bg-red-600 text-white py-2 rounded-xl transition-all">
-                    Eliminar
-                </button>
-            </div>
-        </div>
-    `;
-    
-    document.body.appendChild(modal);
-    
-    document.getElementById("confirmarBtn").onclick = () => {
-        cerrarModalConfirmacion();
-        if (onConfirm) onConfirm();
-    };
-}
-
-function cerrarModalConfirmacion() {
-    const modal = document.getElementById("modalConfirmacion");
-    if (modal) modal.remove();
-}
-
-function verHistorial() { mostrarHistorialCompleto();}
-
-function verPerfil() {
-    const modalExistente = document.getElementById("modalPerfil");
-    if (modalExistente) modalExistente.remove();
-    
-    const modal = document.createElement('div');
-    modal.id = "modalPerfil";
-    modal.className = "fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[10001] p-4";
-    modal.innerHTML = `
-        <div class="bg-gray-800 rounded-3xl max-w-sm w-full modal-uber">
-            <div class="text-center pt-6 pb-3 border-b border-gray-700">
-                <div class="w-16 h-16 bg-orange-500 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <i class="fas fa-user-circle text-white text-3xl"></i>
-                </div>
-                <h2 class="text-xl font-bold text-white">Mi Perfil</h2>
-                <p class="text-gray-400 text-sm mt-1">Datos de tu cuenta</p>
-            </div>
-            
-            <div class="p-5 space-y-3">
-                <div class="bg-gray-700 rounded-xl p-3 flex items-center gap-3">
-                    <i class="fas fa-user text-orange-500 w-5"></i>
-                    <div class="flex-1">
-                        <div class="text-xs text-gray-400">Nombre</div>
-                        <div class="text-white font-medium">${currentUser?.nombre || 'No disponible'}</div>
-                    </div>
-                </div>
-                
-                <div class="bg-gray-700 rounded-xl p-3 flex items-center gap-3">
-                    <i class="fas fa-envelope text-orange-500 w-5"></i>
-                    <div class="flex-1">
-                        <div class="text-xs text-gray-400">Correo electrónico</div>
-                        <div class="text-white font-medium">${currentUser?.email || 'No disponible'}</div>
-                    </div>
-                </div>
-                
-                <div class="bg-gray-700 rounded-xl p-3 flex items-center gap-3">
-                    <i class="fas fa-tag text-orange-500 w-5"></i>
-                    <div class="flex-1">
-                        <div class="text-xs text-gray-400">Rol</div>
-                        <div class="text-white font-medium">
-                            <span class="bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded-full text-xs">Cliente</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="px-5 pb-5">
-                <button onclick="cerrarModalPerfil()" class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl transition-all">
-                    Cerrar
-                </button>
-            </div>
-        </div>
-    `;
-    
-    document.body.appendChild(modal);
-}
-
-function cerrarModalPerfil() {
-    const modal = document.getElementById("modalPerfil");
-    if (modal) modal.remove();
-}
-
-async function mostrarDeliveryEnMapa(deliveryId, deliveryNombre = null) {
-    const supabase = supabaseClient;
-    if (!supabase) return;
-    
-    try {
-        let nombreDelivery = deliveryNombre;
-        
-        if (!nombreDelivery) {
-            const { data: delivery, error } = await supabase
-                .from('usuarios')
-                .select('nombre')
-                .eq('id', deliveryId)
-                .single();
-            
-            if (!error && delivery) {
-                nombreDelivery = delivery.nombre;
-            }
-        }
-        
-        if (nombreDelivery) {
-            const deliveryInfo = document.getElementById("deliveryInfo");
-            const deliveryNombreEl = document.getElementById("deliveryNombre");
-            
-            if (deliveryInfo) deliveryInfo.classList.remove("hidden");
-            if (deliveryNombreEl) deliveryNombreEl.innerHTML = `<i class="fas fa-motorcycle"></i> ${nombreDelivery}`;
-            
-            limpiarRutaCliente();
-            
-            if (pedidoActual) {
-                if (!pedidoActual.destinoCoords && pedidoActual.destino_lat) {
-                    pedidoActual.destinoCoords = {
-                        lat: pedidoActual.destino_lat,
-                        lng: pedidoActual.destino_lng
-                    };
-                }
-                if (!pedidoActual.origenCoords && pedidoActual.origen_lat) {
-                    pedidoActual.origenCoords = {
-                        lat: pedidoActual.origen_lat,
-                        lng: pedidoActual.origen_lng
-                    };
-                }
-            }
-        }
-    } catch(e) {
-        console.error('Error mostrando delivery:', e);
-    }
-}
-
-function cerrarSesion() { 
-    mostrarModalConfirmacion(
-        "Cerrar Sesión",
-        "¿Estás seguro de que deseas cerrar sesión?",
-        () => {
-            // ✅ Limpiar intervalos de seguimiento
-            if (seguimientoInterval) { 
-                clearInterval(seguimientoInterval); 
-                seguimientoInterval = null;
-            }
-            
-            // ✅ Limpiar intervalo de ubicación
-            if (ubicacionInterval) { 
-                clearInterval(ubicacionInterval); 
-                ubicacionInterval = null;
-            }
-            
-            // ✅ Limpiar intervalo de deliverys
-            if (deliverysInterval) { 
-                clearInterval(deliverysInterval); 
-                deliverysInterval = null;
-            }
-            
-            // ✅ Limpiar marcadores de deliverys - USANDO window.deliveryMarkers
-            if (window.deliveryMarkers && window.deliveryMarkers.length > 0) {
-                window.deliveryMarkers.forEach(marker => {
-                    if (marker && marker.remove) {
-                        try {
-                            marker.remove();
-                        } catch(e) {
-                            console.warn("Error eliminando marcador:", e);
-                        }
-                    }
-                });
-                window.deliveryMarkers = [];
-            }
-            
-            // ✅ Limpiar marcador de delivery individual (cuando hay pedido activo)
-            if (deliveryMarker) {
-                try {
-                    if (typeof deliveryMarker.remove === 'function') {
-                        deliveryMarker.remove();
-                    } else if (deliveryMarker && map) {
-                        deliveryMarker.remove();
-                    }
-                } catch(e) {}
-                deliveryMarker = null;
-            }
-            
-            // ✅ Limpiar marcador de origen
-            if (originMarker) {
-                try {
-                    originMarker.remove();
-                } catch(e) {}
-                originMarker = null;
-            }
-            
-            // ✅ Limpiar marcador de destino
-            if (destMarker) {
-                try {
-                    destMarker.remove();
-                } catch(e) {}
-                destMarker = null;
-            }
-            
-            // ✅ Limpiar ruta
-            if (currentRouteLayerId && map) {
-                try {
-                    if (map.getLayer(currentRouteLayerId)) {
-                        map.removeLayer(currentRouteLayerId);
-                    }
-                    if (map.getSource(currentRouteLayerId)) {
-                        map.removeSource(currentRouteLayerId);
-                    }
-                } catch(e) {}
-            }
-            
-            // ✅ Limpiar cualquier otra capa de ruta
-            limpiarRutaCliente();
-            
-            // ✅ Opcional: Actualizar estado online en Supabase (si el cliente estaba online)
-            if (currentUser && currentUser.online && supabaseClient) {
-                supabaseClient
-                    .from('usuarios')
-                    .update({ online: false })
-                    .eq('id', currentUser.id)
-                    .catch(e => console.warn("Error actualizando estado online:", e));
-            }
-            
-            // ✅ Limpiar localStorage y redirigir
-            localStorage.removeItem('sesion_activa'); 
-            window.location.href = "index.html";
-        }
-    );
-}
-
-function mostrarToast(msg, err = false) {
-    const toastsAnteriores = document.querySelectorAll('.toast-moderno');
-    toastsAnteriores.forEach(toast => toast.remove());
-    
-    const toast = document.createElement('div');
-    toast.className = 'toast-moderno';
-    
-    const isMobile = window.innerWidth < 768;
-    const paddingY = isMobile ? '12px' : '14px';
-    const paddingX = isMobile ? '20px' : '28px';
-    const fontSize = isMobile ? '13px' : '14px';
-    
-    let icono = err ? 'fa-exclamation-triangle' : 'fa-check-circle';
-    let colorFondo = err 
-        ? 'linear-gradient(135deg, #dc2626, #b91c1c)' 
-        : 'linear-gradient(135deg, #10b981, #059669)';
-    
-    if (msg.includes('📍')) icono = 'fa-location-dot';
-    else if (msg.includes('🏁')) icono = 'fa-flag-checkered';
-    else if (msg.includes('💰') || msg.includes('$')) icono = 'fa-money-bill-wave';
-    else if (msg.includes('🚚') || msg.includes('delivery')) icono = 'fa-motorcycle';
-    else if (msg.includes('✅')) icono = 'fa-circle-check';
-    else if (msg.includes('❌')) icono = 'fa-circle-exclamation';
-    
-    toast.style.cssText = `
-        position: fixed;
-        bottom: ${isMobile ? '80px' : '20px'};
-        left: 50%;
-        transform: translateX(-50%) translateY(20px);
-        background: ${colorFondo};
-        color: white;
-        padding: ${paddingY} ${paddingX};
-        border-radius: ${isMobile ? '30px' : '50px'};
-        font-size: ${fontSize};
-        font-weight: 500;
-        z-index: 100000;
-        box-shadow: 0 10px 25px -5px rgba(0,0,0,0.2), 0 8px 10px -6px rgba(0,0,0,0.1);
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        opacity: 0;
-        transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        backdrop-filter: blur(4px);
-        border: 1px solid rgba(255,255,255,0.2);
-        max-width: ${isMobile ? '85%' : 'auto'};
-        white-space: ${isMobile ? 'normal' : 'nowrap'};
-        text-align: center;
-        line-height: 1.4;
-        word-break: break-word;
-    `;
-    
-    toast.innerHTML = `
-        <i class="fas ${icono}" style="font-size: ${isMobile ? '16px' : '18px'}; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.2));"></i>
-        <span>${msg}</span>
-    `;
-    
-    document.body.appendChild(toast);
-    
-    setTimeout(() => {
-        toast.style.transform = 'translateX(-50%) translateY(0)';
-        toast.style.opacity = '1';
-    }, 10);
-    
-    const duracion = err ? 3500 : (msg.length > 50 ? 3500 : 2500);
-    
-    setTimeout(() => {
-        toast.style.transform = 'translateX(-50%) translateY(20px)';
-        toast.style.opacity = '0';
-        setTimeout(() => toast.remove(), 400);
-    }, duracion);
-}
-
-// CORREGIR en cliente.js
-function mostrarResumenRuta() {
-    if (!originCoords || !destCoords) {
-        mostrarToast("❌ Selecciona origen y destino primero", true);
-        return;
-    }
-    
-    const distancia = currentRouteData ? currentRouteData.distance : calcularDistancia();
-    const tipo = document.getElementById("tipoEnvio")?.value || 'paquete';
-    const rate = calculateShippingRate(distancia, tipo);
-    const duracion = currentRouteData ? currentRouteData.duration : (distancia * 2);
-    
-    mostrarToast("📏 Calculando ruta real...");
-    
-    getRealDistanceAndTime(originCoords, destCoords).then(routeData => {
-        const distanciaKm = routeData ? routeData.distanceKm : distancia.toFixed(2);
-        const duracionTexto = routeData ? routeData.durationText : formatDuration(duracion);
-        
-        mostrarModalResumen(
-            distanciaKm,
-            duracionTexto,
-            rate.total,
-            tipo
-        );
-    }).catch(() => {
-        mostrarModalResumen(
-            distancia.toFixed(2),
-            formatDuration(duracion),
-            rate.total,
-            tipo
-        );
-    });
-}
-
-function mostrarModalResumen(distancia, tiempo, tarifaBase, tipo) {
-    const modalExistente = document.getElementById("modalResumenRuta");
-    if (modalExistente) modalExistente.remove();
-    
-    tarifaBaseSinExtras = tarifaBase;
-    
-    const extrasGuardados = currentRouteData?.extras || { 
-        lluvia: false, 
-        noche: false, 
-        espera: false 
-    };
-    
-    let totalInicial = tarifaBase;
-    if (extrasGuardados.lluvia) totalInicial += 10;
-    if (extrasGuardados.noche) totalInicial += 10;
-    if (extrasGuardados.espera) totalInicial += 10;
-    
-    const modal = document.createElement('div');
-    modal.id = "modalResumenRuta";
-    modal.className = "fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[10001] p-4";
-    modal.innerHTML = `
-        <div class="bg-gray-800 rounded-2xl max-w-sm w-full modal-uber">
-            <div class="text-center pt-4 pb-2 border-b border-gray-700">
-                <div class="w-12 h-12 bg-orange-500 rounded-full flex items-center justify-center mx-auto mb-2">
-                    <i class="fas fa-route text-white text-xl"></i>
-                </div>
-                <h2 class="text-lg font-bold text-white">Resumen de Ruta</h2>
-                <p class="text-gray-400 text-xs mt-1">Detalles de tu envío</p>
-            </div>
-            
-            <div class="p-3 space-y-2">
-                <div class="bg-gray-700 rounded-lg p-2 flex justify-between items-center">
-                    <span class="text-gray-400 text-xs">📍 Distancia real</span>
-                    <span class="text-white font-bold text-sm">${distancia} km</span>
-                </div>
-                <div class="bg-gray-700 rounded-lg p-2 flex justify-between items-center">
-                    <span class="text-gray-400 text-xs">⏱️ Tiempo estimado</span>
-                    <span class="text-white font-bold text-sm">${tiempo}</span>
-                </div>
-                <div class="bg-gray-700 rounded-lg p-2 flex justify-between items-center">
-                    <span class="text-gray-400 text-xs">📦 Tipo de envío</span>
-                    <span class="text-white font-bold text-sm capitalize">${tipo}</span>
-                </div>
-                
-                <div class="bg-gray-700 rounded-lg p-2">
-                    <div class="text-gray-400 text-xs mb-2 flex items-center gap-1">
-                        <i class="fas fa-plus-circle text-orange-500 text-xs"></i>
-                        Extras (+$10 c/u)
-                    </div>
-                    
-                    <div class="flex flex-wrap gap-2 justify-center">
-                        <div class="flex flex-col items-center bg-gray-600 rounded-lg p-2 w-16 cursor-pointer hover:bg-gray-500 transition-all" onclick="toggleExtraEnResumen('lluvia')">
-                            <i class="fas fa-cloud-rain text-blue-400 text-lg mb-0.5"></i>
-                            <span class="text-white text-xs">Lluvia</span>
-                            <span class="text-orange-400 text-xs">+$10</span>
-                            <div id="checkLluviaResumen" class="mt-1 w-4 h-4 rounded-full border-2 ${extrasGuardados.lluvia ? 'bg-orange-500 border-orange-500' : 'border-gray-400'} flex items-center justify-center">
-                                ${extrasGuardados.lluvia ? '<i class="fas fa-check text-white text-[8px]"></i>' : ''}
-                            </div>
-                        </div>
-                        
-                        <div class="flex flex-col items-center bg-gray-600 rounded-lg p-2 w-16 cursor-pointer hover:bg-gray-500 transition-all" onclick="toggleExtraEnResumen('noche')">
-                            <i class="fas fa-moon text-yellow-400 text-lg mb-0.5"></i>
-                            <span class="text-white text-xs">Noche</span>
-                            <span class="text-orange-400 text-xs">+$10</span>
-                            <div id="checkNocheResumen" class="mt-1 w-4 h-4 rounded-full border-2 ${extrasGuardados.noche ? 'bg-orange-500 border-orange-500' : 'border-gray-400'} flex items-center justify-center">
-                                ${extrasGuardados.noche ? '<i class="fas fa-check text-white text-[8px]"></i>' : ''}
-                            </div>
-                        </div>
-                        
-                        <div class="flex flex-col items-center bg-gray-600 rounded-lg p-2 w-16 cursor-pointer hover:bg-gray-500 transition-all" onclick="toggleExtraEnResumen('espera')">
-                            <i class="fas fa-clock text-purple-400 text-lg mb-0.5"></i>
-                            <span class="text-white text-xs">Espera</span>
-                            <span class="text-orange-400 text-xs">+$10</span>
-                            <div id="checkEsperaResumen" class="mt-1 w-4 h-4 rounded-full border-2 ${extrasGuardados.espera ? 'bg-orange-500 border-orange-500' : 'border-gray-400'} flex items-center justify-center">
-                                ${extrasGuardados.espera ? '<i class="fas fa-check text-white text-[8px]"></i>' : ''}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="bg-orange-500 rounded-lg p-2 flex justify-between items-center">
-                    <span class="text-white font-bold text-sm">💰 Total</span>
-                    <span class="text-white font-bold text-lg" id="totalConExtrasResumen">$${totalInicial} MXN</span>
-                </div>
-                
-                <div class="text-center text-[10px] text-gray-400">
-                    <i class="fas fa-info-circle text-[8px]"></i> Los extras se pagan al delivery
-                </div>
-            </div>
-            
-            <div class="px-3 pb-3 flex gap-2">
-                <button onclick="cerrarModalResumen()" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 rounded-lg text-sm transition-all">Cancelar</button>
-                <button id="btnAceptarExtrasResumen" class="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-medium py-2 rounded-lg text-sm transition-all">✅ Aceptar</button>
-            </div>
-        </div>
-    `;
-    
-    document.body.appendChild(modal);
-    
-    window.extrasTemporales = { ...extrasGuardados };
-    window.tarifaBaseActual = tarifaBase;
-    
-    document.getElementById("btnAceptarExtrasResumen").onclick = () => {
-        confirmarExtrasDesdeResumen();
-    };
-}
-
-function toggleExtraEnResumen(extra) {
-    if (!window.extrasTemporales) {
-        window.extrasTemporales = { lluvia: false, noche: false, espera: false };
-    }
-    window.extrasTemporales[extra] = !window.extrasTemporales[extra];
-    
-    const checkDiv = document.getElementById(`check${extra.charAt(0).toUpperCase() + extra.slice(1)}Resumen`);
-    if (checkDiv) {
-        if (window.extrasTemporales[extra]) {
-            checkDiv.classList.remove('border-gray-400');
-            checkDiv.classList.add('bg-orange-500', 'border-orange-500');
-            checkDiv.innerHTML = '<i class="fas fa-check text-white text-[8px]"></i>';
-        } else {
-            checkDiv.classList.remove('bg-orange-500', 'border-orange-500');
-            checkDiv.classList.add('border-gray-400');
-            checkDiv.innerHTML = '';
-        }
-    }
-    
-    let total = window.tarifaBaseActual;
-    if (window.extrasTemporales.lluvia) total += 10;
-    if (window.extrasTemporales.noche) total += 10;
-    if (window.extrasTemporales.espera) total += 10;
-    
-    const totalSpan = document.getElementById("totalConExtrasResumen");
-    if (totalSpan) {
-        totalSpan.innerHTML = `$${total} MXN`;
-        totalSpan.style.transform = 'scale(1.05)';
-        setTimeout(() => {
-            totalSpan.style.transform = 'scale(1)';
-        }, 150);
-    }
-    
-    const card = document.querySelector(`[onclick="toggleExtraEnResumen('${extra}')"]`);
-    if (card) {
-        card.style.transform = 'scale(0.95)';
-        setTimeout(() => {
-            card.style.transform = 'scale(1)';
-        }, 150);
-    }
-}
-
-function actualizarTotalConExtras() {
-    const checkLluvia = document.getElementById("checkLluviaExtras");
-    const checkNoche = document.getElementById("checkNocheExtras");
-    const checkEspera = document.getElementById("checkEsperaExtras");
-    
-    if (!checkLluvia || !checkNoche || !checkEspera) {
-        return;
-    }
-    
-    let total = tarifaBaseSinExtras;
-    
-    if (checkLluvia.checked) total += 10;
-    if (checkNoche.checked) total += 10;
-    if (checkEspera.checked) total += 10;
-    
-    const totalSpan = document.getElementById("totalConExtras");
-    if (totalSpan) {
-        totalSpan.innerHTML = `$${total} MXN`;
-        totalSpan.style.transform = 'scale(1.05)';
-        setTimeout(() => {
-            totalSpan.style.transform = 'scale(1)';
-        }, 150);
-    }
-    
-    return total;
-}
-
-function toggleExtraSeleccion(extra) {
-    const estadoActual = window.extrasTemporales ? window.extrasTemporales[extra] : false;
-    
-    if (!window.extrasTemporales) window.extrasTemporales = { lluvia: false, noche: false, espera: false };
-    window.extrasTemporales[extra] = !estadoActual;
-    
-    const checkDiv = document.getElementById(`check${extra.charAt(0).toUpperCase() + extra.slice(1)}Resumen`);
-    if (checkDiv) {
-        if (window.extrasTemporales[extra]) {
-            checkDiv.classList.remove('border-gray-400');
-            checkDiv.classList.add('bg-orange-500', 'border-orange-500');
-            checkDiv.innerHTML = '<i class="fas fa-check text-white text-xs"></i>';
-        } else {
-            checkDiv.classList.remove('bg-orange-500', 'border-orange-500');
-            checkDiv.classList.add('border-gray-400');
-            checkDiv.innerHTML = '';
-        }
-    }
-    
-    const card = document.querySelector(`.extra-card[data-extra="${extra}"]`);
-    if (card) {
-        card.style.transform = 'scale(0.95)';
-        setTimeout(() => {
-            card.style.transform = 'scale(1)';
-        }, 150);
-    }
-}
-
-function confirmarExtrasDesdeResumen() {
-    console.log("✅ Confirmando extras...");
-    
-    const lluviaSeleccionada = window.extrasTemporales?.lluvia || false;
-    const nocheSeleccionada = window.extrasTemporales?.noche || false;
-    const esperaSeleccionada = window.extrasTemporales?.espera || false;
-    
-    extrasSeleccionados = {
-        lluvia: lluviaSeleccionada,
-        noche: nocheSeleccionada,
-        espera: esperaSeleccionada
-    };
-    
-    let totalFinal = tarifaBaseSinExtras;
-    const extrasAplicados = [];
-    
-    if (extrasSeleccionados.lluvia) {
-        totalFinal += 10;
-        extrasAplicados.push("🌧️ Lluvia");
-    }
-    if (extrasSeleccionados.noche) {
-        totalFinal += 10;
-        extrasAplicados.push("🌙 Noche");
-    }
-    if (extrasSeleccionados.espera) {
-        totalFinal += 10;
-        extrasAplicados.push("⏱️ Espera");
-    }
-    
-    if (currentRouteData) {
-        currentRouteData.extras = { ...extrasSeleccionados };
-        currentRouteData.totalConExtras = totalFinal;
-    }
-    
-    const tarifaElement = document.getElementById("tarifaValue");
-    if (tarifaElement) {
-        tarifaElement.innerHTML = `$${totalFinal} MXN`;
-    }
-    
-    const tarifaElementMobile = document.getElementById("tarifaValueMobile");
-    if (tarifaElementMobile) {
-        tarifaElementMobile.innerHTML = `$${totalFinal} MXN`;
-    }
-    
-    if (pedidoPendiente) {
-        pedidoPendiente.tarifa = totalFinal;
-        pedidoPendiente.extras = { ...extrasSeleccionados };
-    }
-    
-    if (extrasAplicados.length > 0) {
-        mostrarToast(`✅ Extras: ${extrasAplicados.join(", ")} (+$${extrasAplicados.length * 10}) - Total: $${totalFinal}`);
-    } else {
-        mostrarToast(`✅ Total: $${totalFinal} MXN`);
-    }
-    cerrarModalResumen();  
-}
-
-function confirmarExtrasYPagar() { 
-    console.log("🔍 Confirmando extras y procediendo al pago...");
-    
-    const checkLluvia = document.getElementById("checkLluviaExtras");
-    const checkNoche = document.getElementById("checkNocheExtras");
-    const checkEspera = document.getElementById("checkEsperaExtras");
-    
-    if (!checkLluvia || !checkNoche || !checkEspera) {
-        console.error("❌ No se encontraron los checkboxes de extras");
-        cerrarModalResumen();
-        mostrarToast("❌ Error al leer los extras, intenta de nuevo", true);
-        return;
-    }
-    
-    const lluviaSeleccionada = checkLluvia.checked;
-    const nocheSeleccionada = checkNoche.checked;
-    const esperaSeleccionada = checkEspera.checked;
-    
-    extrasSeleccionados = {
-        lluvia: lluviaSeleccionada,
-        noche: nocheSeleccionada,
-        espera: esperaSeleccionada
-    };
-    
-    let totalConExtras = tarifaBaseSinExtras;
-    const extrasAplicados = [];
-    
-    if (extrasSeleccionados.lluvia) {
-        totalConExtras += 10;
-        extrasAplicados.push("🌧️ Lluvia");
-    }
-    if (extrasSeleccionados.noche) {
-        totalConExtras += 10;
-        extrasAplicados.push("🌙 Noche");
-    }
-    if (extrasSeleccionados.espera) {
-        totalConExtras += 10;
-        extrasAplicados.push("⏱️ Espera");
-    }
-    
-    console.log("📊 Resumen de tarifa:", {
-        base: tarifaBaseSinExtras,
-        extras: extrasSeleccionados,
-        total: totalConExtras,
-        extrasAplicados: extrasAplicados
-    });
-    
-    if (currentRouteData) {
-        currentRouteData.extras = { ...extrasSeleccionados };
-        currentRouteData.totalConExtras = totalConExtras;
-    }
-    
-    const tarifaElement = document.getElementById("tarifaValue");
-    if (tarifaElement) {
-        tarifaElement.innerHTML = `$${totalConExtras} MXN`;
-    }
-    
-    const tarifaElementMobile = document.getElementById("tarifaValueMobile");
-    if (tarifaElementMobile) {
-        tarifaElementMobile.innerHTML = `$${totalConExtras} MXN`;
-    }
-    
-    if (pedidoPendiente) {
-        pedidoPendiente.tarifa = totalConExtras;
-        pedidoPendiente.extras = { ...extrasSeleccionados };
-    }
-    
-    if (extrasAplicados.length > 0) {
-        mostrarToast(`✅ Extras: ${extrasAplicados.join(", ")} (+$${extrasAplicados.length * 10}) - Total: $${totalConExtras}`);
-    } else {
-        mostrarToast(`✅ Total: $${totalConExtras} MXN`);
-    }
-    
-    cerrarModalResumen();
-    
-    const modalPago = document.getElementById("modalPago");
-    if (modalPago) {
-        modalPago.classList.remove("hidden");
-        modalPago.classList.add("flex");
-    } else {
-        console.error("❌ No se encontró el modal de pago");
-        mostrarToast("❌ Error al abrir el método de pago", true);
-    }
-}
-
-function cerrarModalResumen() {
-    const modal = document.getElementById("modalResumenRuta");
-    if (modal) modal.remove();
-}
-
-// ==================== BÚSQUEDA DE DIRECCIONES ====================
-let busquedaTimeout = null;
-
-async function buscarDirecciones(query, tipo) {
-    if (!query || query.length < 3) {
-        document.getElementById(`${tipo}Sugerencias`).classList.add('hidden');
-        return;
-    }
-    
-    try {
-        const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query + ', Ciudad del Carmen, Campeche')}&limit=5&addressdetails=1`);
-        const data = await response.json();
-        
-        const sugerenciasDiv = document.getElementById(`${tipo}Sugerencias`);
-        
-        if (data.length === 0) {
-            sugerenciasDiv.classList.add('hidden');
-            return;
-        }
-        
-        sugerenciasDiv.innerHTML = data.map(lugar => `
-            <div class="sugerencia-item p-3 hover:bg-gray-100 cursor-pointer border-b border-gray-100 flex items-start gap-2" 
-                 onclick="seleccionarDireccion('${tipo}', ${lugar.lat}, ${lugar.lon}, '${lugar.display_name.replace(/'/g, "\\'")}')">
-                <i class="fas fa-map-marker-alt text-gray-400 mt-0.5 text-xs"></i>
-                <div class="flex-1">
-                    <div class="text-sm font-medium text-gray-800">${lugar.display_name.split(',')[0]}</div>
-                    <div class="text-xs text-gray-500">${lugar.display_name.split(',').slice(1, 3).join(',')}</div>
-                </div>
-            </div>
-        `).join('');
-        
-        sugerenciasDiv.classList.remove('hidden');
-        
-    } catch(e) {
-        console.error('Error buscando direcciones:', e);
-    }
-}
-
-function seleccionarDireccion(tipo, lat, lng, direccion) {
-    const coords = { lat: parseFloat(lat), lng: parseFloat(lng) };
-    
-    if (coords.lat < 18.58 || coords.lat > 18.70 || coords.lng < -91.88 || coords.lng > -91.75) {
-        mostrarToast("❌ Ubicación fuera de Ciudad del Carmen", true);
-        document.getElementById(`${tipo}Sugerencias`).classList.add('hidden');
-        return;
-    }
-    
-    if (tipo === 'origen') {
-        if (originMarker) {
-            originMarker.setLngLat([coords.lng, coords.lat]);
-        }
-        originCoords = coords;
-        document.getElementById("origen").value = direccion.split(',')[0];
-    } else {
-        if (destMarker) {
-            destMarker.setLngLat([coords.lng, coords.lat]);
-        }
-        destCoords = coords;
-        document.getElementById("destino").value = direccion.split(',')[0];
-    }
-    
-    document.getElementById(`${tipo}Sugerencias`).classList.add('hidden');
-    actualizarRutaYTarifa();
-    mostrarToast(`📍 ${tipo === 'origen' ? 'Origen' : 'Destino'} actualizado`);
-}
-
-// ==================== CARGAR DELIVERYS EN LÍNEA (CORREGIDA) ====================
+// ==================== CARGAR DELIVERYS ====================
 async function cargarDeliverysEnLinea() {
-    // ✅ Verificar que el mapa existe y está completamente cargado
-    if (!map) {
-        console.log("⏳ Mapa no inicializado aún");
-        return;  // ← No reintentar, solo salir
-    }
-    
-    // ✅ Verificar que el source del mapa existe (carga completa)
-    if (!map.loaded()) {
-        console.log("⏳ Mapa cargando... esperando evento 'load'");
-        // No reintentar aquí, el evento 'load' ya debería llamar esta función
-        return;
-    }
-
-    if (!paginaVisible) return;
+    if (!map || !map.loaded() || !paginaVisible) return;
 
     const ahora = Date.now();
-    if (ahora - ultimaPeticionDeliverys < 8000) {
-        return;
-    }
+    if (ahora - ultimaPeticionDeliverys < 8000) return;
     ultimaPeticionDeliverys = ahora;
 
-    const supabase = supabaseClient;
+    const supabase = window.supabaseClient;
     if (!supabase) return;
 
     try {
@@ -2486,26 +1270,17 @@ async function cargarDeliverysEnLinea() {
 
         if (error) throw error;
 
-        // LIMPIAR MARCADORES ANTERIORES (solo los generales, NO el del pedido activo)
-        if (window.deliveryMarkers && window.deliveryMarkers.length > 0) {
+        if (window.deliveryMarkers) {
             window.deliveryMarkers.forEach(marker => {
                 if (marker && marker.remove) marker.remove();
             });
             window.deliveryMarkers = [];
         }
 
-        if (!deliverys || deliverys.length === 0) {
-            console.log("📍 No hay deliverys en línea");
-            return;
-        }
+        if (!deliverys || deliverys.length === 0) return;
 
-        // Crear marcadores SOLO si NO hay un pedido activo con ese delivery
-        let marcadoresCreados = 0;
         for (const delivery of deliverys) {
-            // Si hay un pedido activo con este delivery, NO crear marcador general
-            if (pedidoActual && pedidoActual.delivery_id === delivery.delivery_id) {
-                continue;
-            }
+            if (pedidoActual && pedidoActual.delivery_id === delivery.delivery_id) continue;
 
             const marker = crearMarcadorDelivery({
                 id: delivery.delivery_id,
@@ -2515,167 +1290,66 @@ async function cargarDeliverysEnLinea() {
                 online: true
             });
 
-            if (marker) {
-                window.deliveryMarkers.push(marker);
-                marcadoresCreados++;
-            }
+            if (marker) window.deliveryMarkers.push(marker);
         }
 
-        console.log(`📍 ${deliverys.length} deliverys en línea | ${marcadoresCreados} marcadores generales`);
-
     } catch(e) {
-        console.error("❌ Error cargando deliverys:", e);
+        console.error("Error:", e);
     }
 }
 
-async function tienePedidoActivo(deliveryId) {
-    const supabase = supabaseClient;
-    if (!supabase) return false;
-    
-    try {
-        const { data, error } = await supabase
-            .from('pedidos')
-            .select('id')
-            .eq('delivery_id', deliveryId)
-            .in('estado', ['asignado', 'recogido'])
-            .limit(1);
+// ==================== HISTORIAL Y PERFIL ====================
+function verHistorial() {
+    mostrarToast("📋 Funcionalidad en desarrollo");
+}
+
+function verPerfil() {
+    mostrarToast(`👤 ${currentUser?.nombre}\n📧 ${currentUser?.email}`);
+}
+
+function cerrarSesion() {
+    if (confirm("¿Cerrar sesión?")) {
+        if (seguimientoInterval) clearInterval(seguimientoInterval);
+        if (ubicacionInterval) clearInterval(ubicacionInterval);
+        if (deliverysInterval) clearInterval(deliverysInterval);
         
-        if (error) throw error;
-        return data && data.length > 0;
-    } catch(e) {
-        console.error('Error verificando pedido activo:', e);
-        return false;
+        if (window.deliveryMarkers) {
+            window.deliveryMarkers.forEach(m => { if(m && m.remove) m.remove(); });
+            window.deliveryMarkers = [];
+        }
+        
+        if (deliveryMarker) deliveryMarker.remove();
+        
+        localStorage.removeItem('sesion_activa');
+        window.location.href = "index.html";
     }
 }
 
-// ==================== LIMPIAR RECURSOS AL CERRAR PESTAÑA ====================
-function limpiarTodosLosIntervalos() {
-    console.log("🧹 Limpiando intervalos y recursos...");
-    
-    if (seguimientoInterval) {
-        clearInterval(seguimientoInterval);
-        seguimientoInterval = null;
-        console.log("✅ seguimientoInterval limpiado");
-    }
-    
-    if (ubicacionInterval) {
-        clearInterval(ubicacionInterval);
-        ubicacionInterval = null;
-        console.log("✅ ubicacionInterval limpiado");
-    }
-    
-    if (deliverysInterval) {
-        clearInterval(deliverysInterval);
-        deliverysInterval = null;
-        console.log("✅ deliverysInterval limpiado");
-    }
-    
-    if (busquedaTimeout) {
-        clearTimeout(busquedaTimeout);
-        busquedaTimeout = null;
-    }
-    
-    if (clienteRouteControl) {
-        try {
-            if (clienteRouteControl._map) {
-                map.removeControl(clienteRouteControl);
-            }
-        } catch(e) {}
-        clienteRouteControl = null;
-    }
-    
-    if (deliveryMarker) {
-        try { map.removeLayer(deliveryMarker); } catch(e) {}
-        deliveryMarker = null;
-    }
-    
-    console.log("✅ Todos los recursos liberados");
+// ==================== TOAST ====================
+function mostrarToast(msg, err = false) {
+    const toast = document.createElement('div');
+    toast.className = 'fixed bottom-20 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white px-4 py-2 rounded-full shadow-lg z-50 text-sm';
+    if (err) toast.classList.add('bg-red-500');
+    toast.innerText = msg;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
 }
 
-const originalCerrarSesionCliente = window.cerrarSesion;
-window.cerrarSesion = function() {
-    limpiarTodosLosIntervalos();
-    if (originalCerrarSesionCliente) {
-        originalCerrarSesionCliente();
-    }
-};
-
-window.addEventListener('beforeunload', function() {
-    console.log("🚪 Pestaña cerrando - Limpiando recursos...");
-    limpiarTodosLosIntervalos();
-});
-
-window.addEventListener('unload', function() {
-    console.log("💀 Página descargada - Recursos liberados");
-    if (currentUser && currentUser.rol === 'cliente' && supabaseClient) {
-        console.log("👋 Cliente desconectado");
-    }
-});
-
-document.addEventListener('visibilitychange', function() {
-    if (document.hidden) {
-        console.log("📱 Pestaña oculta - Reduciendo actividad");
-    } else {
-        console.log("🟢 Pestaña visible - Reanudando actividad normal");
-    }
-});
-
-// ==================== EVENT LISTENERS ====================
-document.addEventListener('DOMContentLoaded', () => {
-    const origenInput = document.getElementById('origen');
-    const destinoInput = document.getElementById('destino');
-    const btnCancelarPedido = document.getElementById('btnCancelarPedido');
-    
-    if (btnCancelarPedido) {
-        btnCancelarPedido.addEventListener('click', cancelarPedido);
-    }
-    
-    if (origenInput) {
-        origenInput.addEventListener('input', (e) => {
-            if (busquedaTimeout) clearTimeout(busquedaTimeout);
-            busquedaTimeout = setTimeout(() => {
-                buscarDirecciones(e.target.value, 'origen');
-            }, 500);
-        });
-        
-        origenInput.addEventListener('blur', () => {
-            setTimeout(() => {
-                document.getElementById('origenSugerencias')?.classList.add('hidden');
-            }, 200);
-        });
-    }
-    
-    if (destinoInput) {
-        destinoInput.addEventListener('input', (e) => {
-            if (busquedaTimeout) clearTimeout(busquedaTimeout);
-            busquedaTimeout = setTimeout(() => {
-                buscarDirecciones(e.target.value, 'destino');
-            }, 500);
-        });
-        
-        destinoInput.addEventListener('blur', () => {
-            setTimeout(() => {
-                document.getElementById('destinoSugerencias')?.classList.add('hidden');
-            }, 200);
-        });
-    }
-});
+// ==================== INICIALIZACIÓN ====================
+function cancelarPedido() {
+    mostrarToast("❌ No se puede cancelar", true);
+}
 
 window.onload = () => { 
     loadUser(); 
     initMap();
     
-    // ✅ NO llamar a cargarDeliverysEnLinea aquí, ya se llama dentro de initMap
     if (currentUser && currentUser.rol === 'cliente') {
-        // ✅ El intervalo debe comenzar DESPUÉS de que el mapa está listo
         setTimeout(() => {
             if (deliverysInterval) clearInterval(deliverysInterval);
-            
             deliverysInterval = setInterval(() => {
-                if (currentUser && currentUser.rol === 'cliente' && map && map.loaded()) {
-                    cargarDeliverysEnLinea();
-                }
+                if (map && map.loaded()) cargarDeliverysEnLinea();
             }, 15000);
-        }, 3000);  // ← Esperar 3 segundos para que el mapa esté listo
+        }, 3000);
     }
 };

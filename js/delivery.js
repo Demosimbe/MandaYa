@@ -1,59 +1,25 @@
 // delivery.js - VERSIÓN CORREGIDA
 
-// Constantes y variables globales
-const BOUNDS = { north: 18.70, south: 18.58, east: -91.75, west: -91.88 };
-
 let map = null;
-let currentUser = null, isOnline = false;
-let pedidosDisponibles = [], misPedidosActivos = [];
+let currentUser = null;
+let isOnline = false;
+let pedidosDisponibles = [];
+let misPedidosActivos = [];
 let pedidoSeleccionado = null;
 let ubicacionInterval = null;
 let cargaPedidosInterval = null;
-let primeraUbicacionObtenida = false;
-
-
-// ==================== NUEVAS VARIABLES PARA RUTAS (MapLibre) ====================
+let userMarker = null;
+let watchId = null;
+let ultimaUbicacionEnviada = null;
 let currentRouteLayerId = 'delivery-route';
 let ultimoPedidoDibujado = null;
 let ultimaEtapa = null;
 let ultimaPeticionPedidos = 0;
 let paginaVisible = true;
 
-// ==================== FUNCIÓN CONVERTIR PEDIDO (DEBE IR ANTES DE CARGAR PEDIDOS) ====================
-function convertirPedidoDeSupabase(pedido) {
-    return {
-        id: pedido.id,
-        clienteId: pedido.cliente_id,
-        clienteNombre: pedido.cliente_nombre,
-        origen: pedido.origen,
-        destino: pedido.destino,
-        origenCoords: pedido.origen_lat ? { lat: pedido.origen_lat, lng: pedido.origen_lng } : null,
-        destinoCoords: pedido.destino_lat ? { lat: pedido.destino_lat, lng: pedido.destino_lng } : null,
-        distanciaReal: pedido.distancia_real,
-        tarifa: pedido.tarifa,
-        estado: pedido.estado,
-        tipo: pedido.tipo
-    };
-}
-
-document.addEventListener('visibilitychange', () => {
-    paginaVisible = !document.hidden;
-    if (paginaVisible) {
-        console.log("🟢 Página visible - Reactivando actualizaciones");
-        if (isOnline) cargarPedidos();
-    } else {
-        console.log("🔴 Página oculta - Reduciendo actualizaciones");
-    }
-});
-
-// ==================== INICIALIZACIÓN CON MAPLIBRE ====================
+// ==================== INICIALIZACIÓN ====================
 function initMap() {
-    if (map) {
-        console.log("⚠️ Mapa ya inicializado");
-        return;
-    }
-    
-    console.log("🗺️ Creando mapa...");
+    if (map) return;
     
     map = new maplibregl.Map({
         container: 'map',
@@ -64,15 +30,13 @@ function initMap() {
                     type: 'raster',
                     tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
                     tileSize: 256,
-                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                    attribution: '&copy; OpenStreetMap contributors'
                 }
             },
             layers: [{
                 id: 'osm-raster-layer',
                 type: 'raster',
-                source: 'osm-raster',
-                minzoom: 0,
-                maxzoom: 19
+                source: 'osm-raster'
             }]
         },
         center: [-91.8249, 18.6456],
@@ -83,36 +47,23 @@ function initMap() {
     
     map.addControl(new maplibregl.NavigationControl(), 'top-right');
 
-    // Limitador de bounds DESACTIVADO (causaba saltos)
-    // Puedes reactivarlo después de forma más suave
-
     map.on('load', () => {
-        console.log('✅ Mapa Delivery MapLibre cargado correctamente');
+        console.log('✅ Mapa Delivery cargado');
         cargarPedidos();
-        
-        setTimeout(() => {
-            startLocationTracking();
-        }, 800);
+        startLocationTracking();
     });
-    
-    console.log("✅ Mapa inicializado");
 }
 
 // ==================== LIMPIAR RUTA ====================
 function limpiarRutaDelivery() {
     if (!map) return;
-    
     try {
-        if (map.getLayer(currentRouteLayerId)) {
-            map.removeLayer(currentRouteLayerId);
-        }
-        if (map.getSource(currentRouteLayerId)) {
-            map.removeSource(currentRouteLayerId);
-        }
+        if (map.getLayer(currentRouteLayerId)) map.removeLayer(currentRouteLayerId);
+        if (map.getSource(currentRouteLayerId)) map.removeSource(currentRouteLayerId);
     } catch(e) {}
 }
 
-// ==================== DIBUJAR RUTA CON MAPLIBRE + OSRM ====================
+// ==================== DIBUJAR RUTA ====================
 async function dibujarRutaDelivery(origin, dest, color, weight = 5) {
     if (!map || !origin || !dest) return null;
     
@@ -125,56 +76,39 @@ async function dibujarRutaDelivery(origin, dest, color, weight = 5) {
         const data = await response.json();
         
         if (data.routes && data.routes[0]) {
-            const route = data.routes[0];
-            
             map.addSource(currentRouteLayerId, {
                 type: 'geojson',
-                data: route.geometry
+                data: data.routes[0].geometry
             });
             
             map.addLayer({
                 id: currentRouteLayerId,
                 type: 'line',
                 source: currentRouteLayerId,
-                layout: {
-                    'line-join': 'round',
-                    'line-cap': 'round'
-                },
-                paint: {
-                    'line-color': color,
-                    'line-width': weight,
-                    'line-opacity': 0.85
-                }
+                layout: { 'line-join': 'round', 'line-cap': 'round' },
+                paint: { 'line-color': color, 'line-width': weight, 'line-opacity': 0.85 }
             });
             
-            // === CAMBIO IMPORTANTE: fitBounds más suave ===
             const bounds = new maplibregl.LngLatBounds()
                 .extend([origin.lng, origin.lat])
                 .extend([dest.lng, dest.lat]);
-
-            map.fitBounds(bounds, { 
-                padding: 80,
-                duration: 1800,
-                maxZoom: 16.5,        // ← Evita zoom excesivo
-                essential: true
-            });
+            
+            map.fitBounds(bounds, { padding: 80, duration: 1800, maxZoom: 16.5 });
             
             return {
-                distance: route.distance / 1000,
-                duration: route.duration / 60
+                distance: data.routes[0].distance / 1000,
+                duration: data.routes[0].duration / 60
             };
         }
     } catch(e) {
-        console.error('Error dibujando ruta:', e);
+        console.error('Error:', e);
     }
     return null;
 }
 
-// ==================== FUNCIONES FALTANTES ====================
-
-// Verificar si el delivery tiene un pedido activo
+// ==================== FUNCIONES SUPABASE ====================
 async function deliveryTienePedidoActivo(deliveryId) {
-    const supabase = supabaseClient;
+    const supabase = window.supabaseClient;
     if (!supabase) return false;
     
     const { data, error } = await supabase
@@ -184,37 +118,11 @@ async function deliveryTienePedidoActivo(deliveryId) {
         .in('estado', ['asignado', 'recogido'])
         .maybeSingle();
     
-    if (error) {
-        console.error('Error verificando pedido activo:', error);
-        return false;
-    }
-    
     return !!data;
 }
 
-// Obtener pedido activo del delivery
-async function getPedidoActivoDelDelivery(deliveryId) {
-    const supabase = supabaseClient;
-    if (!supabase) return null;
-    
-    const { data, error } = await supabase
-        .from('pedidos')
-        .select('*')
-        .eq('delivery_id', deliveryId)
-        .in('estado', ['asignado', 'recogido'])
-        .maybeSingle();
-    
-    if (error) {
-        console.error('Error obteniendo pedido activo:', error);
-        return null;
-    }
-    
-    return data ? convertirPedidoDeSupabase(data) : null;
-}
-
-// Guardar ubicación en Supabase
 async function guardarUbicacionEnSupabase(deliveryId, deliveryNombre, lat, lng, online) {
-    const supabase = supabaseClient;
+    const supabase = window.supabaseClient;
     if (!supabase) return false;
     
     try {
@@ -227,141 +135,36 @@ async function guardarUbicacionEnSupabase(deliveryId, deliveryNombre, lat, lng, 
                 lng: lng,
                 online: online,
                 updated_at: new Date().toISOString()
-            }, {
-                onConflict: 'delivery_id'
-            });
+            }, { onConflict: 'delivery_id' });
         
-        if (error) throw error;
-        return true;
+        return !error;
     } catch(e) {
-        console.error('Error guardando ubicación:', e);
+        console.error('Error:', e);
         return false;
     }
 }
 
-// Actualizar estado online en Supabase
-async function setDeliveryOnlineSupabase(deliveryId, online) {
-    const supabase = supabaseClient;
-    if (!supabase) return false;
-    
-    try {
-        const { error } = await supabase
-            .from('deliveries')
-            .update({ online: online })
-            .eq('id', deliveryId);
-        
-        if (error) throw error;
-        return true;
-    } catch(e) {
-        console.error('Error actualizando estado online:', e);
-        return false;
-    }
-}
-
-// ==================== RUTA DE RECOGIDA ====================
-async function dibujarRutaRecogida(pedido) {
-    if (ultimoPedidoDibujado === pedido.id && ultimaEtapa === 'recogida') {
-        console.log("🟢 Ruta de recogida ya activa");
-        return;
-    }
-    
-    if (!pedido.origenCoords) {
-        mostrarToast("❌ No hay coordenadas de origen", true);
-        return;
-    }
-    
-    let ubicacionActual = null;
-    if (userMarker) {
-        const lngLat = userMarker.getLngLat();
-        ubicacionActual = { lat: lngLat.lat, lng: lngLat.lng };
-    }
-    
-    if (ubicacionActual) {
-        await dibujarRutaDelivery(ubicacionActual, pedido.origenCoords, '#10B981', 6);
-    } else {
-        const bounds = new maplibregl.LngLatBounds()
-            .extend([pedido.origenCoords.lng, pedido.origenCoords.lat]);
-        map.fitBounds(bounds, { padding: 50 });
-    }
-    
-    ultimoPedidoDibujado = pedido.id;
-    ultimaEtapa = 'recogida';
-    mostrarToast(`📍 Ruta de RECOGIDA - Dirígete a: ${pedido.origen}`);
-}
-
-// ==================== RUTA DE ENTREGA ====================
-async function dibujarRutaEntrega(pedido) {
-    if (ultimoPedidoDibujado === pedido.id && ultimaEtapa === 'entrega') {
-        console.log("🟢 Ruta de entrega ya activa");
-        return;
-    }
-    
-    if (!pedido.origenCoords || !pedido.destinoCoords) {
-        console.error("❌ Faltan coordenadas para ruta de entrega");
-        mostrarToast("❌ No se pueden dibujar coordenadas de destino", true);
-        return;
-    }
-    
-    await dibujarRutaDelivery(pedido.origenCoords, pedido.destinoCoords, '#FF6200', 6);
-    
-    ultimoPedidoDibujado = pedido.id;
-    ultimaEtapa = 'entrega';
-    mostrarToast(`🚚 Ruta de ENTREGA - Desde ${pedido.origen} hasta ${pedido.destino}`);
-}
-
-// ==================== RUTA ÓPTIMA PARA PEDIDO SELECCIONADO ====================
-async function dibujarRutaOptimaPedido(pedido) {
-    if (pedido.origenCoords && pedido.destinoCoords) {
-        await dibujarRutaDelivery(pedido.origenCoords, pedido.destinoCoords, '#FF6200', 5);
-        mostrarToast(`📏 Distancia: ${pedido.distanciaReal} km • 💰 $${pedido.tarifa}`);
-    }
-}
-
-// ==================== INICIAR SEGUIMIENTO DE UBICACIÓN ====================
-let userMarker = null;
-let watchId = null;
-let ultimaUbicacionEnviada = null;
-let locationTrackingActive = false;
-
-function startLocationTracking(intentos = 0) {
-    const maxIntentos = 8;
-
-    if (locationTrackingActive && intentos === 0) {
-        console.log("⚠️ Tracking ya activo");
-        return;
-    }
-    if (intentos === 0) locationTrackingActive = true;
-
+// ==================== SEGUIMIENTO UBICACIÓN ====================
+function startLocationTracking() {
     if (!map || !map.loaded()) {
-        if (intentos < maxIntentos) {
-            setTimeout(() => startLocationTracking(intentos + 1), 1000);
-            return;
-        }
-        console.error("❌ Mapa no listo");
+        setTimeout(() => startLocationTracking(), 1000);
         return;
     }
 
-    const options = {
-        enableHighAccuracy: true,
-        maximumAge: 0,
-        timeout: 15000
-    };
+    if (!navigator.geolocation) {
+        mostrarToast("❌ Geolocalización no soportada", true);
+        return;
+    }
 
     if (watchId) navigator.geolocation.clearWatch(watchId);
 
     navigator.geolocation.getCurrentPosition(
         (pos) => {
-            const lng = pos.coords.longitude;   // ← Longitud primero
-            const lat = pos.coords.latitude;    // ← Latitud segundo
+            const lng = pos.coords.longitude;
+            const lat = pos.coords.latitude;
 
-            console.log(`📍 POSICIÓN REAL: [${lng}, ${lat}]`); // Debería salir aprox -91.8, 18.6
-
-            ultimaUbicacionEnviada = { lat, lng };
-
-            // Remover marcador viejo
             if (userMarker) userMarker.remove();
 
-            // Crear marcador
             const primerNombre = (currentUser?.nombre || 'Delivery').split(' ')[0];
 
             const markerDiv = document.createElement('div');
@@ -383,26 +186,16 @@ function startLocationTracking(intentos = 0) {
             .setLngLat([lng, lat])
             .addTo(map);
 
-            // Centrar correctamente con flyTo
-           map.flyTo({
-               center: [lng, lat],
-               zoom: 16.8,
-               duration: 1400,
-               essential: true,
-               curve: 1.3
-           });
-            
-
-            mostrarToast("📍 Ubicación detectada en CD del Carmen");
+            map.flyTo({ center: [lng, lat], zoom: 16.8, duration: 1400 });
 
             if (currentUser && isOnline) {
                 guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, lat, lng, true);
             }
 
-            // Watch continuo
             watchId = navigator.geolocation.watchPosition(
                 (pos2) => {
-                    if (!userMarker) return;
+                    if (!userMarker || !isOnline) return;
+                    
                     const newLng = pos2.coords.longitude;
                     const newLat = pos2.coords.latitude;
 
@@ -413,25 +206,31 @@ function startLocationTracking(intentos = 0) {
 
                     ultimaUbicacionEnviada = { lat: newLat, lng: newLng };
                     userMarker.setLngLat([newLng, newLat]);
+                    
+                    guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, newLat, newLng, true);
                 },
-                err => console.error(err),
-                options
+                (err) => console.error("Watch error:", err),
+                { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
             );
         },
         (err) => {
-            console.error(err);
-            mostrarToast("Error al obtener ubicación", true);
+            console.error("GPS error:", err);
+            mostrarToast("❌ Error obteniendo ubicación", true);
         },
-        options
+        { enableHighAccuracy: true, timeout: 10000 }
     );
 }
 
 function calcularDistanciaMetros(lat1, lon1, lat2, lon2) {
-    const R = 6371;
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)) * 1000;
+    const R = 6371e3;
+    const φ1 = lat1 * Math.PI / 180;
+    const φ2 = lat2 * Math.PI / 180;
+    const Δφ = (lat2 - lat1) * Math.PI / 180;
+    const Δλ = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ/2) * Math.sin(Δλ/2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
 // ==================== LOAD USER ====================
@@ -450,27 +249,13 @@ function loadUser() {
                 <span class="font-medium">${currentUser.nombre}</span>
                 <span class="text-gray-400 text-xs">(Delivery)</span>
             </div>
-            <div class="text-xs text-gray-500 mt-1">
-                <i class="fas fa-star text-yellow-500"></i> Calificación: 4.9
-            </div>
-            <div id="estadoDeliveryBadge" class="mt-2 text-xs"></div>
         `;
     }
     
-    if (isOnline) {
-        const onlineToggle = document.getElementById("onlineToggle");
-        if (onlineToggle) {
-            onlineToggle.classList.remove("bg-gray-500");
-            onlineToggle.classList.add("bg-green-500");
-        }
-        const statusText = document.getElementById("onlineStatusText");
-        if (statusText) statusText.innerHTML = '<i class="fas fa-circle online-dot mr-1"></i> En línea';
-        setTimeout(() => actualizarColorMarcador(), 1000);
-    }
+    actualizarBadgeEstado();
     cargarPedidos();
 }
 
-// ==================== ACTUALIZAR BADGE ESTADO (VERSIÓN CORREGIDA) ====================
 async function actualizarBadgeEstado() {
     if (!currentUser) return;
     
@@ -482,135 +267,119 @@ async function actualizarBadgeEstado() {
             if (!isOnline) {
                 badge.innerHTML = '<span class="bg-gray-500/20 text-gray-400 px-2 py-0.5 rounded-full"><i class="fas fa-plug mr-1"></i> Desconectado</span>';
             } else if (tienePedido) {
-                badge.innerHTML = '<span class="bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded-full"><i class="fas fa-motorcycle mr-1"></i> Ocupado - En entrega</span>';
+                badge.innerHTML = '<span class="bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded-full"><i class="fas fa-motorcycle mr-1"></i> Ocupado</span>';
             } else {
-                badge.innerHTML = '<span class="bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full"><i class="fas fa-check-circle mr-1"></i> Disponible para entregas</span>';
+                badge.innerHTML = '<span class="bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full"><i class="fas fa-check-circle mr-1"></i> Disponible</span>';
             }
         }
-    } catch(e) {
-        console.error("❌ Error actualizando badge:", e);
-    }
-}
-
-// ==================== ACTUALIZAR COLOR MARCADOR ====================
-async function actualizarColorMarcador() {
-    if (!currentUser || !userMarker) return;
-
-    try {
-        const tienePedido = await deliveryTienePedidoActivo(currentUser.id);
-        const color = tienePedido ? '#FF6200' : '#10B981';
-        const estadoTexto = tienePedido ? '🟠 En una entrega' : (isOnline ? '🟢 Disponible' : '⚫ Desconectado');
-
-        const lngLat = userMarker.getLngLat();
-
-        // Solo actualizar popup y color sin eliminar el marcador
-        const popup = new maplibregl.Popup({ offset: [0, -45] })
-            .setHTML(`🏍️ <b>${currentUser.nombre}</b><br>${estadoTexto}`);
-        
-        userMarker.setPopup(popup);
-
-        // Cambiar color del marcador existente
-        const el = userMarker.getElement();
-        if (el) {
-            const iconContainer = el.querySelector('div[style*="background:#10B981"], div[style*="background:#FF6200"]');
-            if (iconContainer) {
-                iconContainer.style.background = color;
-            }
-        }
-
-        console.log(`✅ Marcador actualizado: ${estadoTexto}`);
-        
-    } catch(e) {
-        console.error("❌ Error actualizando marcador:", e);
-    }
-}
-
-// ==================== CENTRAR MAPA ====================
-function centrarMapa() {
-    if (map) {
-        map.setCenter([-91.8249, 18.6456]);
-        map.setZoom(13);
-    }
-    mostrarToast("📍 Mapa centrado en Ciudad del Carmen");
+    } catch(e) {}
 }
 
 // ==================== CARGAR PEDIDOS ====================
-async function cargarPedidos(force = false) {
-    if (!force && !paginaVisible) {
-        console.log("📴 Página oculta, no se cargan pedidos");
-        return;
-    }
+async function cargarPedidos() {
+    if (!paginaVisible) return;
     
     const ahora = Date.now();
-    if (!force && (ahora - ultimaPeticionPedidos < 5000)) {
-        console.log(`⏳ Throttling: cargarPedidos - demasiado rápido`);
-        return;
-    }
+    if (ahora - ultimaPeticionPedidos < 5000) return;
     ultimaPeticionPedidos = ahora;
     
-    const supabase = supabaseClient;
-    if (!supabase) {
-        console.error('Supabase no disponible');
-        return;
-    }
+    const supabase = window.supabaseClient;
+    if (!supabase) return;
     
     try {
-        const { data: pedidosPendientes, error: errorPendientes } = await supabase
+        const { data: pendientes } = await supabase
             .from('pedidos')
             .select('*')
             .eq('estado', 'pendiente')
             .order('fecha', { ascending: true });
         
-        if (errorPendientes) throw errorPendientes;
-        
-        const { data: pedidosAsignados, error: errorAsignados } = await supabase
+        const { data: activos } = await supabase
             .from('pedidos')
             .select('*')
             .eq('delivery_id', currentUser?.id)
-            .in('estado', ['asignado', 'recogido'])
-            .order('fecha', { ascending: true });
+            .in('estado', ['asignado', 'recogido']);
         
-        if (errorAsignados) throw errorAsignados;
-        
-        const nuevosDisponibles = (pedidosPendientes || []).map(p => convertirPedidoDeSupabase(p));
-        const nuevosActivos = (pedidosAsignados || []).map(p => convertirPedidoDeSupabase(p));
-        
-        const estadoAnteriorActivo = misPedidosActivos.length > 0 ? misPedidosActivos[0]?.estado : null;
-        
-        pedidosDisponibles = nuevosDisponibles;
-        misPedidosActivos = nuevosActivos;
+        pedidosDisponibles = (pendientes || []).map(p => convertirPedido(p));
+        misPedidosActivos = (activos || []).map(p => convertirPedido(p));
         
         actualizarListaPedidos();
         
         if (misPedidosActivos.length > 0) {
             const pedidoActivo = misPedidosActivos[0];
-            const estadoActual = pedidoActivo.estado;
-            
-            if (estadoAnteriorActivo === 'asignado' && estadoActual === 'recogido') {
-                await dibujarRutaEntrega(pedidoActivo);
-            } else if (estadoActual === 'recogido' && ultimaEtapa !== 'entrega') {
-                await dibujarRutaEntrega(pedidoActivo);
-            } else if (estadoActual === 'asignado' && ultimaEtapa !== 'recogida') {
+            if (pedidoActivo.estado === 'asignado') {
                 await dibujarRutaRecogida(pedidoActivo);
+            } else if (pedidoActivo.estado === 'recogido') {
+                await dibujarRutaEntrega(pedidoActivo);
             }
         } else {
             limpiarRutaDelivery();
             if (pedidoSeleccionado) {
-                dibujarRutaOptimaPedido(pedidoSeleccionado);
+                await dibujarRutaOptimaPedido(pedidoSeleccionado);
             }
         }
         
-        await actualizarColorMarcador();
         await actualizarBadgeEstado();
         
-        console.log(`📦 ${pedidosDisponibles.length} pedidos disponibles, ${misPedidosActivos.length} activos`);
-        
     } catch(e) {
-        console.error('Error cargando pedidos:', e);
+        console.error('Error:', e);
     }
 }
 
-// ==================== SELECCIONAR PEDIDO ====================
+function convertirPedido(pedido) {
+    return {
+        id: pedido.id,
+        clienteId: pedido.cliente_id,
+        clienteNombre: pedido.cliente_nombre,
+        origen: pedido.origen,
+        destino: pedido.destino,
+        origenCoords: pedido.origen_lat ? { lat: pedido.origen_lat, lng: pedido.origen_lng } : null,
+        destinoCoords: pedido.destino_lat ? { lat: pedido.destino_lat, lng: pedido.destino_lng } : null,
+        distanciaReal: pedido.distancia_real,
+        tarifa: pedido.tarifa,
+        estado: pedido.estado,
+        tipo: pedido.tipo
+    };
+}
+
+// ==================== RUTAS ====================
+async function dibujarRutaRecogida(pedido) {
+    if (ultimoPedidoDibujado === pedido.id && ultimaEtapa === 'recogida') return;
+    
+    if (!pedido.origenCoords) return;
+    
+    if (userMarker) {
+        const lngLat = userMarker.getLngLat();
+        await dibujarRutaDelivery(
+            { lng: lngLat.lng, lat: lngLat.lat },
+            pedido.origenCoords,
+            '#10B981', 6
+        );
+    }
+    
+    ultimoPedidoDibujado = pedido.id;
+    ultimaEtapa = 'recogida';
+    mostrarToast(`📍 Recoger en: ${pedido.origen}`);
+}
+
+async function dibujarRutaEntrega(pedido) {
+    if (ultimoPedidoDibujado === pedido.id && ultimaEtapa === 'entrega') return;
+    
+    if (!pedido.origenCoords || !pedido.destinoCoords) return;
+    
+    await dibujarRutaDelivery(pedido.origenCoords, pedido.destinoCoords, '#FF6200', 6);
+    
+    ultimoPedidoDibujado = pedido.id;
+    ultimaEtapa = 'entrega';
+    mostrarToast(`🚚 Entregar en: ${pedido.destino}`);
+}
+
+async function dibujarRutaOptimaPedido(pedido) {
+    if (pedido.origenCoords && pedido.destinoCoords) {
+        await dibujarRutaDelivery(pedido.origenCoords, pedido.destinoCoords, '#FF6200', 5);
+    }
+}
+
+// ==================== ACCIONES DE PEDIDOS ====================
 function seleccionarPedido(pedidoId) {
     pedidoSeleccionado = pedidosDisponibles.find(p => p.id === pedidoId);
     limpiarRutaDelivery();
@@ -618,52 +387,22 @@ function seleccionarPedido(pedidoId) {
         dibujarRutaOptimaPedido(pedidoSeleccionado);
     }
     actualizarListaPedidos();
-    mostrarToast(`📍 Pedido #${pedidoId} seleccionado - Ruta mostrada en mapa`);
+    mostrarToast(`📍 Pedido #${pedidoId} seleccionado`);
 }
 
-// ==================== AGARRAR PEDIDO ====================
 async function agarrarPedido(pedidoId) {
-    const supabase = supabaseClient;
-    if (!supabase) {
-        mostrarToast("❌ Error de conexión", true);
+    const supabase = window.supabaseClient;
+    if (!supabase) return;
+    
+    const tienePedido = await deliveryTienePedidoActivo(currentUser.id);
+    if (tienePedido) {
+        mostrarToast("❌ Ya tienes un pedido activo", true);
         return;
     }
     
-    mostrarToast("🔍 Verificando disponibilidad...");
+    if (!confirm(`¿Agarrar pedido #${pedidoId}?`)) return;
     
     try {
-        const tienePedidoActivo = await deliveryTienePedidoActivo(currentUser.id);
-        
-        if (tienePedidoActivo) {
-            const pedidoActivo = await getPedidoActivoDelDelivery(currentUser.id);
-            mostrarToast(`❌ Ya tienes un pedido activo (#${pedidoActivo?.id}). Complétalo primero.`, true);
-            return;
-        }
-        
-        const { data: pedidoActual, error: errorPedido } = await supabase
-            .from('pedidos')
-            .select('estado')
-            .eq('id', pedidoId)
-            .single();
-        
-        if (errorPedido) throw errorPedido;
-        
-        if (pedidoActual.estado !== 'pendiente') {
-            mostrarToast(`❌ El pedido #${pedidoId} ya no está disponible`, true);
-            await cargarPedidos(true);
-            return;
-        }
-        
-        const confirmado = await mostrarModalConfirmacionDelivery(
-            "Confirmar pedido",
-            `¿Seguro que quieres AGARRAR el pedido #${pedidoId}?`
-        );
-        
-        if (!confirmado) {
-            mostrarToast("❌ Acción cancelada");
-            return;
-        }
-        
         const { error } = await supabase
             .from('pedidos')
             .update({
@@ -677,38 +416,23 @@ async function agarrarPedido(pedidoId) {
         
         if (error) throw error;
         
-        mostrarToast(`✅ Pedido #${pedidoId} AGARRADO! Dirígete al origen.`);
-        
-        pedidoSeleccionado = null;
-        await cargarPedidos(true);
-        await actualizarColorMarcador();
+        mostrarToast(`✅ Pedido #${pedidoId} agarrado`);
+        await cargarPedidos();
         
         const pedidoAsignado = misPedidosActivos.find(p => p.id === pedidoId);
         if (pedidoAsignado) {
             await dibujarRutaRecogida(pedidoAsignado);
-            setTimeout(() => {
-                if (pedidoAsignado.origenCoords) {
-                    map.setCenter([pedidoAsignado.origenCoords.lng, pedidoAsignado.origenCoords.lat]);
-                    map.setZoom(14);
-                }
-            }, 500);
         }
         
     } catch(e) {
-        console.error('Error agarrando pedido:', e);
-        mostrarToast("❌ Error al agarrar el pedido", true);
+        console.error('Error:', e);
+        mostrarToast("❌ Error al agarrar pedido", true);
     }
 }
 
-// ==================== MARCAR PAQUETE RECOGIDO ====================
 async function marcarPaqueteRecogido(pedidoId) {
-    const supabase = supabaseClient;
-    if (!supabase) {
-        mostrarToast("❌ Error de conexión", true);
-        return;
-    }
-    
-    mostrarToast("📦 Actualizando estado del paquete...");
+    const supabase = window.supabaseClient;
+    if (!supabase) return;
     
     try {
         const { error } = await supabase
@@ -721,33 +445,25 @@ async function marcarPaqueteRecogido(pedidoId) {
         
         if (error) throw error;
         
-        mostrarToast(`✅ ¡Paquete #${pedidoId} RECOGIDO! Ahora dirígete al destino.`);
-        
-        await cargarPedidos(true);
+        mostrarToast(`📦 Paquete #${pedidoId} recogido`);
+        await cargarPedidos();
         
         const pedidoActualizado = misPedidosActivos.find(p => p.id === pedidoId);
-        if (pedidoActualizado && pedidoActualizado.estado === 'recogido') {
+        if (pedidoActualizado) {
             await dibujarRutaEntrega(pedidoActualizado);
-            await actualizarColorMarcador();
         }
         
     } catch(e) {
-        console.error('Error marcando paquete recogido:', e);
-        mostrarToast("❌ Error al registrar la recogida", true);
+        console.error('Error:', e);
+        mostrarToast("❌ Error al marcar recogido", true);
     }
 }
 
-// ==================== COMPLETAR PEDIDO ====================
 async function completarPedido(pedidoId) {
-    const supabase = supabaseClient;
-    if (!supabase) {
-        mostrarToast("❌ Error de conexión", true);
-        return;
-    }
+    const supabase = window.supabaseClient;
+    if (!supabase) return;
     
     try {
-        mostrarToast("🏁 Marcando pedido como entregado...");
-        
         const { error } = await supabase
             .from('pedidos')
             .update({
@@ -758,130 +474,77 @@ async function completarPedido(pedidoId) {
         
         if (error) throw error;
         
-        const { data: pedido } = await supabase
-            .from('pedidos')
-            .select('tarifa')
-            .eq('id', pedidoId)
-            .single();
-        
-        mostrarToast(`✅ Pedido #${pedidoId} ENTREGADO! Ganaste $${pedido?.tarifa || 0} MXN`);
-        
+        mostrarToast(`✅ Pedido #${pedidoId} entregado`);
         limpiarRutaDelivery();
-        
-        if (ubicacionInterval) {
-            clearInterval(ubicacionInterval);
-            ubicacionInterval = null;
-        }
-        
         ultimoPedidoDibujado = null;
         ultimaEtapa = null;
-        
-        await cargarPedidos(true);
-        await actualizarColorMarcador();
-        await actualizarBadgeEstado();
-        
-        setTimeout(() => {
-            cargarPedidos(true);
-        }, 1000);
+        await cargarPedidos();
         
     } catch(e) {
-        console.error('Error completando pedido:', e);
-        mostrarToast("❌ Error al completar el pedido", true);
+        console.error('Error:', e);
+        mostrarToast("❌ Error al completar", true);
     }
 }
 
 // ==================== TOGGLE ONLINE ====================
-// ==================== TOGGLE ONLINE (VERSIÓN CORREGIDA PARA CELULAR) ====================
 async function toggleOnline() {
     isOnline = !isOnline;
     const btn = document.getElementById("onlineToggle");
     const span = document.getElementById("onlineStatusText");
     
-    console.log("🔘 Toggle online:", isOnline ? "Conectando..." : "Desconectando...");
-    
     if (isOnline) {
-        btn.classList.remove("bg-gray-500");
-        btn.classList.add("bg-green-500", "hover:bg-green-600");
-        span.innerHTML = '<i class="fas fa-circle online-dot mr-1"></i> En línea';
-        mostrarToast("✅ Estás en línea - Los clientes verán que estás disponible");
+        if (btn) {
+            btn.classList.remove("bg-gray-500");
+            btn.classList.add("bg-green-500");
+        }
+        if (span) span.innerHTML = '🟢 En línea';
+        mostrarToast("✅ Estás en línea");
         
         if (currentUser) {
             currentUser.online = true;
             localStorage.setItem('sesion_activa', JSON.stringify(currentUser));
-            await setDeliveryOnlineSupabase(currentUser.id, true);
             
-            // ✅ FORZAR RECREACIÓN DEL MARCADOR si no existe o está mal
-            if (!userMarker) {
-                console.log("🔄 Marcador no existe, reiniciando tracking...");
-                startLocationTracking(0);
-            } else {
-                // Si existe, solo actualizar color y guardar ubicación
-                await actualizarColorMarcador();
-                
-                // Guardar ubicación actual
-                try {
-                    const { lng, lat } = userMarker.getLngLat();
-                    await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, lat, lng, true);
-                    console.log("✅ Ubicación guardada al conectarse");
-                } catch(e) {
-                    console.error("❌ Error guardando ubicación:", e);
-                }
+            if (userMarker) {
+                const { lng, lat } = userMarker.getLngLat();
+                await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, lat, lng, true);
             }
         }
         
-        cargarPedidos(true);
-        
-        // Intervalo para guardar ubicación cada 4 segundos
         if (ubicacionInterval) clearInterval(ubicacionInterval);
         ubicacionInterval = setInterval(async () => {
-            if (userMarker && currentUser && isOnline) {
-                try {
-                    const { lng, lat } = userMarker.getLngLat();
-                    await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, lat, lng, true);
-                } catch(e) {
-                    console.error("❌ Error en intervalo de ubicación:", e);
-                }
+            if (userMarker && isOnline && currentUser) {
+                const { lng, lat } = userMarker.getLngLat();
+                await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, lat, lng, true);
             }
-        }, 4000);
+        }, 5000);
+        
+        cargarPedidos();
         
     } else {
-        btn.classList.remove("bg-green-500", "hover:bg-green-600");
-        btn.classList.add("bg-gray-500");
-        span.innerHTML = 'Conectarse';
-        mostrarToast("📴 Estás offline - No recibirás pedidos");
+        if (btn) {
+            btn.classList.remove("bg-green-500");
+            btn.classList.add("bg-gray-500");
+        }
+        if (span) span.innerHTML = 'Conectarse';
+        mostrarToast("📴 Estás offline");
         
         if (currentUser) {
             currentUser.online = false;
             localStorage.setItem('sesion_activa', JSON.stringify(currentUser));
-            await setDeliveryOnlineSupabase(currentUser.id, false);
             
-            // Guardar última ubicación como offline
             if (userMarker) {
-                try {
-                    const { lng, lat } = userMarker.getLngLat();
-                    await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, lat, lng, false);
-                } catch(e) {
-                    console.error("❌ Error guardando ubicación offline:", e);
-                }
+                const { lng, lat } = userMarker.getLngLat();
+                await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, lat, lng, false);
             }
         }
         
         if (ubicacionInterval) clearInterval(ubicacionInterval);
-        
-        // ✅ NO cambiar el color del marcador cuando se desconecta (solo quitar el intervalo)
-        // Solo actualizar el popup si existe
-        if (userMarker) {
-            const popup = new maplibregl.Popup({ offset: [0, -35] })
-                .setHTML(`🏍️ <b>${currentUser?.nombre}</b><br>⚫ Desconectado`);
-            userMarker.setPopup(popup);
-        }
     }
     
-    // ✅ Actualizar badge de estado
     await actualizarBadgeEstado();
 }
 
-// ==================== ACTUALIZAR LISTA DE PEDIDOS (UI) ====================
+// ==================== ACTUALIZAR UI ====================
 function actualizarListaPedidos() {
     const containerDisponibles = document.getElementById("pedidosDisponibles");
     const containerActivos = document.getElementById("pedidosActivos");
@@ -889,25 +552,20 @@ function actualizarListaPedidos() {
     
     if (containerDisponibles) {
         if (pedidosDisponibles.length === 0) {
-            containerDisponibles.innerHTML = '<div class="text-center text-gray-400 py-8"><i class="fas fa-box-open text-4xl mb-2 block"></i>No hay pedidos disponibles</div>';
+            containerDisponibles.innerHTML = '<div class="text-center text-gray-400 py-8">No hay pedidos disponibles</div>';
         } else {
             containerDisponibles.innerHTML = pedidosDisponibles.map(p => `
-                <div class="bg-white border rounded-xl p-4 shadow-sm pedido-card ${pedidoSeleccionado?.id === p.id ? 'pedido-seleccionado' : ''}" onclick="seleccionarPedido(${p.id})">
+                <div class="bg-white border rounded-xl p-4 shadow-sm mb-3 cursor-pointer hover:shadow-md transition" onclick="seleccionarPedido(${p.id})">
                     <div class="flex justify-between items-start mb-2">
                         <span class="font-bold text-[#FF6200]">#${p.id}</span>
                         <span class="text-xs px-2 py-1 rounded-full bg-yellow-100 text-yellow-700">Pendiente</span>
                     </div>
                     <p class="text-sm"><i class="fas fa-circle text-[#FF6200] text-xs mr-1"></i> ${p.origen}</p>
                     <p class="text-sm mt-1"><i class="fas fa-square text-blue-600 text-xs mr-1"></i> ${p.destino}</p>
-                    <p class="text-xs text-gray-500 mt-2">📏 ${p.distanciaReal} km • 💰 $${p.tarifa}</p>
-                    <p class="text-xs text-gray-500">👤 Cliente: ${p.clienteNombre}</p>
+                    <p class="text-xs text-gray-500 mt-2">💰 $${p.tarifa} • 📏 ${p.distanciaReal} km</p>
                     ${tienePedidoActivo ? 
-                        `<button disabled class="w-full mt-3 bg-gray-400 cursor-not-allowed text-white py-2 rounded-lg text-sm font-medium transition-all">
-                            <i class="fas fa-lock mr-1"></i> Completar pedido actual primero
-                        </button>` :
-                        `<button onclick="event.stopPropagation(); agarrarPedido(${p.id})" class="w-full mt-3 bg-green-500 hover:bg-green-600 text-white py-2 rounded-lg text-sm font-medium transition-all">
-                            <i class="fas fa-hand-paper mr-1"></i> AGARRAR PEDIDO
-                        </button>`
+                        `<button disabled class="w-full mt-3 bg-gray-400 cursor-not-allowed text-white py-2 rounded-lg">Ocupado</button>` :
+                        `<button onclick="event.stopPropagation(); agarrarPedido(${p.id})" class="w-full mt-3 bg-green-500 hover:bg-green-600 text-white py-2 rounded-lg">AGARRAR</button>`
                     }
                 </div>
             `).join('');
@@ -916,245 +574,70 @@ function actualizarListaPedidos() {
     
     if (containerActivos) {
         if (misPedidosActivos.length === 0) {
-            containerActivos.innerHTML = '<div class="text-center text-gray-400 py-4"><i class="fas fa-check-circle text-2xl mb-1 block"></i>No hay pedidos activos</div>';
+            containerActivos.innerHTML = '<div class="text-center text-gray-400 py-4">Sin pedidos activos</div>';
         } else {
-            containerActivos.innerHTML = misPedidosActivos.map(p => {
-                const esRecogido = p.estado === 'recogido';
-                const estaAsignado = p.estado === 'asignado';
-                
-                return `
-                <div class="bg-orange-50 border border-orange-200 rounded-xl p-4 shadow-sm" data-pedido-id="${p.id}">
+            containerActivos.innerHTML = misPedidosActivos.map(p => `
+                <div class="bg-orange-50 border border-orange-200 rounded-xl p-4 mb-3">
                     <div class="flex justify-between items-start mb-2">
                         <span class="font-bold text-[#FF6200]">#${p.id}</span>
-                        <span class="text-xs px-2 py-1 rounded-full ${esRecogido ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'}">
-                            ${esRecogido ? '📦 Paquete recogido' : '🟡 En camino a recoger'}
+                        <span class="text-xs px-2 py-1 rounded-full ${p.estado === 'recogido' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'}">
+                            ${p.estado === 'recogido' ? '📦 Recogido' : '🟡 En camino'}
                         </span>
                     </div>
-                    <p class="text-sm"><i class="fas fa-circle text-green-500 text-xs mr-1"></i> <strong>Recoger en:</strong> ${p.origen}</p>
-                    <p class="text-sm mt-1"><i class="fas fa-square text-blue-600 text-xs mr-1"></i> <strong>Entregar en:</strong> ${p.destino}</p>
-                    <p class="text-xs text-gray-500 mt-2">📏 ${p.distanciaReal} km • 💰 $${p.tarifa}</p>
-                    <p class="text-xs text-gray-500">👤 Cliente: ${p.clienteNombre}</p>
-                    <div class="mt-3 text-xs text-center text-gray-500">
-                        <i class="fas fa-info-circle"></i> Debes completar este pedido antes de agarrar otro
-                    </div>
-                    ${estaAsignado ? 
-                        `<button onclick="marcarPaqueteRecogido(${p.id})" class="w-full mt-3 bg-green-500 hover:bg-green-600 text-white py-2 rounded-lg text-sm font-medium transition-all">
-                            <i class="fas fa-box-open mr-1"></i> 📦 MARCAR PAQUETE RECOGIDO
-                        </button>` : 
-                        (esRecogido ?
-                        `<button onclick="completarPedido(${p.id})" class="w-full mt-3 bg-blue-500 hover:bg-blue-600 text-white py-2 rounded-lg text-sm font-medium transition-all">
-                            <i class="fas fa-check-circle mr-1"></i> 🏁 MARCAR ENTREGADO
-                        </button>` : '')
+                    <p class="text-sm"><strong>Recoger:</strong> ${p.origen}</p>
+                    <p class="text-sm mt-1"><strong>Entregar:</strong> ${p.destino}</p>
+                    <p class="text-xs text-gray-500 mt-2">💰 $${p.tarifa}</p>
+                    ${p.estado === 'asignado' ? 
+                        `<button onclick="marcarPaqueteRecogido(${p.id})" class="w-full mt-3 bg-green-500 hover:bg-green-600 text-white py-2 rounded-lg">📦 MARCAR RECOGIDO</button>` : 
+                        `<button onclick="completarPedido(${p.id})" class="w-full mt-3 bg-blue-500 hover:bg-blue-600 text-white py-2 rounded-lg">🏁 MARCAR ENTREGADO</button>`
                     }
                 </div>
-                `;
-            }).join('');
+            `).join('');
         }
     }
-    
-    // Sincronizar mobile
-    const containerDisponiblesMobile = document.getElementById("pedidosDisponiblesMobile");
-    const containerActivosMobile = document.getElementById("pedidosActivosMobile");
-    if (containerDisponiblesMobile) containerDisponiblesMobile.innerHTML = containerDisponibles?.innerHTML || '';
-    if (containerActivosMobile) containerActivosMobile.innerHTML = containerActivos?.innerHTML || '';
 }
 
-// ==================== HISTORIAL ====================
-async function verHistorial() {
-    const supabase = supabaseClient;
-    if (!supabase) {
-        mostrarToast("Error de conexión", true);
-        return;
-    }
-    
-    try {
-        const { data: completados, error } = await supabase
-            .from('pedidos')
-            .select('*')
-            .eq('delivery_id', currentUser?.id)
-            .eq('estado', 'completado');
-        
-        if (error) throw error;
-        
-        if (!completados || completados.length === 0) {
-            mostrarToast("No tienes entregas completadas");
-        } else {
-            let total = 0;
-            let msg = "✅ Entregas completadas:\n";
-            completados.forEach(p => { 
-                total += p.tarifa; 
-                msg += `• #${p.id}: ${p.distancia_real}km - $${p.tarifa}\n`;
-            });
-            msg += `\n💰 Total ganado: $${total} MXN`;
-            alert(msg);
-        }
-    } catch(e) {
-        console.error('Error:', e);
-        mostrarToast("Error al cargar historial", true);
+// ==================== FUNCIONES GENERALES ====================
+function centrarMapa() {
+    if (map) {
+        map.setCenter([-91.8249, 18.6456]);
+        map.setZoom(13);
     }
 }
 
-function verPerfil() { 
-    alert(`👤 ${currentUser?.nombre}\n📧 ${currentUser?.email}\n🏍️ Delivery`); 
+function verHistorial() {
+    mostrarToast("📋 Historial en desarrollo");
 }
 
-// ==================== CERRAR SESIÓN ====================
-function cerrarSesion() { 
+function verPerfil() {
+    mostrarToast(`👤 ${currentUser?.nombre}\n📧 ${currentUser?.email}`);
+}
+
+function cerrarSesion() {
     if (watchId) navigator.geolocation.clearWatch(watchId);
     if (ubicacionInterval) clearInterval(ubicacionInterval);
     if (cargaPedidosInterval) clearInterval(cargaPedidosInterval);
-    
     limpiarRutaDelivery();
-    
-    if (currentUser && userMarker) {
-        const { lng, lat } = userMarker.getLngLat();
-        guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, lat, lng, false);
-    }
-    
-    if (confirm("¿Cerrar sesión?")) { 
-        localStorage.removeItem('sesion_activa'); 
-        window.location.href = "index.html"; 
-    } 
+    localStorage.removeItem('sesion_activa');
+    window.location.href = "index.html";
 }
 
-// ==================== TOAST ====================
 function mostrarToast(msg, err = false) {
-    const toastsAnteriores = document.querySelectorAll('.toast-moderno');
-    toastsAnteriores.forEach(toast => toast.remove());
-    
     const toast = document.createElement('div');
-    toast.className = 'toast-moderno';
-    const isMobile = window.innerWidth < 768;
-    const paddingY = isMobile ? '12px' : '14px';
-    const paddingX = isMobile ? '20px' : '28px';
-    const fontSize = isMobile ? '13px' : '14px';
-    
-    let icono = err ? 'fa-exclamation-triangle' : 'fa-check-circle';
-    let colorFondo = err 
-        ? 'linear-gradient(135deg, #dc2626, #b91c1c)' 
-        : 'linear-gradient(135deg, #10b981, #059669)';
-    
-    if (msg.includes('🏍️')) icono = 'fa-motorcycle';
-    else if (msg.includes('📦')) icono = 'fa-box';
-    else if (msg.includes('💰')) icono = 'fa-coins';
-    else if (msg.includes('✅')) icono = 'fa-circle-check';
-    else if (msg.includes('❌')) icono = 'fa-circle-exclamation';
-    else if (msg.includes('📍')) icono = 'fa-location-dot';
-    
-    toast.style.cssText = `
-        position: fixed;
-        bottom: ${isMobile ? '80px' : '20px'};
-        left: 50%;
-        transform: translateX(-50%) translateY(20px);
-        background: ${colorFondo};
-        color: white;
-        padding: ${paddingY} ${paddingX};
-        border-radius: ${isMobile ? '30px' : '50px'};
-        font-size: ${fontSize};
-        font-weight: 500;
-        z-index: 100000;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        opacity: 0;
-        transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        backdrop-filter: blur(4px);
-        border: 1px solid rgba(255,255,255,0.2);
-        max-width: ${isMobile ? '85%' : 'auto'};
-        white-space: ${isMobile ? 'normal' : 'nowrap'};
-        text-align: center;
-        line-height: 1.4;
-        word-break: break-word;
-        box-shadow: 0 10px 25px -5px rgba(0,0,0,0.2);
-    `;
-    
-    toast.innerHTML = `<i class="fas ${icono}" style="font-size: ${isMobile ? '16px' : '18px'}"></i><span>${msg}</span>`;
+    toast.className = `fixed bottom-20 left-1/2 transform -translate-x-1/2 px-4 py-2 rounded-full shadow-lg z-50 text-sm ${err ? 'bg-red-500' : 'bg-gray-800'} text-white`;
+    toast.innerText = msg;
     document.body.appendChild(toast);
-    
-    setTimeout(() => {
-        toast.style.transform = 'translateX(-50%) translateY(0)';
-        toast.style.opacity = '1';
-    }, 10);
-    
-    const duracion = err ? 3500 : 2500;
-    setTimeout(() => {
-        toast.style.transform = 'translateX(-50%) translateY(20px)';
-        toast.style.opacity = '0';
-        setTimeout(() => toast.remove(), 400);
-    }, duracion);
+    setTimeout(() => toast.remove(), 3000);
 }
 
-// ==================== MODAL CONFIRMACIÓN ====================
-function mostrarModalConfirmacionDelivery(titulo, mensaje) {
-    return new Promise((resolve) => {
-        const modalExistente = document.getElementById("modalConfirmacionDelivery");
-        if (modalExistente) modalExistente.remove();
-        
-        const modal = document.createElement('div');
-        modal.id = "modalConfirmacionDelivery";
-        modal.className = "fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[100000] p-4";
-        modal.innerHTML = `
-            <div class="bg-gray-800 rounded-3xl max-w-sm w-full modal-uber text-center p-6">
-                <div class="w-16 h-16 bg-orange-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <i class="fas fa-motorcycle text-3xl text-orange-500"></i>
-                </div>
-                <h3 class="text-xl font-bold text-white mb-2">${titulo}</h3>
-                <p class="text-gray-400 text-sm mb-6">${mensaje}</p>
-                <div class="flex gap-3">
-                    <button id="btnCancelarConfirm" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-3 rounded-xl transition-all font-medium">Cancelar</button>
-                    <button id="btnAceptarConfirm" class="flex-1 bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-xl transition-all font-medium"><i class="fas fa-hand-paper mr-2"></i>Aceptar</button>
-                </div>
-            </div>
-        `;
-        
-        document.body.appendChild(modal);
-        
-        document.getElementById("btnAceptarConfirm").onclick = () => {
-            modal.remove();
-            resolve(true);
-        };
-        
-        document.getElementById("btnCancelarConfirm").onclick = () => {
-            modal.remove();
-            resolve(false);
-        };
-        
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                modal.remove();
-                resolve(false);
-            }
-        });
-    });
-}
-
-// ==================== LIMPIAR INTERVALOS ====================
-function limpiarIntervalosDelivery() {
-    if (ubicacionInterval) clearInterval(ubicacionInterval);
-    if (cargaPedidosInterval) clearInterval(cargaPedidosInterval);
-    if (watchId) navigator.geolocation.clearWatch(watchId);
-    limpiarRutaDelivery();
-    
-    if (currentUser && isOnline && supabaseClient) {
-        setDeliveryOnlineSupabase(currentUser.id, false).catch(console.error);
-        if (userMarker) {
-            const { lng, lat } = userMarker.getLngLat();
-            guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, lat, lng, false).catch(console.error);
-        }
-    }
-}
-
-const originalCerrarSesionDelivery = window.cerrarSesion;
-window.cerrarSesion = function() {
-    limpiarIntervalosDelivery();
-    if (originalCerrarSesionDelivery) originalCerrarSesionDelivery();
-};
-
-window.addEventListener('beforeunload', () => limpiarIntervalosDelivery());
-window.addEventListener('unload', () => console.log("💀 Delivery: página descargada"));
+// ==================== INICIALIZACIÓN ====================
+document.addEventListener('visibilitychange', () => {
+    paginaVisible = !document.hidden;
+    if (paginaVisible) cargarPedidos();
+});
 
 window.onload = () => { 
     loadUser(); 
     initMap();
+    setInterval(() => { if (paginaVisible) cargarPedidos(); }, 10000);
 };
