@@ -171,7 +171,9 @@ async function dibujarRutaDelivery(origin, dest, color, weight = 5) {
             const bounds = new maplibregl.LngLatBounds()
                 .extend([origin.lng, origin.lat])
                 .extend([dest.lng, dest.lat]);
+            if (!map.isMoving()) {
             map.fitBounds(bounds, { padding: 50 });
+            }
             
             return {
                 distance: route.distance / 1000,
@@ -333,7 +335,7 @@ async function dibujarRutaOptimaPedido(pedido) {
 
 // ==================== INICIAR SEGUIMIENTO DE UBICACIÓN ====================
 function startLocationTracking(intentos = 0) {
-      // ✅ Evitar múltiples instancias en celular
+    // ✅ Evitar múltiples instancias en celular
     if (window.locationTrackingActive) {
         console.log("⚠️ Tracking ya activo, ignorando nueva llamada");
         return;
@@ -403,15 +405,23 @@ function startLocationTracking(intentos = 0) {
                     userMarker = null;
                 }
 
+                // ✅ Extraer solo el primer nombre (sin apellidos)
+                const nombreCompleto = currentUser?.nombre || 'Delivery';
+                const primerNombre = nombreCompleto.trim().split(' ')[0];
+
                 const markerDiv = document.createElement('div');
                 markerDiv.style.cursor = 'pointer';
                 markerDiv.innerHTML = `
-                    <div style="text-align:center;">
-                        <div style="background:rgba(0,0,0,0.85); color:white; font-size:11px; font-weight:bold; padding:3px 8px; border-radius:14px; margin-bottom:4px;">
-                            ${currentUser?.nombre || 'Delivery'}
+                    <div style="position: relative; transform: translateY(-100%); display: flex; flex-direction: column; align-items: center;">
+                        <div style="background:rgba(0,0,0,0.7); backdrop-filter: blur(4px); color:white; font-size:12px; font-weight:500; padding:4px 12px; border-radius:20px; margin-bottom:6px; white-space:nowrap; box-shadow: 0 1px 4px rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.2);">
+                            ${primerNombre}
                         </div>
-                        <div style="background:#10B981; width:38px; height:38px; border-radius:50%; border:3px solid white; display:flex; align-items:center; justify-content:center;">
-                            <i class="fas fa-motorcycle" style="color:white; font-size:20px;"></i>
+                        <div style="background:#10B981; width:36px; height:36px; border-radius:50%; border:3px solid white; display:flex; align-items:center; justify-content:center; box-shadow: 0 2px 6px rgba(0,0,0,0.3);">
+                            <i class="fas fa-motorcycle" style="color:white; font-size:18px;"></i>
+                        </div>
+                        <div style="position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%);
+                                    width: 0; height: 0; border-left: 7px solid transparent; border-right: 7px solid transparent;
+                                    border-top: 9px solid #10B981;">
                         </div>
                     </div>
                 `;
@@ -424,13 +434,14 @@ function startLocationTracking(intentos = 0) {
                 }
 
                 userMarker = new maplibregl.Marker({
-                    element: markerElement
+                    element: markerElement,
+                    anchor: 'bottom'  // ✅ Ancla en la parte inferior
                 }).setLngLat([coords.lng, coords.lat]);
 
                 userMarker.addTo(map);
 
-                const popup = new maplibregl.Popup({ offset: [0, -35] })
-                    .setHTML(`🏍️ <b>${currentUser?.nombre}</b><br>🟢 Disponible`);
+                const popup = new maplibregl.Popup({ offset: [0, -40] })
+                    .setHTML(`🏍️ <b>${primerNombre}</b><br>🟢 Disponible`);
 
                 userMarker.setPopup(popup);
 

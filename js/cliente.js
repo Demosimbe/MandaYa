@@ -491,13 +491,26 @@ function limpiarRutaCliente() {
 async function dibujarRutaMapLibre(origin, dest, color, weight = 5) {
     if (!map || !origin || !dest) return null;
     
-    // Limpiar ruta anterior manualmente
+    // ✅ Limpiar ruta anterior correctamente
     try {
-        if (map.getLayer('current-route')) map.removeLayer('current-route');
-        if (map.getSource('current-route')) map.removeSource('current-route');
-        if (map.getLayer('route-layer')) map.removeLayer('route-layer');
-        if (map.getSource('route-source')) map.removeSource('route-source');
-    } catch(e) {}
+        // Primero eliminar la capa
+        if (map.getLayer('current-route')) {
+            map.removeLayer('current-route');
+        }
+        // Luego eliminar la fuente
+        if (map.getSource('current-route')) {
+            map.removeSource('current-route');
+        }
+        // También limpiar otras posibles capas
+        if (map.getLayer('route-layer')) {
+            map.removeLayer('route-layer');
+        }
+        if (map.getSource('route-source')) {
+            map.removeSource('route-source');
+        }
+    } catch(e) {
+        console.warn("Error limpiando ruta anterior:", e);
+    }
     
     try {
         const response = await fetch(
@@ -509,25 +522,34 @@ async function dibujarRutaMapLibre(origin, dest, color, weight = 5) {
             const route = data.routes[0];
             const geojson = route.geometry;
             
-            map.addSource('current-route', {
-                type: 'geojson',
-                data: geojson
-            });
+            // ✅ Verificar que la fuente no exista antes de crearla
+            if (!map.getSource('current-route')) {
+                map.addSource('current-route', {
+                    type: 'geojson',
+                    data: geojson
+                });
+            } else {
+                // Si ya existe, actualizar los datos
+                map.getSource('current-route').setData(geojson);
+            }
             
-            map.addLayer({
-                id: 'current-route',
-                type: 'line',
-                source: 'current-route',
-                layout: {
-                    'line-join': 'round',
-                    'line-cap': 'round'
-                },
-                paint: {
-                    'line-color': color,
-                    'line-width': weight,
-                    'line-opacity': 0.8
-                }
-            });
+            // ✅ Verificar que la capa no exista antes de crearla
+            if (!map.getLayer('current-route')) {
+                map.addLayer({
+                    id: 'current-route',
+                    type: 'line',
+                    source: 'current-route',
+                    layout: {
+                        'line-join': 'round',
+                        'line-cap': 'round'
+                    },
+                    paint: {
+                        'line-color': color,
+                        'line-width': weight,
+                        'line-opacity': 0.8
+                    }
+                });
+            }
             
             console.log(`✅ Ruta dibujada: ${(route.distance / 1000).toFixed(2)} km`);
             
@@ -660,56 +682,56 @@ function reverseGeocode(latlng, callback) {
 }
 
 function crearMarcadorDelivery(delivery) {
-    // ✅ Validar que el mapa existe
     if (!map || typeof map.addSource !== 'function') {
-        console.warn("⏳ Mapa no listo para crear marcador de delivery");
+        console.warn("⏳ Mapa no listo");
         return null;
     }
     
-    // ✅ Validar datos del delivery
     if (!delivery || typeof delivery.lat !== 'number' || typeof delivery.lng !== 'number') {
-        console.warn("⚠️ Datos de delivery inválidos:", delivery);
+        console.warn("⚠️ Datos inválidos:", delivery);
         return null;
     }
     
     try {
-        // Crear elemento del marcador
+        // Extraer solo el primer nombre
+        let nombreMostrar = delivery.nombre || 'Delivery';
+        const primerNombre = nombreMostrar.trim().split(' ')[0];
+        
         const markerDiv = document.createElement('div');
-        markerDiv.className = 'delivery-marker';
+        const color = delivery.online ? '#10B981' : '#6B7280';
+        
         markerDiv.innerHTML = `
-            <div class="relative">
-                <div class="bg-black/80 text-white text-xs font-bold px-2 py-1 rounded-full whitespace-nowrap shadow-lg">
-                    ${delivery.nombre || 'Delivery'}
+            <div style="position: relative; transform: translateY(-100%); display: flex; flex-direction: column; align-items: center;">
+                <!-- Nombre con fondo más suave y bordes redondeados -->
+                <div style="background:rgba(0,0,0,0.7); backdrop-filter: blur(4px); color:white; font-size:11px; font-weight:500; padding:4px 10px; border-radius:20px; margin-bottom:6px; white-space:nowrap; box-shadow: 0 1px 4px rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.2);">
+                    ${primerNombre}
                 </div>
-                <div class="w-8 h-8 rounded-full border-2 border-white flex items-center justify-center shadow-lg"
-                     style="background-color: ${delivery.online ? '#10B981' : '#6B7280'}">
-                    <i class="fas fa-motorcycle text-white text-sm"></i>
+                <!-- Círculo de la moto -->
+                <div style="background-color: ${color}; width:32px; height:32px; border-radius:50%; border:2.5px solid white; display:flex; align-items:center; justify-content:center; box-shadow: 0 2px 6px rgba(0,0,0,0.3);">
+                    <i class="fas fa-motorcycle" style="color:white; font-size:16px;"></i>
+                </div>
+                <!-- Punta hacia abajo -->
+                <div style="position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%);
+                            width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent;
+                            border-top: 8px solid ${color};">
                 </div>
             </div>
         `;
         
         const marker = new maplibregl.Marker({
-            element: markerDiv,
-            draggable: false
-        })
-        .setLngLat([delivery.lng, delivery.lat])
-        .addTo(map);  // ✅ Aquí fallaba porque map no existía
+            element: markerDiv.firstElementChild,
+            draggable: false,
+            anchor: 'bottom'
+        }).setLngLat([delivery.lng, delivery.lat]).addTo(map);
         
-        // Agregar popup
         const estado = delivery.online ? '🟢 En línea' : '⚫ Desconectado';
-        const popup = new maplibregl.Popup({ offset: [0, -30] })
-            .setHTML(`
-                <div class="text-center">
-                    <strong>${delivery.nombre}</strong><br>
-                    ${estado}
-                </div>
-            `);
+        const popup = new maplibregl.Popup({ offset: [0, -40] })
+            .setHTML(`<b>🏍️ ${primerNombre}</b><br>${estado}`);
         marker.setPopup(popup);
         
         return marker;
-        
     } catch(e) {
-        console.error("❌ Error creando marcador delivery:", e);
+        console.error("❌ Error:", e);
         return null;
     }
 }
@@ -2399,28 +2421,6 @@ async function cargarDeliverysEnLinea() {
     }
 }
 
-function crearMarcadorCirculo(map, lng, lat, color, icono, texto) {
-    const markerDiv = document.createElement('div');
-    markerDiv.innerHTML = `
-        <div class="relative">
-            <div class="bg-black/80 text-white text-xs font-bold px-2 py-1 rounded-full whitespace-nowrap shadow-lg">
-                ${texto}
-            </div>
-            <div class="w-8 h-8 rounded-full border-2 border-white flex items-center justify-center shadow-lg"
-                 style="background-color: ${color}; cursor: grab;">
-                <i class="fas ${icono} text-white text-sm"></i>
-            </div>
-        </div>
-    `;
-    
-    const marker = new maplibregl.Marker({
-        element: markerDiv.firstElementChild,
-        draggable: true
-    }).setLngLat([lng, lat]);
-    
-    marker.addTo(map);
-    return marker;
-}
 
 async function tienePedidoActivo(deliveryId) {
     const supabase = supabaseClient;
