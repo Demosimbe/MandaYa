@@ -12,6 +12,7 @@ let ubicacionInterval = null;
 let cargaPedidosInterval = null;
 let ultimaUbicacionEnviada = null;
 let primeraUbicacionObtenida = false;
+// ✅ ELIMINADAS las líneas duplicadas de userMarker y ultimaUbicacionEnviada
 
 // ==================== NUEVAS VARIABLES PARA RUTAS (MapLibre) ====================
 let currentRouteLayerId = 'delivery-route';
@@ -100,25 +101,18 @@ function initMap() {
         }
     });
     
-    // Cuando el mapa esté completamente cargado, iniciar tracking
-    map.on('load', () => {
-        console.log('✅ Mapa Delivery MapLibre cargado');
-        // Iniciar seguimiento de ubicación DESPUÉS de que el mapa esté cargado
-        setTimeout(() => {
-            startLocationTracking();
-        }, 500);
-        cargarPedidos();
+    // Usar style.load en lugar de load para mayor confiabilidad
+    map.on('style.load', () => {
+        console.log('🎨 Estilo del mapa cargado');
     });
     
-    // También intentar cuando el estilo esté cargado
-    map.on('styledata', () => {
-        if (map.isStyleLoaded() && !window._trackingStarted) {
-            window._trackingStarted = true;
-            console.log("🎨 Estilo cargado, iniciando tracking...");
-            setTimeout(() => {
-                startLocationTracking();
-            }, 500);
-        }
+    map.on('load', () => {
+        console.log('✅ Mapa Delivery MapLibre cargado');
+        cargarPedidos();
+        // Iniciar tracking después de que el mapa cargue
+        setTimeout(() => {
+            startLocationTracking(0);
+        }, 1500);
     });
     
     console.log("✅ Mapa inicializado");
@@ -190,6 +184,94 @@ async function dibujarRutaDelivery(origin, dest, color, weight = 5) {
     return null;
 }
 
+// ==================== FUNCIONES FALTANTES ====================
+
+// Verificar si el delivery tiene un pedido activo
+async function deliveryTienePedidoActivo(deliveryId) {
+    const supabase = supabaseClient;
+    if (!supabase) return false;
+    
+    const { data, error } = await supabase
+        .from('pedidos')
+        .select('id')
+        .eq('delivery_id', deliveryId)
+        .in('estado', ['asignado', 'recogido'])
+        .maybeSingle();
+    
+    if (error) {
+        console.error('Error verificando pedido activo:', error);
+        return false;
+    }
+    
+    return !!data;
+}
+
+// Obtener pedido activo del delivery
+async function getPedidoActivoDelDelivery(deliveryId) {
+    const supabase = supabaseClient;
+    if (!supabase) return null;
+    
+    const { data, error } = await supabase
+        .from('pedidos')
+        .select('*')
+        .eq('delivery_id', deliveryId)
+        .in('estado', ['asignado', 'recogido'])
+        .maybeSingle();
+    
+    if (error) {
+        console.error('Error obteniendo pedido activo:', error);
+        return null;
+    }
+    
+    return data ? convertirPedidoDeSupabase(data) : null;
+}
+
+// Guardar ubicación en Supabase
+async function guardarUbicacionEnSupabase(deliveryId, deliveryNombre, lat, lng, online) {
+    const supabase = supabaseClient;
+    if (!supabase) return false;
+    
+    try {
+        const { error } = await supabase
+            .from('ubicaciones')
+            .upsert({
+                delivery_id: deliveryId,
+                delivery_nombre: deliveryNombre,
+                lat: lat,
+                lng: lng,
+                online: online,
+                updated_at: new Date().toISOString()
+            }, {
+                onConflict: 'delivery_id'
+            });
+        
+        if (error) throw error;
+        return true;
+    } catch(e) {
+        console.error('Error guardando ubicación:', e);
+        return false;
+    }
+}
+
+// Actualizar estado online en Supabase
+async function setDeliveryOnlineSupabase(deliveryId, online) {
+    const supabase = supabaseClient;
+    if (!supabase) return false;
+    
+    try {
+        const { error } = await supabase
+            .from('deliveries')
+            .update({ online: online })
+            .eq('id', deliveryId);
+        
+        if (error) throw error;
+        return true;
+    } catch(e) {
+        console.error('Error actualizando estado online:', e);
+        return false;
+    }
+}
+
 // ==================== RUTA DE RECOGIDA ====================
 async function dibujarRutaRecogida(pedido) {
     if (ultimoPedidoDibujado === pedido.id && ultimaEtapa === 'recogida') {
@@ -250,47 +332,76 @@ async function dibujarRutaOptimaPedido(pedido) {
 }
 
 // ==================== INICIAR SEGUIMIENTO DE UBICACIÓN ====================
-function startLocationTracking() {
-    // Esperar a que el mapa esté completamente cargado
-    if (!map) {
-        console.log("⏳ Esperando a que el mapa esté listo...");
-        setTimeout(() => startLocationTracking(), 500);
+function startLocationTracking(intentos = 0) {
+    const maxIntentos = 10;
+
+    // Evitar múltiples ejecuciones simultáneas
+    if (window.trackingStarted && intentos === 0) return;
+    if (intentos === 0) window.trackingStarted = true;
+
+    // Validar mapa
+    if (!map || typeof map.getSource !== "function") {
+        if (intentos < maxIntentos) {
+            console.log(`⏳ Esperando mapa... (${intentos + 1})`);
+            setTimeout(() => startLocationTracking(intentos + 1), 1000);
+        } else {
+            console.error("❌ No se pudo inicializar el mapa");
+        }
         return;
     }
-    
-    // Verificar que el mapa tenga el método addLayer (está completamente cargado)
-    if (!map.addLayer) {
-        console.log("⏳ Mapa no completamente cargado, esperando...");
-        setTimeout(() => startLocationTracking(), 500);
+
+    // Esperar a que el mapa cargue completamente
+    if (!map.loaded()) {
+        if (intentos < maxIntentos) {
+            console.log(`⏳ Esperando carga del mapa... (${intentos + 1})`);
+            setTimeout(() => startLocationTracking(intentos + 1), 1000);
+        } else {
+            console.error("❌ El mapa no cargó correctamente");
+        }
         return;
     }
-    
-    console.log("📍 Iniciando seguimiento de ubicación...");
-    
-    if ("geolocation" in navigator) {
-        const options = {
-            enableHighAccuracy: true,
-            maximumAge: 0,
-            timeout: 5000
-        };
-        
-        // Obtener ubicación inicial
-        navigator.geolocation.getCurrentPosition(
-            async (pos) => {
-                const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-                console.log("📍 Ubicación inicial obtenida:", coords);
-                ultimaUbicacionEnviada = coords;
-                
-                // Verificar que map existe antes de agregar el marcador
-                if (!map) {
-                    console.error("❌ Mapa no disponible para crear marcador");
-                    return;
+
+    console.log("📍 Iniciando seguimiento...");
+
+    if (!("geolocation" in navigator)) {
+        mostrarToast("⚠️ Tu navegador no soporta geolocalización", true);
+        return;
+    }
+
+    const options = {
+        enableHighAccuracy: true,
+        maximumAge: 0,
+        timeout: 10000
+    };
+
+    // Limpiar watcher previo
+    if (watchId) {
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+            const coords = {
+                lat: pos.coords.latitude,
+                lng: pos.coords.longitude
+            };
+
+            console.log("📍 Ubicación inicial:", coords);
+            ultimaUbicacionEnviada = coords;
+
+            try {
+                // Eliminar marcador previo si existe
+                if (userMarker) {
+                    userMarker.remove();
+                    userMarker = null;
                 }
-                
-                // Crear marcador directamente
-                const html = `
-                    <div style="text-align: center;">
-                        <div style="background:rgba(0,0,0,0.85); color:white; font-size:11px; font-weight:bold; padding:3px 8px; border-radius:14px; margin-bottom:4px; white-space:nowrap;">
+
+                const markerDiv = document.createElement('div');
+                markerDiv.style.cursor = 'pointer';
+                markerDiv.innerHTML = `
+                    <div style="text-align:center;">
+                        <div style="background:rgba(0,0,0,0.85); color:white; font-size:11px; font-weight:bold; padding:3px 8px; border-radius:14px; margin-bottom:4px;">
                             ${currentUser?.nombre || 'Delivery'}
                         </div>
                         <div style="background:#10B981; width:38px; height:38px; border-radius:50%; border:3px solid white; display:flex; align-items:center; justify-content:center;">
@@ -298,80 +409,116 @@ function startLocationTracking() {
                         </div>
                     </div>
                 `;
-                
-                const div = document.createElement('div');
-                div.innerHTML = html;
-                const markerElement = div.firstChild;
-                
-                try {
-                    userMarker = new maplibregl.Marker({ element: markerElement, draggable: false })
-                        .setLngLat([coords.lng, coords.lat])
-                        .addTo(map);
-                    
-                    const popup = new maplibregl.Popup({ offset: [0, -35] })
-                        .setHTML(`🏍️ <b>${currentUser?.nombre}</b><br>🟢 Disponible`);
-                    userMarker.setPopup(popup);
-                    
+
+                const markerElement = markerDiv.firstElementChild;
+
+                if (!markerElement) {
+                    console.error("❌ Error creando marcador");
+                    return;
+                }
+
+                userMarker = new maplibregl.Marker({
+                    element: markerElement
+                }).setLngLat([coords.lng, coords.lat]);
+
+                userMarker.addTo(map);
+
+                const popup = new maplibregl.Popup({ offset: [0, -35] })
+                    .setHTML(`🏍️ <b>${currentUser?.nombre}</b><br>🟢 Disponible`);
+
+                userMarker.setPopup(popup);
+
+                // Solo centrar la primera vez
+                if (intentos === 0) {
                     map.setCenter([coords.lng, coords.lat]);
                     map.setZoom(15);
-                    mostrarToast("📍 Ubicación detectada");
-                    
-                    if (currentUser && isOnline) {
-                        await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, coords.lat, coords.lng, true);
-                    }
-                } catch(e) {
-                    console.error("❌ Error creando marcador:", e);
                 }
-            },
-            (err) => {
-                console.error("Error en ubicación inicial:", err);
-                if (err.code === 1) {
-                    mostrarToast("❌ Permite el acceso a tu ubicación en el navegador", true);
-                }
-            },
-            options
-        );
-        
-        // Watch continuo
-        if (watchId) navigator.geolocation.clearWatch(watchId);
-        
-        watchId = navigator.geolocation.watchPosition(
-            async (pos) => {
-                const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-                
-                if (ultimaUbicacionEnviada) {
-                    const R = 6371;
-                    const dLat = (coords.lat - ultimaUbicacionEnviada.lat) * Math.PI / 180;
-                    const dLon = (coords.lng - ultimaUbicacionEnviada.lng) * Math.PI / 180;
-                    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-                              Math.cos(ultimaUbicacionEnviada.lat * Math.PI / 180) * Math.cos(coords.lat * Math.PI / 180) *
-                              Math.sin(dLon / 2) * Math.sin(dLon / 2);
-                    const distanciaMetros = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)) * 1000;
-                    if (distanciaMetros < 15) return;
-                }
-                
-                ultimaUbicacionEnviada = coords;
-                
-                if (userMarker) {
-                    try {
-                        userMarker.setLngLat([coords.lng, coords.lat]);
-                    } catch(e) {
-                        console.error("Error actualizando marcador:", e);
-                    }
-                }
-                
+
+                mostrarToast("📍 Ubicación detectada");
+
+                // Guardar en backend
                 if (currentUser && isOnline) {
-                    await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, coords.lat, coords.lng, true);
+                    await guardarUbicacionEnSupabase(
+                        currentUser.id,
+                        currentUser.nombre,
+                        coords.lat,
+                        coords.lng,
+                        true
+                    );
                 }
-            },
-            (err) => console.error("Error GPS:", err),
-            options
-        );
-        
-        mostrarToast("🟢 Buscando tu ubicación...");
-    } else {
-        mostrarToast("⚠️ Tu navegador no soporta geolocalización", true);
-    }
+
+                // 🚀 WATCH SOLO DESPUÉS DE ÉXITO
+                watchId = navigator.geolocation.watchPosition(
+                    async (pos) => {
+                        if (!userMarker) return;
+
+                        const newCoords = {
+                            lat: pos.coords.latitude,
+                            lng: pos.coords.longitude
+                        };
+
+                        // Calcular distancia (Haversine)
+                        if (ultimaUbicacionEnviada) {
+                            const R = 6371;
+                            const dLat = (newCoords.lat - ultimaUbicacionEnviada.lat) * Math.PI / 180;
+                            const dLon = (newCoords.lng - ultimaUbicacionEnviada.lng) * Math.PI / 180;
+
+                            const a =
+                                Math.sin(dLat / 2) ** 2 +
+                                Math.cos(ultimaUbicacionEnviada.lat * Math.PI / 180) *
+                                Math.cos(newCoords.lat * Math.PI / 180) *
+                                Math.sin(dLon / 2) ** 2;
+
+                            const distancia = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)) * 1000;
+
+                            if (distancia < 15) return;
+                        }
+
+                        ultimaUbicacionEnviada = newCoords;
+
+                        try {
+                            userMarker.setLngLat([newCoords.lng, newCoords.lat]);
+                        } catch (e) {
+                            console.error("❌ Error moviendo marcador:", e);
+                        }
+
+                        if (currentUser && isOnline) {
+                            await guardarUbicacionEnSupabase(
+                                currentUser.id,
+                                currentUser.nombre,
+                                newCoords.lat,
+                                newCoords.lng,
+                                true
+                            );
+                        }
+                    },
+                    (err) => {
+                        if (err.code !== 3) {
+                            console.error("❌ Error GPS:", err);
+                        }
+                    },
+                    options
+                );
+
+            } catch (e) {
+                console.error("❌ Error general:", e);
+                setTimeout(() => startLocationTracking(intentos + 1), 2000);
+            }
+        },
+        (err) => {
+            console.error("❌ Error ubicación:", err);
+
+            if (err.code === 1) {
+                mostrarToast("❌ Permite acceso a ubicación", true);
+            } else if (err.code === 3) {
+                setTimeout(() => startLocationTracking(intentos + 1), 2000);
+            } else {
+                mostrarToast("⚠️ Reintentando ubicación...", true);
+                setTimeout(() => startLocationTracking(intentos + 1), 3000);
+            }
+        },
+        options
+    );
 }
 
 // ==================== LOAD USER ====================
