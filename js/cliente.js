@@ -12,6 +12,10 @@ let currentRouteData = null;
 let rutaYaDibujada = false;
 let rutaActualTipo = null;
 let rutaDestinoActual = null;
+let isUserInteracting = false;
+let ultimoCentroDelivery = null;
+// Variable para evitar agregar listeners múltiples veces
+let listenersAgregados = false;
 
 // Usuario y pedidos
 let currentUser = null;
@@ -35,6 +39,57 @@ let ultimaPeticionDeliverys = 0;
 let paginaVisible = true;
 // ✅ Array para marcadores de deliverys (VERSIÓN GLOBAL)
 window.deliveryMarkers = [];
+
+// ==================== OBTENER UBICACIÓN DE DELIVERY DESDE SUPABASE ====================
+async function obtenerUbicacionDeSupabase(deliveryId) {
+    const supabase = supabaseClient;
+    if (!supabase) {
+        console.warn("⚠️ Supabase no disponible para obtener ubicación");
+        return null;
+    }
+    
+    try {
+        const { data, error } = await supabase
+            .from('ubicaciones')
+            .select('lat, lng, updated_at, online')
+            .eq('delivery_id', deliveryId)
+            .maybeSingle();  // Usar maybeSingle para evitar error si no existe
+        
+        if (error) {
+            console.error("❌ Error obteniendo ubicación:", error);
+            return null;
+        }
+        
+        if (!data) {
+            console.log(`⏳ No hay ubicación registrada para delivery ${deliveryId}`);
+            return null;
+        }
+        
+        // Verificar si la ubicación es reciente (menos de 30 segundos)
+        const updatedAt = new Date(data.updated_at);
+        const ahora = new Date();
+        const segundosDesdeActualizacion = (ahora - updatedAt) / 1000;
+        
+        if (segundosDesdeActualizacion > 30) {
+            console.log(`⚠️ Ubicación de delivery ${deliveryId} no es reciente (${segundosDesdeActualizacion}s)`);
+            // Aún así devolvemos la ubicación, pero con advertencia
+        }
+        
+        console.log(`📍 Ubicación obtenida: delivery ${deliveryId} -> [${data.lng}, ${data.lat}]`);
+        
+        return {
+            lat: data.lat,
+            lng: data.lng,
+            online: data.online,
+            updated_at: data.updated_at
+        };
+        
+    } catch(e) {
+        console.error('❌ Error en obtenerUbicacionDeSupabase:', e);
+        return null;
+    }
+}
+
 // ==================== BLOQUEAR/REACTIVAR UI ====================
 function bloquearUIporPedidoActivo(bloquear) {
     const elementos = {
@@ -204,7 +259,22 @@ function initMap() {
     window.map = map;
     map.addControl(new maplibregl.NavigationControl(), 'top-right');
 
-    // ==================== LIMITADOR SUAVE (igual que delivery) ====================
+   map.on('load', () => {
+    console.log('✅ Mapa Cliente cargado correctamente');
+    
+    crearMarcadoresIniciales();
+    
+    // ✅ Cargar deliverys SOLO después de que el mapa está listo
+    setTimeout(() => {
+        if (typeof cargarDeliverysEnLinea === 'function') {
+            cargarDeliverysEnLinea();  // ← Llamada directa, sin verificación extra
+        }
+    }, 1000);  // ← Reducido a 1 segundo
+
+            console.log("👆 Listeners de interacción del usuario activados");
+    });
+
+    // ==================== LIMITADOR SUAVE DE BOUNDS ====================
     let ajustando = false;
 
     map.on('moveend', () => {
@@ -212,7 +282,6 @@ function initMap() {
 
         const center = map.getCenter();
         
-        // Tolerancia más amplia para evitar que te aviente al mar
         if (center.lng < -91.98 || center.lng > -91.65 || 
             center.lat < 18.45 || center.lat > 18.80) {
             
@@ -225,19 +294,8 @@ function initMap() {
                 essential: true
             });
             
-            setTimeout(() => ajustando = false, 1100);
+            setTimeout(() => ajustando = false, 1200);
         }
-    });
-
-    map.on('load', () => {
-        console.log('✅ Mapa Cliente cargado correctamente');
-        crearMarcadoresIniciales();
-        
-        setTimeout(() => {
-            if (typeof cargarDeliverysEnLinea === 'function') {
-                cargarDeliverysEnLinea();
-            }
-        }, 1000);
     });
     
     console.log("✅ Mapa Cliente inicializado (estilo Delivery)");
@@ -537,22 +595,6 @@ async function dibujarRutaMapLibre(origin, dest, color, weight = 5) {
         console.error('Error dibujando ruta:', e);
     }
     return null;
-}
-
-async function dibujarRutaDeliveryEnCliente(ubicacionDelivery, destinoCoords, tipo) {
-    if (!ubicacionDelivery || !destinoCoords) {
-        console.log("❌ Faltan coordenadas para dibujar ruta:", { ubicacionDelivery, destinoCoords });
-        return;
-    }
-    
-    const color = tipo === 'recogida' ? '#10B981' : '#FF6200';
-    
-    await dibujarRutaMapLibre(
-        { lng: ubicacionDelivery.lng, lat: ubicacionDelivery.lat },
-        { lng: destinoCoords.lng, lat: destinoCoords.lat },
-        color,
-        4
-    );
 }
 
 // CORREGIR en cliente.js
@@ -1225,40 +1267,20 @@ function iniciarSeguimientoDelivery() {
     }, 3000);
 }
 
-// ==================== SEGUIMIENTO INTELIGENTE DEL DELIVERY ====================
-let isUserInteracting = false;
-let ultimoCentroDelivery = null;
-
+// ==================== SEGUIMIENTO DEL DELIVERY (IGUAL A DELIVERY.JS) ====================
 function seguirUbicacionDelivery(deliveryId) {
     if (ubicacionInterval) {
         clearInterval(ubicacionInterval);
         ubicacionInterval = null;
     }
 
-    console.log(`🔄 Seguimiento inteligente activado para delivery ${deliveryId}`);
-
-    // Detectar si el usuario está interactuando con el mapa
-    map.on('dragstart', () => isUserInteracting = true);
-    map.on('zoomstart', () => isUserInteracting = true);
-    
-    // Resetear interacción después de 8 segundos de inactividad
-    map.on('moveend', () => {
-        setTimeout(() => {
-            isUserInteracting = false;
-        }, 8000);
-    });
-
     ubicacionInterval = setInterval(async () => {
-        let ubicacion = null;
-        
-        if (typeof obtenerUbicacionDeSupabase === 'function') {
-            ubicacion = await obtenerUbicacionDeSupabase(deliveryId);
-        }
+        if (!pedidoActual || !deliveryId || !map) return;
 
+        const ubicacion = await obtenerUbicacionDeSupabase(deliveryId);
         if (!ubicacion || !ubicacion.lat || !ubicacion.lng) return;
 
         const deliveryPos = { lng: ubicacion.lng, lat: ubicacion.lat };
-        ultimoCentroDelivery = deliveryPos;
 
         // Actualizar marcador
         if (deliveryMarker) {
@@ -1274,33 +1296,90 @@ function seguirUbicacionDelivery(deliveryId) {
             if (deliveryMarker) deliveryMarker.addTo(map);
         }
 
-        // === SOLO centrar si el usuario NO está interactuando ===
-        if (!isUserInteracting && (pedidoActual?.estado === 'asignado' || pedidoActual?.estado === 'recogido')) {
-            
-            map.flyTo({
-                center: [deliveryPos.lng, deliveryPos.lat],
-                zoom: map.getZoom(),        // Respeta el zoom actual del usuario
-                duration: 1600,
-                essential: true,
-                curve: 1.25
-            });
-        }
-
-        // Actualizar ruta
+        // ✅ ACTUALIZAR RUTA SIN MOVER EL MAPA (esto era el culpable del temblor)
         if (pedidoActual) {
             let destinoRuta = null;
+            let tipoRuta = pedidoActual.estado === 'asignado' ? 'recogida' : 'entrega';
+
             if (pedidoActual.estado === 'asignado' && pedidoActual.origen_lat) {
                 destinoRuta = { lat: pedidoActual.origen_lat, lng: pedidoActual.origen_lng };
             } else if (pedidoActual.estado === 'recogido' && pedidoActual.destino_lat) {
                 destinoRuta = { lat: pedidoActual.destino_lat, lng: pedidoActual.destino_lng };
             }
-            
+
             if (destinoRuta) {
-                await dibujarRutaDeliveryEnCliente(deliveryPos, destinoRuta, pedidoActual.estado === 'asignado' ? 'recogida' : 'entrega');
+                await dibujarRutaDeliverySinCentrar(deliveryPos, destinoRuta, tipoRuta);
             }
         }
+    }, 3000); // ← Cada 3 segundos es suficiente
+}
 
-    }, 3000); // Cada 3 segundos
+// Nueva función que NO fuerza el centro del mapa (Versión optimizada)
+async function dibujarRutaDeliverySinCentrar(ubicacionDelivery, destinoCoords, tipo) {
+    if (!ubicacionDelivery || !destinoCoords || !map) {
+        console.log("❌ Faltan coordenadas o mapa no listo");
+        return;
+    }
+    
+    const color = tipo === 'recogida' ? '#10B981' : '#FF6200';
+    const layerId = 'delivery-route';
+
+    // Limpiar ruta anterior
+    try {
+        if (map.getLayer(layerId)) map.removeLayer(layerId);
+        if (map.getSource(layerId)) map.removeSource(layerId);
+    } catch(e) {}
+
+    try {
+        const response = await fetch(
+            `https://router.project-osrm.org/route/v1/driving/${ubicacionDelivery.lng},${ubicacionDelivery.lat};${destinoCoords.lng},${destinoCoords.lat}?overview=full&geometries=geojson`
+        );
+        
+        const data = await response.json();
+        
+        if (data.routes && data.routes[0]) {
+            const route = data.routes[0];
+
+            map.addSource(layerId, {
+                type: 'geojson',
+                data: route.geometry
+            });
+
+            map.addLayer({
+                id: layerId,
+                type: 'line',
+                source: layerId,
+                layout: {
+                    'line-join': 'round',
+                    'line-cap': 'round'
+                },
+                paint: {
+                    'line-color': color,
+                    'line-width': 5.5,      // Un poco más visible
+                    'line-opacity': 0.85
+                }
+            });
+
+            console.log(`✅ Ruta ${tipo} actualizada (${(route.distance / 1000).toFixed(2)} km)`);
+        }
+    } catch(e) {
+        console.error('Error dibujando ruta delivery:', e);
+    }
+}
+
+function centrarEnDelivery() {
+    if (!deliveryMarker) {
+        mostrarToast("❌ No hay delivery activo para centrar", true);
+        return;
+    }
+    
+    const pos = deliveryMarker.getLngLat();
+    map.flyTo({
+        center: [pos.lng, pos.lat],
+        zoom: 16,
+        duration: 1000
+    });
+    mostrarToast("🎯 Mapa centrado en el delivery");
 }
 
 function calcularDistanciaEntrePuntos(punto1, punto2) {
@@ -2234,104 +2313,82 @@ function seleccionarDireccion(tipo, lat, lng, direccion) {
     mostrarToast(`📍 ${tipo === 'origen' ? 'Origen' : 'Destino'} actualizado`);
 }
 
-// ==================== VER DELIVERYS EN LÍNEA ====================
+// ==================== CARGAR DELIVERYS EN LÍNEA (CORREGIDA) ====================
 async function cargarDeliverysEnLinea() {
-    // ✅ Esperar a que el mapa esté listo
-    if (!map || !map.loaded()) {
-        console.log("⏳ Mapa no listo, esperando...");
-        setTimeout(() => cargarDeliverysEnLinea(), 1000);
-        return;
+    // ✅ Verificar que el mapa existe y está completamente cargado
+    if (!map) {
+        console.log("⏳ Mapa no inicializado aún");
+        return;  // ← No reintentar, solo salir
     }
     
-    if (!paginaVisible) {
-        console.log("📴 Página oculta, omitiendo carga de deliverys");
+    // ✅ Verificar que el source del mapa existe (carga completa)
+    if (!map.loaded()) {
+        console.log("⏳ Mapa cargando... esperando evento 'load'");
+        // No reintentar aquí, el evento 'load' ya debería llamar esta función
         return;
     }
-    
-    // Throttling
+
+    if (!paginaVisible) return;
+
     const ahora = Date.now();
-    if (ahora - ultimaPeticionDeliverys < 5000) {
-        console.log("⏳ Throttling: cargarDeliverysEnLinea - muy rápido, espera");
+    if (ahora - ultimaPeticionDeliverys < 8000) {
         return;
     }
     ultimaPeticionDeliverys = ahora;
-    
+
     const supabase = supabaseClient;
-    if (!supabase) {
-        console.error('Supabase no disponible');
-        return;
-    }
-    
+    if (!supabase) return;
+
     try {
-        // Obtener deliverys en línea desde la tabla 'ubicaciones'
         const { data: deliverys, error } = await supabase
             .from('ubicaciones')
             .select('*')
             .eq('online', true)
             .order('updated_at', { ascending: false });
-        
+
         if (error) throw error;
-        
-        console.log(`📍 ${deliverys?.length || 0} deliverys en línea`);
-        
-        // ✅ Limpiar marcadores anteriores - Usar array local O global consistente
-        // Opción 1: Usar array global (si declaraste window.deliveryMarkers = [] al inicio)
-        if (map && window.deliveryMarkers) {
+
+        // LIMPIAR MARCADORES ANTERIORES (solo los generales, NO el del pedido activo)
+        if (window.deliveryMarkers && window.deliveryMarkers.length > 0) {
             window.deliveryMarkers.forEach(marker => {
-                if (marker && marker.remove) {
-                    try {
-                        marker.remove();
-                    } catch(e) {
-                        console.warn("Error eliminando marcador:", e);
-                    }
-                }
+                if (marker && marker.remove) marker.remove();
             });
             window.deliveryMarkers = [];
         }
-        
-        // Opción 2: Usar array local (recomendado si declaraste deliverysMarkers)
-        // if (map && deliverysMarkers) {
-        //     deliverysMarkers.forEach(marker => {
-        //         if (marker && marker.remove) marker.remove();
-        //     });
-        //     deliverysMarkers = [];
-        // }
-        
+
         if (!deliverys || deliverys.length === 0) {
-            console.log("📭 No hay deliverys en línea");
+            console.log("📍 No hay deliverys en línea");
             return;
         }
-        
-        // ✅ Crear nuevos marcadores
+
+        // Crear marcadores SOLO si NO hay un pedido activo con ese delivery
+        let marcadoresCreados = 0;
         for (const delivery of deliverys) {
-            // Verificar coordenadas válidas
-            if (delivery.lat && delivery.lng && 
-                typeof delivery.lat === 'number' && 
-                typeof delivery.lng === 'number') {
-                
-                const marker = crearMarcadorDelivery({
-                    id: delivery.delivery_id,
-                    nombre: delivery.delivery_nombre,
-                    lat: delivery.lat,
-                    lng: delivery.lng,
-                    online: delivery.online
-                });
-                
-                if (marker) {
-                    // Usar el mismo array que limpiaste arriba
-                    window.deliveryMarkers.push(marker);
-                    // O si usas local: deliverysMarkers.push(marker);
-                }
+            // Si hay un pedido activo con este delivery, NO crear marcador general
+            if (pedidoActual && pedidoActual.delivery_id === delivery.delivery_id) {
+                continue;
+            }
+
+            const marker = crearMarcadorDelivery({
+                id: delivery.delivery_id,
+                nombre: delivery.delivery_nombre,
+                lat: delivery.lat,
+                lng: delivery.lng,
+                online: true
+            });
+
+            if (marker) {
+                window.deliveryMarkers.push(marker);
+                marcadoresCreados++;
             }
         }
-        
-        console.log(`✅ ${window.deliveryMarkers.length} marcadores de delivery creados`);
-        
+
+        console.log(`📍 ${deliverys.length} deliverys en línea | ${marcadoresCreados} marcadores generales`);
+
     } catch(e) {
-        console.error("❌ Error cargando deliverys en línea:", e);
+        console.error("❌ Error cargando deliverys:", e);
     }
 }
-
 
 async function tienePedidoActivo(deliveryId) {
     const supabase = supabaseClient;
@@ -2469,15 +2526,18 @@ document.addEventListener('DOMContentLoaded', () => {
 window.onload = () => { 
     loadUser(); 
     initMap();
+    
+    // ✅ NO llamar a cargarDeliverysEnLinea aquí, ya se llama dentro de initMap
     if (currentUser && currentUser.rol === 'cliente') {
-        setTimeout(() => cargarDeliverysEnLinea(), 2000);
-        
-        if (deliverysInterval) clearInterval(deliverysInterval);
-        
-        deliverysInterval = setInterval(() => {
-            if (currentUser && currentUser.rol === 'cliente') {
-                cargarDeliverysEnLinea();
-            }
-        }, 15000);
+        // ✅ El intervalo debe comenzar DESPUÉS de que el mapa está listo
+        setTimeout(() => {
+            if (deliverysInterval) clearInterval(deliverysInterval);
+            
+            deliverysInterval = setInterval(() => {
+                if (currentUser && currentUser.rol === 'cliente' && map && map.loaded()) {
+                    cargarDeliverysEnLinea();
+                }
+            }, 15000);
+        }, 3000);  // ← Esperar 3 segundos para que el mapa esté listo
     }
 };
