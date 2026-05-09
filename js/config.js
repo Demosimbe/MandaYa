@@ -231,12 +231,18 @@ async function eliminarUsuarioSupabase(userId) {
 }
 
 // ========== FUNCIONES PARA UBICACIONES ==========
-
+// ========== FUNCIONES PARA UBICACIONES ==========
 async function guardarUbicacionEnSupabase(deliveryId, deliveryNombre, lat, lng, online) {
     const supabase = initSupabase();
-    if (!supabase) return null;
+    if (!supabase) {
+        console.error("❌ Supabase no disponible");
+        return null;
+    }
+    
+    console.log(`📡 Guardando ubicación: ${deliveryNombre} (${lat}, ${lng}) online: ${online}`);
     
     try {
+        // Usar upsert con la columna correcta (delivery_id tiene unique constraint)
         const { data, error } = await supabase
             .from('ubicaciones')
             .upsert({
@@ -245,13 +251,23 @@ async function guardarUbicacionEnSupabase(deliveryId, deliveryNombre, lat, lng, 
                 lat: lat,
                 lng: lng,
                 online: online,
-                updated_at: new Date()
-            }, { onConflict: 'delivery_id' });
+                updated_at: new Date().toISOString()
+            }, {
+                onConflict: 'delivery_id'  // Usar delivery_id para conflicto (tiene unique constraint)
+            })
+            .select();
         
-        if (error) console.error('Error guardando ubicación:', error);
-        return { data, error };
+        if (error) {
+            console.error("❌ Error guardando ubicación:", error.message);
+            console.error("Detalle del error:", error);
+            return null;
+        }
+        
+        console.log("✅ Ubicación guardada correctamente");
+        return data;
+        
     } catch(e) {
-        console.error('Error:', e);
+        console.error("❌ Excepción guardando ubicación:", e);
         return null;
     }
 }

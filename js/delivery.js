@@ -734,6 +734,8 @@ async function toggleOnline() {
     const btn = document.getElementById("onlineToggle");
     const span = document.getElementById("onlineStatusText");
     
+    console.log("🔘 Toggle online:", isOnline ? "Conectando..." : "Desconectando...");
+    
     if (isOnline) {
         btn.classList.remove("bg-gray-500");
         btn.classList.add("bg-green-500", "hover:bg-green-600");
@@ -745,9 +747,23 @@ async function toggleOnline() {
             localStorage.setItem('sesion_activa', JSON.stringify(currentUser));
             await setDeliveryOnlineSupabase(currentUser.id, true);
             
+            // Forzar guardado de ubicación inmediatamente
             if (userMarker) {
                 const { lng, lat } = userMarker.getLngLat();
-                await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, lat, lng, true);
+                console.log("📍 Guardando ubicación actual:", lat, lng);
+                const resultado = await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, lat, lng, true);
+                if (resultado) {
+                    console.log("✅ Ubicación guardada al conectarse");
+                } else {
+                    console.error("❌ Falló guardado inicial");
+                }
+            } else {
+                console.log("⏳ Marcador no listo, intentando obtener ubicación...");
+                // Intentar obtener ubicación actual
+                navigator.geolocation.getCurrentPosition(async (pos) => {
+                    const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                    await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, coords.lat, coords.lng, true);
+                });
             }
         }
         cargarPedidos(true);
@@ -757,6 +773,7 @@ async function toggleOnline() {
             if (userMarker && currentUser && isOnline) {
                 const { lng, lat } = userMarker.getLngLat();
                 await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, lat, lng, true);
+                console.log("🔄 Ubicación actualizada automáticamente");
             }
         }, 4000);
     } else {
