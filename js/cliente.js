@@ -298,6 +298,32 @@ function setSelectMode(mode) {
     }
 }
 
+function centrarEnDelivery() {
+    if (deliveryMarker) {
+        const latLng = deliveryMarker.getLatLng();
+        map.setView([latLng.lat, latLng.lng], 16);
+        mostrarToast("📍 Centrando en la ubicación del delivery");
+        
+        // Opcional: abrir popup del delivery
+        deliveryMarker.openPopup();
+        setTimeout(() => deliveryMarker.closePopup(), 3000);
+    } else {
+        mostrarToast("❌ No hay delivery activo para centrar", true);
+    }
+}
+
+// Mostrar el botón cuando hay delivery asignado
+function mostrarBotonCentrarDelivery(mostrar) {
+    const btn = document.getElementById('btnCentrarDelivery');
+    if (btn) {
+        if (mostrar) {
+            btn.classList.remove('hidden');
+        } else {
+            btn.classList.add('hidden');
+        }
+    }
+}
+
 function limpiarRutaCliente() {
     if (clienteRouteControl) {
         try { map.removeControl(clienteRouteControl); } catch(e) {}
@@ -373,6 +399,26 @@ async function dibujarRutaDeliveryEnCliente(ubicacionDelivery, destinoCoords, ti
         }
         map.invalidateSize();
     }, 300);
+}
+
+function verRutaCompleta() {
+    if (clienteRouteControl && clienteRouteControl._map) {
+        // Obtener los waypoints actuales
+        const waypoints = clienteRouteControl.getWaypoints();
+        if (waypoints.length >= 2) {
+            const bounds = L.latLngBounds(waypoints);
+            map.fitBounds(bounds, { padding: [50, 50] });
+            mostrarToast("🗺️ Mostrando ruta completa");
+        }
+    } else if (originCoords && destCoords) {
+        // Si no hay ruta activa, mostrar origen y destino
+        const bounds = L.latLngBounds([
+            [originCoords.lat, originCoords.lng],
+            [destCoords.lat, destCoords.lng]
+        ]);
+        map.fitBounds(bounds, { padding: [50, 50] });
+        mostrarToast("📍 Mostrando origen y destino");
+    }
 }
 
 async function actualizarRutaYTarifa() {
@@ -1068,7 +1114,14 @@ function seguirUbicacionDelivery(deliveryId) {
     console.log(`🔄 Ocultando delivery ${deliveryId} de la lista general de deliverys`);
     cargarDeliverysEnLinea(); // Esto ahora excluirá automáticamente al delivery asignado
     
-    // ✅ 4. Iniciar el intervalo de seguimiento
+    // ✅ 4. Mostrar botón "Centrar en delivery"
+    mostrarBotonCentrarDelivery(true);
+    
+    // ✅ Variables para control de recálculo por distancia
+    let ultimaDistanciaRecalculo = 0;
+    let ultimoRecalculoTime = 0;
+    
+    // ✅ 5. Iniciar el intervalo de seguimiento
     ubicacionInterval = setInterval(async () => {
         let ubicacion = null;
         
@@ -1094,7 +1147,7 @@ function seguirUbicacionDelivery(deliveryId) {
         }
         
         if (ubicacion) {
-            // ✅ 5. Actualizar marcador de seguimiento
+            // ✅ 6. Actualizar marcador de seguimiento
             if (deliveryMarker) {
                 try { map.removeLayer(deliveryMarker); } catch(e) {}
             }
@@ -1107,64 +1160,91 @@ function seguirUbicacionDelivery(deliveryId) {
             );
             deliveryMarker.addTo(map);
             
-            // ✅ 6. Solo dibujar ruta si cambió el estado
-            const estadoActual = pedidoActual?.estado;
-            const necesitaRedibujar = !rutaYaDibujada || ultimoEstadoPedido !== estadoActual;
+            // ✅ 7. Determinar destino según estado
+            let destinoCoords = null;
+            let tipoRuta = null;
+            let destinoFinalNombre = '';
             
             if (pedidoActual) {
-                console.log("📌 Estado pedido:", pedidoActual.estado);
-                
-                // Determinar destino según estado
-                let destinoCoords = null;
-                let tipoRuta = null;
-                
                 if (pedidoActual.estado === 'asignado') {
                     if (pedidoActual.origen_lat && pedidoActual.origen_lng) {
                         destinoCoords = { lat: pedidoActual.origen_lat, lng: pedidoActual.origen_lng };
                         tipoRuta = 'recogida';
+                        destinoFinalNombre = pedidoActual.origen || 'punto de recogida';
                     }
                 } else if (pedidoActual.estado === 'recogido') {
                     if (pedidoActual.destino_lat && pedidoActual.destino_lng) {
                         destinoCoords = { lat: pedidoActual.destino_lat, lng: pedidoActual.destino_lng };
                         tipoRuta = 'entrega';
+                        destinoFinalNombre = pedidoActual.destino || 'destino final';
+                    }
+                }
+            }
+            
+            // ✅ 8. Calcular distancia actual al destino
+            let distanciaActual = null;
+            if (destinoCoords) {
+                distanciaActual = calcularDistanciaEntrePuntos(ubicacion, destinoCoords);
+            }
+            
+            // ✅ 9. Determinar si necesita recálculo (mejorado)
+            const estadoActual = pedidoActual?.estado;
+            const tiempoAhora = Date.now();
+            const tiempoDesdeUltimoRecalculo = tiempoAhora - ultimoRecalculoTime;
+            const distanciaCambioSignificativo = ultimaDistanciaRecalculo !== 0 && 
+                Math.abs(distanciaActual - ultimaDistanciaRecalculo) > 0.2; // 200 metros
+            
+            const necesitaRedibujar = !rutaYaDibujada || 
+                                      ultimoEstadoPedido !== estadoActual ||
+                                      (distanciaCambioSignificativo && tiempoDesdeUltimoRecalculo > 8000) ||
+                                      tiempoDesdeUltimoRecalculo > 15000; // cada 15 segundos forzado
+            
+            // ✅ 10. Redibujar ruta si es necesario
+            if (destinoCoords && necesitaRedibujar) {
+                console.log(`🔄 Redibujando ruta (${tipoRuta}) - Motivo: ${!rutaYaDibujada ? 'sin ruta' : ultimoEstadoPedido !== estadoActual ? 'cambio estado' : 'recalculo distancia'}`);
+                await dibujarRutaDeliveryEnCliente(ubicacion, destinoCoords, tipoRuta);
+                rutaYaDibujada = true;
+                ultimoEstadoPedido = estadoActual;
+                rutaDestinoActual = destinoCoords;
+                ultimaDistanciaRecalculo = distanciaActual;
+                ultimoRecalculoTime = tiempoAhora;
+                
+                // Actualizar popup según el estado
+                if (deliveryMarker) {
+                    if (tipoRuta === 'recogida') {
+                        deliveryMarker.bindPopup(`<b>🏍️ ${deliveryNombre}</b><br>🟠 En camino a recoger tu paquete<br>📍 ${destinoFinalNombre}`);
+                    } else {
+                        deliveryMarker.bindPopup(`<b>🏍️ ${deliveryNombre}</b><br>📦 En camino a entregar tu paquete<br>📍 ${destinoFinalNombre}`);
+                    }
+                }
+            }
+            
+            // ✅ 11. Actualizar información de distancia y ETA en la UI
+            if (distanciaActual !== null) {
+                const deliveryEstado = document.getElementById("deliveryEstado");
+                const etaElement = document.getElementById("etaValue");
+                const etaContainer = document.getElementById("etaInfo");
+                
+                if (deliveryEstado) {
+                    if (distanciaActual < 0.1) {
+                        deliveryEstado.innerHTML = "🟢 ¡Muy cerca! 🎯";
+                    } else if (distanciaActual < 0.5) {
+                        deliveryEstado.innerHTML = `🟡 A ${(distanciaActual * 1000).toFixed(0)} metros`;
+                    } else {
+                        deliveryEstado.innerHTML = `🔴 A ${distanciaActual.toFixed(1)} km`;
                     }
                 }
                 
-                // Redibujar solo si es necesario
-                if (destinoCoords && necesitaRedibujar) {
-                    console.log(`🔄 Redibujando ruta (${tipoRuta}) - Estado cambió de ${ultimoEstadoPedido} a ${estadoActual}`);
-                    await dibujarRutaDeliveryEnCliente(ubicacion, destinoCoords, tipoRuta);
-                    rutaYaDibujada = true;
-                    ultimoEstadoPedido = estadoActual;
-                    rutaDestinoActual = destinoCoords;
-                    
-                    // Actualizar popup según el estado
-                    if (tipoRuta === 'recogida') {
-                        deliveryMarker.bindPopup(`<b>🏍️ ${deliveryNombre}</b><br>🟠 En camino a recoger tu paquete`);
-                    } else {
-                        deliveryMarker.bindPopup(`<b>🏍️ ${deliveryNombre}</b><br>📦 En camino a entregar tu paquete`);
-                    }
-                } else if (destinoCoords && rutaYaDibujada) {
-                    // Solo actualizar información de distancia
-                    if (pedidoActual && pedidoActual.destino_lat && ubicacion) {
-                        const destinoFinal = { lat: pedidoActual.destino_lat, lng: pedidoActual.destino_lng };
-                        const distanciaADestino = calcularDistanciaEntrePuntos(ubicacion, destinoFinal);
-                        const deliveryEstado = document.getElementById("deliveryEstado");
-                        if (deliveryEstado) {
-                            if (distanciaADestino < 0.5) {
-                                deliveryEstado.innerHTML = "🟢 Muy cerca de tu destino 🎯";
-                            } else if (distanciaADestino < 1) {
-                                deliveryEstado.innerHTML = "🟡 Cerca de tu destino";
-                            } else {
-                                deliveryEstado.innerHTML = `🔴 A ${distanciaADestino.toFixed(1)} km de tu destino`;
-                            }
-                        }
-                    }
+                // ✅ Mostrar ETA (tiempo estimado)
+                if (etaElement && etaContainer) {
+                    const etaMinutos = calcularETA(distanciaActual);
+                    etaElement.innerHTML = etaMinutos;
+                    etaContainer.classList.remove('hidden');
                 }
             }
         }
         
-        // ✅ 7. Verificar si el pedido ya fue completado (CORREGIDO el error de llaves)
+        // ✅ 12. Verificar si el pedido ya fue completado
         if (supabase && pedidoActual) {
             const { data: pedidoActualizado } = await supabase
                 .from('pedidos')
@@ -1178,6 +1258,9 @@ function seguirUbicacionDelivery(deliveryId) {
                 clearInterval(ubicacionInterval);
                 ubicacionInterval = null;
                 
+                // ✅ Ocultar botón de centrar
+                mostrarBotonCentrarDelivery(false);
+                
                 ocultarDeliveryInfo();
                 limpiarRutaCliente();
                 
@@ -1186,6 +1269,10 @@ function seguirUbicacionDelivery(deliveryId) {
                 const panelMobile = document.getElementById("panelEstadoPedidoMobile");
                 if(panel) panel.classList.add("hidden");
                 if(panelMobile) panelMobile.classList.add("hidden");
+                
+                // Ocultar ETA
+                const etaContainer = document.getElementById("etaInfo");
+                if(etaContainer) etaContainer.classList.add("hidden");
                 
                 // Eliminar marcador del delivery
                 if(deliveryMarker) {
@@ -1210,7 +1297,80 @@ function seguirUbicacionDelivery(deliveryId) {
                 mostrarToast("🎉 ¡Envío completado! Gracias por usar MandaYa");
             }
         }
-    }, 2000); // Actualizar cada 2 segundos
+    }, 3000); // ✅ Cambiado a 3 segundos para mejor rendimiento
+}
+
+// ✅ Función para calcular ETA (tiempo estimado)
+function calcularETA(distanciaKm) {
+    const velocidadPromedio = 25; // km/h en ciudad
+    const minutos = (distanciaKm / velocidadPromedio) * 60;
+    
+    if (distanciaKm < 0.1) {
+        return "menos de 1 minuto";
+    }
+    if (minutos < 1) {
+        return "menos de 1 minuto";
+    }
+    if (minutos < 60) {
+        return `${Math.round(minutos)} minutos`;
+    }
+    const horas = Math.floor(minutos / 60);
+    const mins = Math.round(minutos % 60);
+    return `${horas}h ${mins}min`;
+}
+
+// ✅ Función para mostrar/ocultar botón centrar en delivery
+function mostrarBotonCentrarDelivery(mostrar) {
+    const btn = document.getElementById('btnCentrarDelivery');
+    if (btn) {
+        if (mostrar) {
+            btn.classList.remove('hidden');
+        } else {
+            btn.classList.add('hidden');
+        }
+    }
+}
+
+// ✅ Función para centrar el mapa en el delivery
+function centrarEnDelivery() {
+    if (deliveryMarker) {
+        const latLng = deliveryMarker.getLatLng();
+        map.setView([latLng.lat, latLng.lng], 16);
+        mostrarToast("📍 Centrando en la ubicación del delivery");
+        
+        // Abrir popup temporal
+        deliveryMarker.openPopup();
+        setTimeout(() => {
+            if (deliveryMarker) deliveryMarker.closePopup();
+        }, 3000);
+    } else {
+        mostrarToast("❌ No hay delivery activo para centrar", true);
+    }
+}
+
+// ✅ Función para ver ruta completa
+function verRutaCompleta() {
+    if (clienteRouteControl && clienteRouteControl.getWaypoints) {
+        const waypoints = clienteRouteControl.getWaypoints();
+        if (waypoints && waypoints.length >= 2) {
+            const bounds = L.latLngBounds(waypoints);
+            map.fitBounds(bounds, { padding: [50, 50] });
+            mostrarToast("🗺️ Mostrando ruta completa");
+            return;
+        }
+    }
+    
+    // Si no hay ruta activa, mostrar origen y destino
+    if (originCoords && destCoords) {
+        const bounds = L.latLngBounds([
+            [originCoords.lat, originCoords.lng],
+            [destCoords.lat, destCoords.lng]
+        ]);
+        map.fitBounds(bounds, { padding: [50, 50] });
+        mostrarToast("📍 Mostrando origen y destino");
+    } else {
+        mostrarToast("❌ No hay ruta disponible", true);
+    }
 }
 
 function calcularDistanciaEntrePuntos(punto1, punto2) {

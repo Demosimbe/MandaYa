@@ -313,6 +313,12 @@
 .toast-error-shake {
     animation: shakeToast 0.3s ease-in-out !important;
 }
+/* En móvil, subir un poco los botones */
+@media (max-width: 640px) {
+    button[onclick="centrarMapa()"] { bottom: 100px !important; }
+    button[onclick="centrarEnDelivery()"] { bottom: 160px !important; }
+    button[onclick="verRutaCompleta()"] { bottom: 220px !important; }
+}
     </style>
 </head>
 <body class="h-screen overflow-hidden flex">
@@ -575,6 +581,15 @@
         <button onclick="centrarMapa()" class="absolute bottom-20 right-4 bg-white p-3 rounded-full shadow-lg z-[1000] hover:bg-gray-100 transition-all">
             <i class="fas fa-location-dot text-[#FF6200] text-lg"></i>
         </button>
+
+        <!-- Botón centrar en delivery (junto al de centrar mapa) -->
+        <button onclick="centrarEnDelivery()" id="btnCentrarDelivery" class="absolute bottom-32 right-4 bg-white p-3 rounded-full shadow-lg z-[1000] hover:bg-gray-100 transition-all hidden">
+            <i class="fas fa-motorcycle text-[#FF6200] text-lg"></i>
+        </button>
+
+        <button onclick="verRutaCompleta()" class="absolute bottom-44 right-4 bg-white p-3 rounded-full shadow-lg z-[1000] hover:bg-gray-100 transition-all">
+              <i class="fas fa-route text-blue-500 text-lg"></i>
+        </button>
         
         <!-- Botón toggle sidebar mobile -->
         <button onclick="toggleMobileSidebar()" class="fixed bottom-20 left-4 bg-[#FF6200] text-white p-3 rounded-full shadow-lg z-[1000] lg:hidden">
@@ -609,16 +624,18 @@
                     <label class="text-xs text-gray-600 font-medium">📍 Punto de partida</label>
                     <div class="mt-1 bg-gray-100 border border-gray-300 rounded-xl p-3 flex items-center gap-2">
                         <i class="fas fa-circle text-[#FF6200] text-sm"></i>
-                        <input type="text" id="origenMobile" class="bg-transparent flex-1 outline-none text-sm" placeholder="Origen" readonly>
+                        <input type="text" id="origenMobile" class="bg-transparent flex-1 outline-none text-sm" placeholder="Buscar dirección..." autocomplete="off">
                     </div>
+                    <div id="origenMobileSugerencias" class="hidden bg-white border border-gray-200 rounded-xl mt-1 max-h-48 overflow-auto shadow-lg z-50"></div>
                 </div>
 
                 <div>
                     <label class="text-xs text-gray-600 font-medium">🏁 Destino</label>
                     <div class="mt-1 bg-gray-100 border border-gray-300 rounded-xl p-3 flex items-center gap-2">
                         <i class="fas fa-square text-blue-600 text-sm"></i>
-                        <input type="text" id="destinoMobile" class="bg-transparent flex-1 outline-none text-sm" placeholder="Destino" readonly>
+                        <input type="text" id="destinoMobile" class="bg-transparent flex-1 outline-none text-sm" placeholder="Buscar dirección..." autocomplete="off">
                     </div>
+                    <div id="destinoMobileSugerencias" class="hidden bg-white border border-gray-200 rounded-xl mt-1 max-h-48 overflow-auto shadow-lg z-50"></div>
                 </div>
 
                 <div id="tarifaContainerMobile" class="hidden tarifa-mobile text-center text-white">
@@ -657,11 +674,15 @@
                             <i class="fas fa-times mr-1"></i> Cancelar
                         </button>
                     </div>
+                    <!-- ✅ Mover etaInfo AQUÍ, fuera del flex -->
+                    <div id="etaInfo" class="text-xs text-gray-500 mt-1 hidden">
+                        <i class="fas fa-clock"></i> Llegada estimada: <span id="etaValue">---</span>
+                    </div>
                     <div class="text-xs text-gray-600 mt-2" id="estadoDetalleMobile">
                         Esperando a que un delivery tome tu pedido...
                     </div>
                 </div>
-
+                 
                 <button onclick="solicitarEnvioMobile()" 
                         class="w-full bg-black hover:bg-gray-800 text-white font-bold py-3 rounded-xl text-sm transition-all flex items-center justify-center gap-2">
                     <i class="fas fa-paper-plane"></i> SOLICITAR ENVÍO
@@ -681,7 +702,94 @@
     
     <script>
         let mobileSidebarOpen = true;
+
         
+        // Buscar direcciones en móvil
+        const origenMobile = document.getElementById('origenMobile');
+        const destinoMobile = document.getElementById('destinoMobile');
+        
+        if (origenMobile) {
+            origenMobile.addEventListener('input', (e) => {
+                if (busquedaTimeout) clearTimeout(busquedaTimeout);
+                busquedaTimeout = setTimeout(() => {
+                    buscarDireccionesMobile(e.target.value, 'origenMobile');
+                }, 500);
+            });
+        }
+        
+        if (destinoMobile) {
+            destinoMobile.addEventListener('input', (e) => {
+                if (busquedaTimeout) clearTimeout(busquedaTimeout);
+                busquedaTimeout = setTimeout(() => {
+                    buscarDireccionesMobile(e.target.value, 'destinoMobile');
+                }, 500);
+            });
+        }
+        
+        // Función para buscar direcciones en móvil
+        async function buscarDireccionesMobile(query, tipo) {
+            if (!query || query.length < 3) {
+                document.getElementById(`${tipo}Sugerencias`).classList.add('hidden');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query + ', Ciudad del Carmen, Campeche')}&limit=5&addressdetails=1`);
+                const data = await response.json();
+                
+                const sugerenciasDiv = document.getElementById(`${tipo}Sugerencias`);
+                
+                if (data.length === 0) {
+                    sugerenciasDiv.classList.add('hidden');
+                    return;
+                }
+                
+                sugerenciasDiv.innerHTML = data.map(lugar => `
+                    <div class="sugerencia-item p-3 hover:bg-gray-100 cursor-pointer border-b border-gray-100 flex items-start gap-2" 
+                         onclick="seleccionarDireccionMobile('${tipo}', ${lugar.lat}, ${lugar.lon}, '${lugar.display_name.replace(/'/g, "\\'")}')">
+                        <i class="fas fa-map-marker-alt text-gray-400 mt-0.5 text-xs"></i>
+                        <div class="flex-1">
+                            <div class="text-sm font-medium text-gray-800">${lugar.display_name.split(',')[0]}</div>
+                            <div class="text-xs text-gray-500">${lugar.display_name.split(',').slice(1, 3).join(',')}</div>
+                        </div>
+                    </div>
+                `).join('');
+                
+                sugerenciasDiv.classList.remove('hidden');
+                
+            } catch(e) {
+                console.error('Error buscando direcciones:', e);
+            }
+        }
+        
+
+function seleccionarDireccionMobile(tipo, lat, lng, direccion) {
+    const coords = { lat: parseFloat(lat), lng: parseFloat(lng) };
+    
+    if (coords.lat < 18.58 || coords.lat > 18.70 || coords.lng < -91.88 || coords.lng > -91.75) {
+        mostrarToast("❌ Ubicación fuera de Ciudad del Carmen", true);
+        document.getElementById(`${tipo}Sugerencias`).classList.add('hidden');
+        return;
+    }
+    
+    // Sincronizar con escritorio
+    if (tipo === 'origenMobile') {
+        if (originMarker) originMarker.setLatLng([coords.lat, coords.lng]);
+        if (window.originCoords) window.originCoords = coords;
+        document.getElementById("origen").value = direccion.split(',')[0];
+        document.getElementById("origenMobile").value = direccion.split(',')[0];
+    } else {
+        if (destMarker) destMarker.setLatLng([coords.lat, coords.lng]);
+        if (window.destCoords) window.destCoords = coords;
+        document.getElementById("destino").value = direccion.split(',')[0];
+        document.getElementById("destinoMobile").value = direccion.split(',')[0];
+    }
+    
+    document.getElementById(`${tipo}Sugerencias`).classList.add('hidden');
+    if (typeof actualizarRutaYTarifa === 'function') actualizarRutaYTarifa();
+    mostrarToast(`📍 ${tipo === 'origenMobile' ? 'Origen' : 'Destino'} actualizado`);
+}
+
         function toggleMobileSidebar() {
             const sidebar = document.getElementById('mobileSidebar');
             if (mobileSidebarOpen) {
