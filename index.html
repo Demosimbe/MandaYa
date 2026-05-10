@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>MandaYa - Envíos rápidos</title>
 
+    <!-- ✅ Script para silenciar la advertencia (AHORA ANTES del CDN) -->
+    <script>const originalWarn = console.warn;console.warn = function(...args) { if (args[0] && args[0].includes('cdn.tailwindcss.com should not be used in production')) return; originalWarn.apply(console, args);};</script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 
