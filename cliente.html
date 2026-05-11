@@ -702,7 +702,6 @@
     
    <script>
     let mobileSidebarOpen = true;
-    let busquedaTimeout = null;  // ✅ Asegurar que existe
 
     // Buscar direcciones en móvil
     const origenMobile = document.getElementById('origenMobile');
@@ -778,8 +777,10 @@
             if (typeof originMarker !== 'undefined' && originMarker) {
                 originMarker.setLatLng([coords.lat, coords.lng]);
             }
-            if (typeof originCoords !== 'undefined') {
-                window.originCoords = coords;
+            if (typeof setOriginCoords === 'function') {
+            setOriginCoords(coords);
+            } else {
+            window.originCoords = coords;
             }
             const origenDesktop = document.getElementById("origen");
             const origenMobileInput = document.getElementById("origenMobile");
@@ -866,23 +867,6 @@
                 tarifaContainerMobile.classList.add("hidden");
             }
         }
-    }
-    
-    function sincronizarBloqueoMobile(bloquear) {
-        const inputsMobile = ['origenMobile', 'destinoMobile'];
-        inputsMobile.forEach(id => {
-            const input = document.getElementById(id);
-            if (input) {
-                input.disabled = bloquear;
-                if (bloquear) {
-                    input.classList.add('bg-gray-100', 'cursor-not-allowed', 'opacity-70');
-                    input.placeholder = id === 'origenMobile' ? '📍 Origen (bloqueado)' : '🏁 Destino (bloqueado)';
-                } else {
-                    input.classList.remove('bg-gray-100', 'cursor-not-allowed', 'opacity-70');
-                    input.placeholder = id === 'origenMobile' ? 'Buscar dirección...' : 'Buscar dirección...';
-                }
-            }
-        });
     }
     
     function solicitarEnvioMobile() {

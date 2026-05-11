@@ -2,6 +2,8 @@
 const BOUNDS = { north: 18.70, south: 18.58, east: -91.75, west: -91.88 };
 
 let map, originMarker, destMarker, routeLine, deliveryMarker;
+window.originCoords = null;
+window.destCoords = null;
 let originCoords = null, destCoords = null;
 let currentUser = null, pedidoActual = null;
 let selectMode = 'origen';
@@ -181,14 +183,18 @@ async function peticionConThrottling(funcion, nombre, intervaloMinimo = 3000) {
 function initMap() {
     map = L.map('map').setView([18.6456, -91.8249], 13);
     
-    // Reemplaza TODO el bloque del tileLayer por esto:
+    // Capa del mapa
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    maxZoom: 19
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        maxZoom: 19
     }).addTo(map);
     
     // ✅ Limitar mapa a Ciudad del Carmen
     limitarMapaACarmen(map);
+    
+    // ✅ Inicializar coordenadas por defecto USANDO LAS FUNCIONES HELPER
+    setOriginCoords({ lat: 18.6456, lng: -91.8249 });
+    setDestCoords({ lat: 18.6556, lng: -91.8149 });
     
     // Marcador de origen ARRASTRABLE
     const originIcon = L.divIcon({
@@ -197,7 +203,8 @@ function initMap() {
         className: 'custom-marker'
     });
     
-    originMarker = L.marker([18.6456, -91.8249], { icon: originIcon, draggable: true }).addTo(map);
+    const origenInicial = getOriginCoords();
+    originMarker = L.marker([origenInicial.lat, origenInicial.lng], { icon: originIcon, draggable: true }).addTo(map);
     originMarker.bindPopup('📍 <b>Origen</b><br>Arrástrame para cambiar');
     
     // Marcador de destino ARRASTRABLE
@@ -207,49 +214,56 @@ function initMap() {
         className: 'custom-marker'
     });
     
-    destMarker = L.marker([18.6556, -91.8149], { icon: destIcon, draggable: true }).addTo(map);
+    const destinoInicial = getDestCoords();
+    destMarker = L.marker([destinoInicial.lat, destinoInicial.lng], { icon: destIcon, draggable: true }).addTo(map);
     destMarker.bindPopup('🏁 <b>Destino</b><br>Arrástrame para cambiar');
     
-    // Eventos de arrastre con validación de límites
+    // ✅ Eventos de arrastre con validación de límites (USANDO FUNCIONES HELPER)
     originMarker.on('dragend', function(e) {
         const coords = e.target.getLatLng();
         if (coords.lat >= 18.58 && coords.lat <= 18.70 && coords.lng >= -91.88 && coords.lng <= -91.75) {
-            originCoords = { lat: coords.lat, lng: coords.lng };
-            reverseGeocode(originCoords, (addr) => document.getElementById("origen").value = addr);
+            setOriginCoords({ lat: coords.lat, lng: coords.lng });
+            const newOrigin = getOriginCoords();
+            reverseGeocode(newOrigin, (addr) => document.getElementById("origen").value = addr);
             actualizarRutaYTarifa();
             mostrarToast("📍 Origen actualizado");
         } else {
             mostrarToast("❌ Ubicación fuera de Ciudad del Carmen", true);
-            if (originCoords) originMarker.setLatLng([originCoords.lat, originCoords.lng]);
+            const currentOrigin = getOriginCoords();
+            if (currentOrigin) originMarker.setLatLng([currentOrigin.lat, currentOrigin.lng]);
         }
     });
     
     destMarker.on('dragend', function(e) {
         const coords = e.target.getLatLng();
         if (coords.lat >= 18.58 && coords.lat <= 18.70 && coords.lng >= -91.88 && coords.lng <= -91.75) {
-            destCoords = { lat: coords.lat, lng: coords.lng };
-            reverseGeocode(destCoords, (addr) => document.getElementById("destino").value = addr);
+            setDestCoords({ lat: coords.lat, lng: coords.lng });
+            const newDest = getDestCoords();
+            reverseGeocode(newDest, (addr) => document.getElementById("destino").value = addr);
             actualizarRutaYTarifa();
             mostrarToast("🏁 Destino actualizado");
         } else {
             mostrarToast("❌ Ubicación fuera de Ciudad del Carmen", true);
-            if (destCoords) destMarker.setLatLng([destCoords.lat, destCoords.lng]);
+            const currentDest = getDestCoords();
+            if (currentDest) destMarker.setLatLng([currentDest.lat, currentDest.lng]);
         }
     });
     
-    // Click en el mapa con validación
+    // ✅ Click en el mapa con validación (USANDO FUNCIONES HELPER)
     map.on('click', (e) => {
         if (e.latlng.lat >= 18.58 && e.latlng.lat <= 18.70 && e.latlng.lng >= -91.88 && e.latlng.lng <= -91.75) {
             if (selectMode === 'origen') {
                 originMarker.setLatLng(e.latlng);
-                originCoords = { lat: e.latlng.lat, lng: e.latlng.lng };
-                reverseGeocode(originCoords, (addr) => document.getElementById("origen").value = addr);
+                setOriginCoords({ lat: e.latlng.lat, lng: e.latlng.lng });
+                const newOrigin = getOriginCoords();
+                reverseGeocode(newOrigin, (addr) => document.getElementById("origen").value = addr);
                 actualizarRutaYTarifa();
                 mostrarToast("📍 Origen actualizado");
             } else {
                 destMarker.setLatLng(e.latlng);
-                destCoords = { lat: e.latlng.lat, lng: e.latlng.lng };
-                reverseGeocode(destCoords, (addr) => document.getElementById("destino").value = addr);
+                setDestCoords({ lat: e.latlng.lat, lng: e.latlng.lng });
+                const newDest = getDestCoords();
+                reverseGeocode(newDest, (addr) => document.getElementById("destino").value = addr);
                 actualizarRutaYTarifa();
                 mostrarToast("🏁 Destino actualizado");
             }
@@ -258,11 +272,13 @@ function initMap() {
         }
     });
     
-    // Inicializar coordenadas
-    originCoords = { lat: 18.6456, lng: -91.8249 };
-    destCoords = { lat: 18.6556, lng: -91.8149 };
-    reverseGeocode(originCoords, (addr) => document.getElementById("origen").value = addr);
-    reverseGeocode(destCoords, (addr) => document.getElementById("destino").value = addr);
+    // ✅ Obtener direcciones iniciales (USANDO FUNCIONES HELPER)
+    const origenFinal = getOriginCoords();
+    const destinoFinal = getDestCoords();
+    reverseGeocode(origenFinal, (addr) => document.getElementById("origen").value = addr);
+    reverseGeocode(destinoFinal, (addr) => document.getElementById("destino").value = addr);
+    
+    // ✅ Inicializar ruta después de un breve retraso
     setTimeout(() => actualizarRutaYTarifa(), 500);
 }
 
@@ -410,87 +426,193 @@ function verRutaCompleta() {
             map.fitBounds(bounds, { padding: [50, 50] });
             mostrarToast("🗺️ Mostrando ruta completa");
         }
-    } else if (originCoords && destCoords) {
-        // Si no hay ruta activa, mostrar origen y destino
-        const bounds = L.latLngBounds([
-            [originCoords.lat, originCoords.lng],
-            [destCoords.lat, destCoords.lng]
-        ]);
+   } else if (getOriginCoords() && getDestCoords()) {
+    const orig = getOriginCoords();
+    const dest = getDestCoords();
+    const bounds = L.latLngBounds([
+        [orig.lat, orig.lng],
+        [dest.lat, dest.lng]
+    ]);
         map.fitBounds(bounds, { padding: [50, 50] });
         mostrarToast("📍 Mostrando origen y destino");
     }
 }
 
 async function actualizarRutaYTarifa() {
-    if (originCoords && destCoords) {
-        const tarifaContainer = document.getElementById("tarifaContainer");
-        tarifaContainer.classList.remove("hidden");
-        document.getElementById("tarifaValue").innerHTML = '<div class="loading-spinner"></div> Calculando...';
-        
-        if (routeLine) {
+    // ✅ Usar las funciones helper para obtener coordenadas
+    const orig = getOriginCoords();
+    const dest = getDestCoords();
+    
+    if (!orig || !dest) {
+        console.log("⚠️ No hay coordenadas de origen o destino");
+        return;
+    }
+    
+    const tarifaContainer = document.getElementById("tarifaContainer");
+    if (tarifaContainer) tarifaContainer.classList.remove("hidden");
+    
+    const tarifaValue = document.getElementById("tarifaValue");
+    if (tarifaValue) {
+        tarifaValue.innerHTML = '<div class="loading-spinner"></div> Calculando...';
+    }
+    
+    // ✅ Limpiar ruta anterior completamente
+    if (routeLine) {
+        try {
             if (typeof routeLine.remove === 'function') {
                 routeLine.remove();
             } else if (routeLine._map) {
-                try { map.removeControl(routeLine); } catch(e) {}
+                map.removeLayer(routeLine);
             }
-            routeLine = null;
+        } catch(e) {
+            console.warn("Error limpiando routeLine:", e);
+        }
+        routeLine = null;
+    }
+    
+    // ✅ También limpiar clienteRouteControl si existe
+    if (clienteRouteControl) {
+        try {
+            if (clienteRouteControl._map) {
+                map.removeControl(clienteRouteControl);
+            }
+        } catch(e) {}
+        clienteRouteControl = null;
+    }
+    
+    // ✅ Guardar los extras actuales antes de recalcular
+    const extrasGuardados = currentRouteData?.extras || null;
+    const tipoEnvio = document.getElementById("tipoEnvio")?.value || 'paquete';
+    
+    // ✅ Usar window.originCoords/destCoords para drawRealRoute
+    const routeResult = await drawRealRoute(
+        map, 
+        window.originCoords || orig, 
+        window.destCoords || dest, 
+        '#FF6200', 
+        5
+    );
+    
+    if (routeResult && routeResult.routeData) {
+        routeLine = routeResult.line;
+        const distance = routeResult.routeData.distance;
+        const duration = routeResult.routeData.duration;
+        const rate = calculateShippingRate(distance, tipoEnvio);
+        
+        // ✅ Crear currentRouteData manteniendo los extras si existían
+        currentRouteData = { 
+            distance: distance, 
+            duration: duration,
+            extras: extrasGuardados || { lluvia: false, noche: false, espera: false }
+        };
+        
+        // ✅ Calcular tarifa base y aplicar extras si existen
+        let tarifaMostrar = rate.total;
+        if (currentRouteData.extras) {
+            if (currentRouteData.extras.lluvia) tarifaMostrar += 10;
+            if (currentRouteData.extras.noche) tarifaMostrar += 10;
+            if (currentRouteData.extras.espera) tarifaMostrar += 10;
         }
         
-        // ✅ Guardar los extras actuales antes de recalcular
-        const extrasGuardados = currentRouteData?.extras || null;
-        const tipoEnvio = document.getElementById("tipoEnvio").value || 'paquete';
-        const routeResult = await drawRealRoute(map, originCoords, destCoords, '#FF6200', 5);
+        const tarifaElement = document.getElementById("tarifaValue");
+        if (tarifaElement) {
+            tarifaElement.innerHTML = `$${tarifaMostrar} MXN`;
+        }
         
-        if (routeResult && routeResult.routeData) {
-            routeLine = routeResult.line;
-            const distance = routeResult.routeData.distance;
-            const duration = routeResult.routeData.duration;
-            const rate = calculateShippingRate(distance, tipoEnvio);
-            
-            // ✅ Crear currentRouteData manteniendo los extras si existían
-            currentRouteData = { 
-                distance: distance, 
-                duration: duration,
-                extras: extrasGuardados || { lluvia: false, noche: false, espera: false }
-            };
-            
-            // ✅ Calcular tarifa base y aplicar extras si existen
-            let tarifaMostrar = rate.total;
-            if (currentRouteData.extras) {
-                if (currentRouteData.extras.lluvia) tarifaMostrar += 10;
-                if (currentRouteData.extras.noche) tarifaMostrar += 10;
-                if (currentRouteData.extras.espera) tarifaMostrar += 10;
-            }
-            
-            document.getElementById("tarifaValue").innerHTML = `$${tarifaMostrar} MXN`;
-            mostrarToast(`📏 Distancia: ${distance.toFixed(2)} km • ⏱️ ${formatDuration(duration)}`);
-            
-        } else {
-            const distance = calcularDistancia();
-            const rate = calculateShippingRate(distance, tipoEnvio);
-            
-            // ✅ Crear currentRouteData manteniendo los extras si existían
-            currentRouteData = { 
-                distance: distance, 
-                duration: distance * 2,
-                extras: extrasGuardados || { lluvia: false, noche: false, espera: false }
-            };
-            
-            let tarifaMostrar = rate.total;
-            if (currentRouteData.extras) {
-                if (currentRouteData.extras.lluvia) tarifaMostrar += 10;
-                if (currentRouteData.extras.noche) tarifaMostrar += 10;
-                if (currentRouteData.extras.espera) tarifaMostrar += 10;
-            }
-            
-            document.getElementById("tarifaValue").innerHTML = `$${tarifaMostrar} MXN (estimado)`;
-            
+        // ✅ También actualizar versión mobile
+        const tarifaMobile = document.getElementById("tarifaValueMobile");
+        if (tarifaMobile) {
+            tarifaMobile.innerHTML = `$${tarifaMostrar} MXN`;
+        }
+        
+        mostrarToast(`📏 Distancia: ${distance.toFixed(2)} km • ⏱️ ${formatDuration(duration)}`);
+        
+    } else {
+        // ✅ Fallback: calcular distancia directa
+        const distance = calcularDistanciaEntrePuntos(orig, dest);
+        const rate = calculateShippingRate(distance, tipoEnvio);
+        
+        // ✅ Crear currentRouteData manteniendo los extras si existían
+        currentRouteData = { 
+            distance: distance, 
+            duration: distance * 2,
+            extras: extrasGuardados || { lluvia: false, noche: false, espera: false }
+        };
+        
+        let tarifaMostrar = rate.total;
+        if (currentRouteData.extras) {
+            if (currentRouteData.extras.lluvia) tarifaMostrar += 10;
+            if (currentRouteData.extras.noche) tarifaMostrar += 10;
+            if (currentRouteData.extras.espera) tarifaMostrar += 10;
+        }
+        
+        const tarifaElement = document.getElementById("tarifaValue");
+        if (tarifaElement) {
+            tarifaElement.innerHTML = `$${tarifaMostrar} MXN (estimado)`;
+        }
+        
+        const tarifaMobile = document.getElementById("tarifaValueMobile");
+        if (tarifaMobile) {
+            tarifaMobile.innerHTML = `$${tarifaMostrar} MXN (estimado)`;
+        }
+        
+        // ✅ Línea recta como fallback (usando las coordenadas correctas)
+        if (map && window.originCoords && window.destCoords) {
             routeLine = L.polyline([
-                [originCoords.lat, originCoords.lng],
-                [destCoords.lat, destCoords.lng]
+                [window.originCoords.lat, window.originCoords.lng],
+                [window.destCoords.lat, window.destCoords.lng]
+            ], { color: '#FF6200', weight: 5, opacity: 0.6, dashArray: '5, 10' }).addTo(map);
+        } else if (map && orig && dest) {
+            routeLine = L.polyline([
+                [orig.lat, orig.lng],
+                [dest.lat, dest.lng]
             ], { color: '#FF6200', weight: 5, opacity: 0.6, dashArray: '5, 10' }).addTo(map);
         }
+        
+        mostrarToast(`📏 Distancia: ${distance.toFixed(2)} km (estimado)`);
     }
+}
+
+// ==================== FUNCIONES DE SINCRONIZACIÓN DE COORDENADAS ====================
+// Estas funciones mantienen sincronizadas las variables locales con window
+
+function setOriginCoords(coords) {
+    window.originCoords = coords;
+    originCoords = coords;
+}
+
+function setDestCoords(coords) {
+    window.destCoords = coords;
+    destCoords = coords;
+}
+
+function getOriginCoords() {
+    return window.originCoords || originCoords;
+}
+
+function getDestCoords() {
+    return window.destCoords || destCoords;
+}
+
+// ✅ Inicializar coordenadas por defecto
+function initDefaultCoords() {
+    const defaultCoords = { lat: 18.6456, lng: -91.8249 };
+    const defaultDestCoords = { lat: 18.6556, lng: -91.8149 };
+    
+    if (!window.originCoords) setOriginCoords(defaultCoords);
+    if (!window.destCoords) setDestCoords(defaultDestCoords);
+}
+
+// ✅ Función para calcular distancia entre dos puntos (útil para fallback)
+function calcularDistanciaEntrePuntos(punto1, punto2) {
+    if (!punto1 || !punto2) return 0;
+    const R = 6371; // km
+    const dLat = (punto2.lat - punto1.lat) * Math.PI / 180;
+    const dLon = (punto2.lng - punto1.lng) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(punto1.lat * Math.PI / 180) * Math.cos(punto2.lat * Math.PI / 180) *
+              Math.sin(dLon/2) * Math.sin(dLon/2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
 function calcularDistancia() {
@@ -504,6 +626,12 @@ function calcularDistancia() {
 }
 
 function reverseGeocode(latlng, callback) {
+    if (!latlng || typeof latlng.lat === 'undefined' || typeof latlng.lng === 'undefined') {
+        console.error("❌ reverseGeocode: coordenadas inválidas", latlng);
+        callback("Ubicación desconocida");
+        return;
+    }
+    
     fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latlng.lat}&lon=${latlng.lng}&zoom=18`)
         .then(res => res.json())
         .then(data => {
@@ -805,8 +933,8 @@ function limpiarYResetearUI() {
     document.getElementById("tarifaContainer").classList.add("hidden");
     // Restablecer marcadores a posición por defecto
     if (originMarker && destMarker) {
-        originCoords = { lat: 18.6456, lng: -91.8249 };
-        destCoords = { lat: 18.6556, lng: -91.8149 };
+        setOriginCoords({ lat: 18.6456, lng: -91.8249 });
+        setDestCoords({ lat: 18.6556, lng: -91.8149 });
         originMarker.setLatLng([originCoords.lat, originCoords.lng]);
         destMarker.setLatLng([destCoords.lat, destCoords.lng]);
         reverseGeocode(originCoords, (addr) => document.getElementById("origen").value = addr);
@@ -1373,16 +1501,6 @@ function verRutaCompleta() {
     }
 }
 
-function calcularDistanciaEntrePuntos(punto1, punto2) {
-    const R = 6371;
-    const dLat = (punto2.lat - punto1.lat) * Math.PI / 180;
-    const dLon = (punto2.lng - punto1.lng) * Math.PI / 180;
-    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-              Math.cos(punto1.lat * Math.PI / 180) * Math.cos(punto2.lat * Math.PI / 180) *
-              Math.sin(dLon/2) * Math.sin(dLon/2);
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-}
-
 function ocultarDeliveryInfo() {
     document.getElementById("deliveryInfo").classList.add("hidden");
     if (deliveryMarker) map.removeLayer(deliveryMarker);
@@ -1790,7 +1908,7 @@ function mostrarResumenRuta() {
     // Mostrar loading mientras se obtiene la ruta real
     mostrarToast("📏 Calculando ruta real...");
     
-    getRealDistanceAndTime(originCoords, destCoords).then(routeData => {
+    getRealDistanceAndTime(getOriginCoords(), getDestCoords()).then(routeData => {
         const distanciaKm = routeData ? routeData.distanceKm : distancia.toFixed(2);
         const duracionTexto = routeData ? routeData.durationText : formatDuration(duracion);
         
@@ -2256,13 +2374,13 @@ function seleccionarDireccion(tipo, lat, lng, direccion) {
     }
     
     if (tipo === 'origen') {
-        originMarker.setLatLng([coords.lat, coords.lng]);
-        originCoords = coords;
-        document.getElementById("origen").value = direccion.split(',')[0];
+    originMarker.setLatLng([coords.lat, coords.lng]);
+    setOriginCoords(coords);  // ✅ Usa helper
+    document.getElementById("origen").value = direccion.split(',')[0];
     } else {
-        destMarker.setLatLng([coords.lat, coords.lng]);
-        destCoords = coords;
-        document.getElementById("destino").value = direccion.split(',')[0];
+    destMarker.setLatLng([coords.lat, coords.lng]);
+    setDestCoords(coords);  // ✅ Usa helper
+    document.getElementById("destino").value = direccion.split(',')[0];
     }
     
     document.getElementById(`${tipo}Sugerencias`).classList.add('hidden');
@@ -2270,7 +2388,6 @@ function seleccionarDireccion(tipo, lat, lng, direccion) {
     mostrarToast(`📍 ${tipo === 'origen' ? 'Origen' : 'Destino'} actualizado`);
 }
 
-// ==================== VER DELIVERYS EN LÍNEA ====================
 // ==================== VER DELIVERYS EN LÍNEA ====================
 async function cargarDeliverysEnLinea() {
     // ✅ 1. Verificar si la página está visible
@@ -2465,6 +2582,24 @@ function limpiarTodosLosIntervalos() {
     }
     
     console.log("✅ Todos los recursos liberados");
+}
+
+// ==================== SINCRONIZACIÓN CON MÓVIL ====================
+function sincronizarBloqueoMobile(bloquear) {
+    const inputsMobile = ['origenMobile', 'destinoMobile'];
+    inputsMobile.forEach(id => {
+        const input = document.getElementById(id);
+        if (input) {
+            input.disabled = bloquear;
+            if (bloquear) {
+                input.classList.add('bg-gray-100', 'cursor-not-allowed', 'opacity-70');
+                input.placeholder = id === 'origenMobile' ? '📍 Origen (bloqueado)' : '🏁 Destino (bloqueado)';
+            } else {
+                input.classList.remove('bg-gray-100', 'cursor-not-allowed', 'opacity-70');
+                input.placeholder = id === 'origenMobile' ? 'Buscar dirección...' : 'Buscar dirección...';
+            }
+        }
+    });
 }
 
 // Guardar referencia a la función original de cerrar sesión si existe

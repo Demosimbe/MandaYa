@@ -8,6 +8,7 @@ let supabaseClient = null;
 function initSupabase() {
     if (typeof supabase !== 'undefined' && !supabaseClient) {
         supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        window.supabaseClient = supabaseClient;  // ✅ Hacer global
         console.log('✅ Supabase conectado');
     }
     return supabaseClient;
@@ -271,6 +272,24 @@ async function obtenerUbicacionDeSupabase(deliveryId) {
         return null;
     }
 }
+
+  function sincronizarBloqueoMobile(bloquear) {
+        const inputsMobile = ['origenMobile', 'destinoMobile'];
+        inputsMobile.forEach(id => {
+            const input = document.getElementById(id);
+            if (input) {
+                input.disabled = bloquear;
+                if (bloquear) {
+                    input.classList.add('bg-gray-100', 'cursor-not-allowed', 'opacity-70');
+                    input.placeholder = id === 'origenMobile' ? '📍 Origen (bloqueado)' : '🏁 Destino (bloqueado)';
+                } else {
+                    input.classList.remove('bg-gray-100', 'cursor-not-allowed', 'opacity-70');
+                    input.placeholder = id === 'origenMobile' ? 'Buscar dirección...' : 'Buscar dirección...';
+                }
+            }
+        });
+    }
+    
 
 // ========== FUNCIONES PARA PEDIDOS ==========
 

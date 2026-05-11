@@ -350,75 +350,111 @@ function startLocationTracking() {
         return;
     }
     
+    // ✅ Evitar múltiples instancias
+    if (window.iniciandoLocalizacion) {
+        console.log("⏳ Ya se está iniciando la localización");
+        return;
+    }
+    
+    // ✅ Verificar que el usuario es delivery
+    if (!currentUser || currentUser.rol !== 'delivery') {
+        console.log("❌ No se puede iniciar localización: usuario no es delivery");
+        return;
+    }
+    
+    window.iniciandoLocalizacion = true;
     mostrarToast("📍 Obteniendo ubicación...");
     
     const options = {
         enableHighAccuracy: true,
-        maximumAge: 5000,      // ✅ Aceptar ubicación de hasta 5 segundos
-        timeout: 8000          // ✅ Timeout más rápido
+        maximumAge: 5000,
+        timeout: 10000
     };
     
     // ✅ PRIMERO: Obtener ubicación rápida con getCurrentPosition
     navigator.geolocation.getCurrentPosition(
         async (pos) => {
-            const coords = { 
-                lat: pos.coords.latitude, 
-                lng: pos.coords.longitude 
-            };
-            
-            console.log("📍 Ubicación inicial obtenida en:", Date.now());
-            
-            // Guardar inmediatamente
-            ultimaUbicacionEnviada = coords;
-            
-            // Crear marcador si no existe
-            if(!userMarker) {
-                userMarker = crearMarcadorDelivery(
-                    coords.lat, 
-                    coords.lng, 
-                    currentUser.nombre, 
-                    isOnline ? '#10B981' : '#9CA3AF'
-                );
-                userMarker.addTo(map);
-            } else {
-                userMarker.setLatLng(coords);
+            try {
+                const coords = { 
+                    lat: pos.coords.latitude, 
+                    lng: pos.coords.longitude 
+                };
+                
+                console.log("📍 Ubicación inicial obtenida en:", new Date().toISOString());
+                
+                // ✅ Validar límites
+                if (coords.lat < 18.58 || coords.lat > 18.70 || 
+                    coords.lng < -91.88 || coords.lng > -91.75) {
+                    mostrarToast("⚠️ Estás fuera de Ciudad del Carmen. Acércate a la zona de servicio", true);
+                    window.iniciandoLocalizacion = false;
+                    return;
+                }
+                
+                // Guardar inmediatamente
+                ultimaUbicacionEnviada = coords;
+                
+                // Crear marcador si no existe
+                if(!userMarker) {
+                    userMarker = crearMarcadorDelivery(
+                        coords.lat, 
+                        coords.lng, 
+                        currentUser.nombre, 
+                        isOnline ? '#10B981' : '#9CA3AF'
+                    );
+                    userMarker.addTo(map);
+                } else {
+                    userMarker.setLatLng(coords);
+                }
+                
+                // Centrar mapa inmediatamente
+                map.setView([coords.lat, coords.lng], 15);
+                
+                // ✅ Guardar en Supabase SOLO si está online
+                if(currentUser && isOnline && supabaseClient) {
+                    await guardarUbicacionEnSupabase(
+                        currentUser.id,
+                        currentUser.nombre,
+                        coords.lat,
+                        coords.lng,
+                        true
+                    );
+                    console.log("✅ Ubicación guardada en Supabase");
+                }
+                
+                mostrarToast("✅ Ubicación detectada");
+                window.iniciandoLocalizacion = false;
+                
+            } catch (error) {
+                console.error("❌ Error procesando ubicación inicial:", error);
+                window.iniciandoLocalizacion = false;
+                // ✅ Segundo intento después de 2 segundos
+                setTimeout(() => {
+                    if (!ultimaUbicacionEnviada && isOnline) {
+                        obtenerUbicacionAlternativa();
+                    }
+                }, 2000);
             }
-            
-            // Centrar mapa inmediatamente
-            map.setView([coords.lat, coords.lng], 15);
-            
-            // ✅ Guardar en Supabase SOLO si está online
-            if(currentUser && isOnline) {
-                await guardarUbicacionEnSupabase(
-                    currentUser.id,
-                    currentUser.nombre,
-                    coords.lat,
-                    coords.lng,
-                    true
-                );
-                console.log("✅ Ubicación guardada en Supabase");
-            }
-            
-            mostrarToast("✅ Ubicación detectada");
         },
         (err) => {
             console.error("Error en ubicación inicial:", err);
+            window.iniciandoLocalizacion = false;
+            
             if(err.code === 1) {
-                mostrarToast("❌ Permite el acceso a tu ubicación", true);
+                mostrarToast("❌ Permite el acceso a tu ubicación en la configuración del navegador", true);
             } else {
-                mostrarToast("⚠️ Buscando GPS... espera 5 segundos", true);
-                // ✅ Segundo intento después de 3 segundos
+                mostrarToast("⚠️ No se pudo obtener ubicación. Intentando de nuevo...", true);
+                // ✅ Segundo intento después de 2 segundos
                 setTimeout(() => {
-                    if(!ultimaUbicacionEnviada) {
+                    if (!ultimaUbicacionEnviada && isOnline) {
                         obtenerUbicacionAlternativa();
                     }
-                }, 3000);
+                }, 2000);
             }
         },
         options
     );
     
-    // ✅ DESPUÉS: Iniciar watch para seguimiento continuo (con menos frecuencia)
+    // ✅ DESPUÉS: Iniciar watch para seguimiento continuo
     if(watchId) navigator.geolocation.clearWatch(watchId);
     
     watchId = navigator.geolocation.watchPosition(
@@ -427,6 +463,12 @@ function startLocationTracking() {
                 lat: pos.coords.latitude, 
                 lng: pos.coords.longitude 
             };
+            
+            // ✅ Validar límites
+            if (coords.lat < 18.58 || coords.lat > 18.70 || 
+                coords.lng < -91.88 || coords.lng > -91.75) {
+                return; // No actualizar si está fuera de zona
+            }
             
             // ✅ Reducir frecuencia: solo actualizar si movió más de 20 metros
             if (ultimaUbicacionEnviada) {
@@ -442,8 +484,8 @@ function startLocationTracking() {
                 userMarker.setLatLng(coords);
             }
             
-            // ✅ Guardar en Supabase con throttling (máximo cada 5 segundos)
-            if(currentUser && isOnline) {
+            // ✅ Guardar en Supabase con throttling
+            if(currentUser && isOnline && supabaseClient) {
                 await guardarUbicacionConThrottle(
                     currentUser.id, 
                     currentUser.nombre, 
@@ -458,8 +500,8 @@ function startLocationTracking() {
         },
         { 
             enableHighAccuracy: true, 
-            maximumAge: 5000,      // ✅ Aceptar ubicación de hasta 5 segundos
-            timeout: 10000         // ✅ Timeout más amigable
+            maximumAge: 5000,
+            timeout: 10000
         }
     );
 }
@@ -496,49 +538,116 @@ async function guardarUbicacionConThrottle(deliveryId, deliveryNombre, lat, lng,
 
 // ✅ Función alternativa para obtener ubicación (si falla la primera)
 function obtenerUbicacionAlternativa() {
+    // ✅ Evitar múltiples intentos simultáneos
+    if (window.obteniendoUbicacionAlternativa) {
+        console.log("⏳ Ya hay un intento de ubicación en curso");
+        return;
+    }
+    
+    window.obteniendoUbicacionAlternativa = true;
     mostrarToast("🔄 Reintentando obtener ubicación...");
+    
+    // ✅ Verificar que el usuario sigue siendo delivery y está online
+    if (!currentUser || currentUser.rol !== 'delivery') {
+        console.log("❌ Usuario no es delivery, cancelando obtención de ubicación");
+        window.obteniendoUbicacionAlternativa = false;
+        return;
+    }
     
     navigator.geolocation.getCurrentPosition(
         async (pos) => {
-            const coords = { 
-                lat: pos.coords.latitude, 
-                lng: pos.coords.longitude 
-            };
-            
-            console.log("📍 Ubicación obtenida en segundo intento");
-            ultimaUbicacionEnviada = coords;
-            
-            if(!userMarker) {
-                userMarker = crearMarcadorDelivery(
-                    coords.lat, 
-                    coords.lng, 
-                    currentUser.nombre, 
-                    isOnline ? '#10B981' : '#9CA3AF'
-                );
-                userMarker.addTo(map);
-            } else {
-                userMarker.setLatLng(coords);
+            try {
+                const coords = { 
+                    lat: pos.coords.latitude, 
+                    lng: pos.coords.longitude 
+                };
+                
+                // ✅ Validar que las coordenadas estén dentro de Ciudad del Carmen
+                if (coords.lat < 18.58 || coords.lat > 18.70 || 
+                    coords.lng < -91.88 || coords.lng > -91.75) {
+                    console.warn("📍 Ubicación fuera de Ciudad del Carmen:", coords);
+                    mostrarToast("⚠️ Estás fuera de la zona de servicio (Ciudad del Carmen)", true);
+                    window.obteniendoUbicacionAlternativa = false;
+                    return;
+                }
+                
+                console.log("📍 Ubicación obtenida en segundo intento:", coords);
+                ultimaUbicacionEnviada = coords;
+                
+                // ✅ Crear o actualizar marcador
+                if (!map) {
+                    console.error("❌ Mapa no inicializado");
+                    window.obteniendoUbicacionAlternativa = false;
+                    return;
+                }
+                
+                if (!userMarker) {
+                    userMarker = crearMarcadorDelivery(
+                        coords.lat, 
+                        coords.lng, 
+                        currentUser.nombre, 
+                        isOnline ? '#10B981' : '#9CA3AF'
+                    );
+                    userMarker.addTo(map);
+                } else {
+                    userMarker.setLatLng(coords);
+                }
+                
+                // ✅ Centrar mapa suavemente
+                map.setView([coords.lat, coords.lng], 15);
+                
+                // ✅ Guardar en Supabase SOLO si está online
+                if (currentUser && isOnline && supabaseClient) {
+                    await guardarUbicacionEnSupabase(
+                        currentUser.id,
+                        currentUser.nombre,
+                        coords.lat,
+                        coords.lng,
+                        true
+                    );
+                    console.log("✅ Ubicación guardada en Supabase (segundo intento)");
+                }
+                
+                mostrarToast("✅ Ubicación detectada correctamente");
+                
+                // ✅ Forzar carga de pedidos después de obtener ubicación
+                if (isOnline && typeof cargarPedidos === 'function') {
+                    setTimeout(() => cargarPedidos(true), 1000);
+                }
+                
+            } catch (error) {
+                console.error("❌ Error procesando ubicación:", error);
+                mostrarToast("⚠️ Error al procesar la ubicación", true);
+            } finally {
+                window.obteniendoUbicacionAlternativa = false;
             }
-            
-            map.setView([coords.lat, coords.lng], 15);
-            
-            if(currentUser && isOnline) {
-                await guardarUbicacionEnSupabase(
-                    currentUser.id,
-                    currentUser.nombre,
-                    coords.lat,
-                    coords.lng,
-                    true
-                );
-            }
-            
-            mostrarToast("✅ Ubicación detectada");
         },
         (err) => {
             console.error("Error en segundo intento:", err);
-            mostrarToast("⚠️ Activa el GPS manualmente", true);
+            window.obteniendoUbicacionAlternativa = false;
+            
+            // ✅ Mensajes más descriptivos según el error
+            let mensajeError = "⚠️ No se pudo obtener tu ubicación";
+            if (err.code === 1) {
+                mensajeError = "❌ Permiso de ubicación denegado. Actívalo en la configuración de tu navegador";
+            } else if (err.code === 2) {
+                mensajeError = "⚠️ Ubicación no disponible. Verifica que el GPS esté activado";
+            } else if (err.code === 3) {
+                mensajeError = "⏰ Tiempo de espera agotado. Intenta recargar la página";
+            }
+            
+            mostrarToast(mensajeError, true);
+            
+            // ✅ Sugerencia para el usuario
+            setTimeout(() => {
+                mostrarToast("💡 Sugerencia: Activa el GPS y recarga la página", false);
+            }, 2000);
         },
-        { enableHighAccuracy: true, timeout: 8000 }
+        { 
+            enableHighAccuracy: true, 
+            timeout: 10000,  // Aumentado a 10 segundos
+            maximumAge: 0    // No usar caché
+        }
     );
 }
 
@@ -1009,7 +1118,7 @@ async function verHistorial() {
         return;
     }
     
-    mostrarToast("📋 Cargando historial...");
+    mostrarToast("📊 Cargando historial...");
     
     try {
         const { data: completados, error } = await supabase
@@ -1021,86 +1130,90 @@ async function verHistorial() {
         
         if (error) throw error;
         
-        // Calcular total ganado
         let totalGanado = 0;
         if (completados && completados.length > 0) {
             completados.forEach(p => { totalGanado += p.tarifa; });
         }
         
-        // Crear modal bonito
+        // Eliminar modal existente
         let modalExistente = document.getElementById("modalHistorialDelivery");
         if (modalExistente) modalExistente.remove();
         
         const modal = document.createElement('div');
         modal.id = "modalHistorialDelivery";
-        modal.className = "fixed inset-0 bg-black bg-opacity-95 flex items-center justify-center z-[100000] p-4";
+        modal.className = "fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[100000] p-2";
+        modal.style.overflowY = "auto";
+        
         modal.innerHTML = `
-            <div class="bg-gray-800 rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-hidden modal-uber">
-                <div class="flex justify-between items-center pt-6 pb-3 px-6 border-b border-gray-700">
-                    <div>
-                        <i class="fas fa-history text-3xl text-orange-500 mb-1 block"></i>
-                        <h3 class="text-xl font-bold text-white">Mi Historial</h3>
-                        <p class="text-gray-400 text-xs">Entregas completadas</p>
+            <div class="bg-gray-800 rounded-2xl max-w-md w-full mx-2 my-4 overflow-hidden" style="max-height: 90vh; display: flex; flex-direction: column;">
+                <!-- Cabecera compacta -->
+                <div class="bg-orange-500 p-3 flex justify-between items-center sticky top-0 z-10">
+                    <div class="flex items-center gap-2">
+                        <i class="fas fa-history text-white text-xl"></i>
+                        <div>
+                            <h3 class="font-bold text-white text-base">Mi Historial</h3>
+                            <p class="text-white/70 text-xs">Entregas completadas</p>
+                        </div>
                     </div>
-                    <button onclick="cerrarModalHistorialDelivery()" class="text-gray-400 hover:text-white text-2xl transition-all">
-                        <i class="fas fa-times-circle"></i>
+                    <button onclick="cerrarModalHistorialDelivery()" class="bg-black/30 rounded-full w-8 h-8 flex items-center justify-center active:bg-black/50">
+                        <i class="fas fa-times text-white text-sm"></i>
                     </button>
                 </div>
                 
-                <div class="overflow-y-auto max-h-[55vh] p-4 space-y-3">
+                <!-- Lista de entregas - scrollable -->
+                <div class="overflow-y-auto p-3" style="flex: 1;">
                     ${!completados || completados.length === 0 ? `
-                        <div class="text-center text-gray-400 py-12">
-                            <i class="fas fa-box-open text-5xl mb-3 block opacity-50"></i>
-                            <p>No tienes entregas completadas aún</p>
-                            <p class="text-xs mt-2">Conéctate y agarra pedidos para comenzar</p>
+                        <div class="text-center text-gray-400 py-8">
+                            <i class="fas fa-box-open text-4xl mb-2 block opacity-50"></i>
+                            <p class="text-sm">No hay entregas</p>
                         </div>
                     ` : `
-                        ${completados.map(p => `
-                            <div class="bg-gray-700 rounded-xl p-4 border-l-4 border-green-500">
-                                <div class="flex justify-between items-start mb-2">
-                                    <div>
-                                        <span class="font-bold text-orange-400">#${p.id}</span>
-                                        <span class="text-xs ml-2 px-2 py-0.5 rounded-full bg-green-500/20 text-green-400">
-                                            ✅ Completado
-                                        </span>
+                        <div class="space-y-2">
+                            ${completados.map(p => `
+                                <div class="bg-gray-700 rounded-xl p-3">
+                                    <div class="flex justify-between items-start mb-1">
+                                        <div class="flex items-center gap-2">
+                                            <span class="font-mono text-orange-400 text-xs font-bold">#${p.id.toString().slice(-8)}</span>
+                                            <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-green-500/20 text-green-400">✅ Completo</span>
+                                        </div>
+                                        <span class="text-[10px] text-gray-400">${new Date(p.fecha_completado || p.fecha).toLocaleDateString()}</span>
                                     </div>
-                                    <span class="text-xs text-gray-400">${new Date(p.fecha_completado || p.fecha).toLocaleDateString()}</span>
-                                </div>
-                                <p class="text-sm text-gray-300">
-                                    <i class="fas fa-circle text-orange-500 text-xs mr-1"></i> ${p.origen}
-                                </p>
-                                <p class="text-sm text-gray-300 mt-1">
-                                    <i class="fas fa-square text-blue-500 text-xs mr-1"></i> ${p.destino}
-                                </p>
-                                <div class="flex justify-between items-center mt-3 pt-2 border-t border-gray-600">
-                                    <div class="text-sm">
-                                        <span class="text-gray-400">📏 ${p.distancia_real} km</span>
-                                        <span class="text-gray-400 ml-3">💰 $${p.tarifa}</span>
+                                    
+                                    <div class="flex items-start gap-1 my-1">
+                                        <i class="fas fa-circle text-[8px] text-orange-500 mt-1"></i>
+                                        <span class="text-xs text-gray-300 flex-1 line-clamp-1">${p.origen || 'Origen'}</span>
                                     </div>
-                                    <span class="text-xs text-gray-400">${p.tipo || 'Paquete'}</span>
+                                    
+                                    <div class="flex items-start gap-1 mb-1">
+                                        <i class="fas fa-square text-[8px] text-blue-500 mt-1"></i>
+                                        <span class="text-xs text-gray-300 flex-1 line-clamp-1">${p.destino || 'Destino'}</span>
+                                    </div>
+                                    
+                                    <div class="flex justify-between items-center mt-2 pt-2 border-t border-gray-600">
+                                        <div class="flex gap-3">
+                                            <span class="text-xs text-gray-400">📏 ${p.distancia_real} km</span>
+                                            <span class="text-xs text-gray-400">💰 $${p.tarifa}</span>
+                                        </div>
+                                        <span class="text-[10px] text-gray-500 capitalize">${p.tipo || 'paquete'}</span>
+                                    </div>
                                 </div>
-                            </div>
-                        `).join('')}
+                            `).join('')}
+                        </div>
                     `}
                 </div>
                 
-                <div class="border-t border-gray-700 p-4">
-                    <div class="flex justify-between items-center">
+                <!-- Resumen fijo abajo -->
+                <div class="border-t border-gray-700 p-3 bg-gray-800">
+                    <div class="flex justify-between items-center bg-orange-500/10 rounded-xl p-2">
                         <div>
-                            <span class="text-gray-400 text-sm">Total de entregas:</span>
-                            <span class="text-white font-bold ml-2">${completados?.length || 0}</span>
+                            <span class="text-gray-400 text-xs">💰 Total ganado</span>
+                            <div class="text-xl font-bold text-orange-500">$${totalGanado}</div>
                         </div>
-                        <div class="bg-orange-500/20 rounded-lg px-4 py-2">
-                            <span class="text-gray-400 text-sm">💰 Total ganado:</span>
-                            <span class="text-orange-400 font-bold text-xl ml-2">$${totalGanado} MXN</span>
+                        <div class="text-right">
+                            <span class="text-gray-400 text-xs">📦 Entregas</span>
+                            <div class="text-xl font-bold text-white">${completados?.length || 0}</div>
                         </div>
                     </div>
-                </div>
-                
-                <div class="px-5 pb-5 pt-2">
-                    <button onclick="cerrarModalHistorialDelivery()" class="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3 rounded-xl transition-all">
-                        Cerrar
-                    </button>
                 </div>
             </div>
         `;
