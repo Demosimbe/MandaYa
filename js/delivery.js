@@ -53,7 +53,7 @@ function initMap() {
     },  5000);
 }
 
-function loadUser() {
+async function loadUser() {  // ✅ Agregar 'async'
     const sesion = localStorage.getItem('sesion_activa');
     if(!sesion) { window.location.href = "index.html"; return; }
     currentUser = JSON.parse(sesion);
@@ -80,6 +80,9 @@ function loadUser() {
         setTimeout(() => actualizarColorMarcador(), 1000);
     }
     cargarPedidos();
+    
+    // ✅ AHORA SÍ FUNCIONA porque loadUser es async
+    await actualizarEstadisticas();
 }
 
 async function actualizarBadgeEstado() {
@@ -814,6 +817,9 @@ async function completarPedido(pedidoId) {
             .single();
         
         mostrarToast(`✅ Pedido #${pedidoId} ENTREGADO! Ganaste $${pedido?.tarifa || 0} MXN`);
+
+         // ✅ AGREGAR: Actualizar estadísticas después de completar
+        await actualizarEstadisticas();
         
         // Limpiar rutas y marcadores
         limpiarRutasYMarcadores();
@@ -1003,34 +1009,238 @@ async function verHistorial() {
         return;
     }
     
+    mostrarToast("📋 Cargando historial...");
+    
     try {
         const { data: completados, error } = await supabase
             .from('pedidos')
             .select('*')
             .eq('delivery_id', currentUser?.id)
-            .eq('estado', 'completado');
+            .eq('estado', 'completado')
+            .order('fecha_completado', { ascending: false });
         
         if (error) throw error;
         
-        if(!completados || completados.length === 0) {
-            mostrarToast("No tienes entregas completadas");
-        } else {
-            let total = 0;
-            let msg = "✅ Entregas completadas:\n";
-            completados.forEach(p => { 
-                total += p.tarifa; 
-                msg += `• #${p.id}: ${p.distancia_real}km - $${p.tarifa}\n`;
-            });
-            msg += `\n💰 Total ganado: $${total} MXN`;
-            alert(msg);
+        // Calcular total ganado
+        let totalGanado = 0;
+        if (completados && completados.length > 0) {
+            completados.forEach(p => { totalGanado += p.tarifa; });
         }
+        
+        // Crear modal bonito
+        let modalExistente = document.getElementById("modalHistorialDelivery");
+        if (modalExistente) modalExistente.remove();
+        
+        const modal = document.createElement('div');
+        modal.id = "modalHistorialDelivery";
+        modal.className = "fixed inset-0 bg-black bg-opacity-95 flex items-center justify-center z-[100000] p-4";
+        modal.innerHTML = `
+            <div class="bg-gray-800 rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-hidden modal-uber">
+                <div class="flex justify-between items-center pt-6 pb-3 px-6 border-b border-gray-700">
+                    <div>
+                        <i class="fas fa-history text-3xl text-orange-500 mb-1 block"></i>
+                        <h3 class="text-xl font-bold text-white">Mi Historial</h3>
+                        <p class="text-gray-400 text-xs">Entregas completadas</p>
+                    </div>
+                    <button onclick="cerrarModalHistorialDelivery()" class="text-gray-400 hover:text-white text-2xl transition-all">
+                        <i class="fas fa-times-circle"></i>
+                    </button>
+                </div>
+                
+                <div class="overflow-y-auto max-h-[55vh] p-4 space-y-3">
+                    ${!completados || completados.length === 0 ? `
+                        <div class="text-center text-gray-400 py-12">
+                            <i class="fas fa-box-open text-5xl mb-3 block opacity-50"></i>
+                            <p>No tienes entregas completadas aún</p>
+                            <p class="text-xs mt-2">Conéctate y agarra pedidos para comenzar</p>
+                        </div>
+                    ` : `
+                        ${completados.map(p => `
+                            <div class="bg-gray-700 rounded-xl p-4 border-l-4 border-green-500">
+                                <div class="flex justify-between items-start mb-2">
+                                    <div>
+                                        <span class="font-bold text-orange-400">#${p.id}</span>
+                                        <span class="text-xs ml-2 px-2 py-0.5 rounded-full bg-green-500/20 text-green-400">
+                                            ✅ Completado
+                                        </span>
+                                    </div>
+                                    <span class="text-xs text-gray-400">${new Date(p.fecha_completado || p.fecha).toLocaleDateString()}</span>
+                                </div>
+                                <p class="text-sm text-gray-300">
+                                    <i class="fas fa-circle text-orange-500 text-xs mr-1"></i> ${p.origen}
+                                </p>
+                                <p class="text-sm text-gray-300 mt-1">
+                                    <i class="fas fa-square text-blue-500 text-xs mr-1"></i> ${p.destino}
+                                </p>
+                                <div class="flex justify-between items-center mt-3 pt-2 border-t border-gray-600">
+                                    <div class="text-sm">
+                                        <span class="text-gray-400">📏 ${p.distancia_real} km</span>
+                                        <span class="text-gray-400 ml-3">💰 $${p.tarifa}</span>
+                                    </div>
+                                    <span class="text-xs text-gray-400">${p.tipo || 'Paquete'}</span>
+                                </div>
+                            </div>
+                        `).join('')}
+                    `}
+                </div>
+                
+                <div class="border-t border-gray-700 p-4">
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <span class="text-gray-400 text-sm">Total de entregas:</span>
+                            <span class="text-white font-bold ml-2">${completados?.length || 0}</span>
+                        </div>
+                        <div class="bg-orange-500/20 rounded-lg px-4 py-2">
+                            <span class="text-gray-400 text-sm">💰 Total ganado:</span>
+                            <span class="text-orange-400 font-bold text-xl ml-2">$${totalGanado} MXN</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="px-5 pb-5 pt-2">
+                    <button onclick="cerrarModalHistorialDelivery()" class="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3 rounded-xl transition-all">
+                        Cerrar
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
     } catch(e) {
-        console.error('Error:', e);
+        console.error('Error cargando historial:', e);
         mostrarToast("Error al cargar historial", true);
     }
 }
 
-function verPerfil() { alert(`👤 ${currentUser?.nombre}\n📧 ${currentUser?.email}\n🏍️ Delivery`); }
+function cerrarModalHistorialDelivery() {
+    const modal = document.getElementById("modalHistorialDelivery");
+    if (modal) modal.remove();
+}
+
+function verPerfil() {
+    let modalExistente = document.getElementById("modalPerfilDelivery");
+    if (modalExistente) modalExistente.remove();
+    
+    const modal = document.createElement('div');
+    modal.id = "modalPerfilDelivery";
+    modal.className = "fixed inset-0 bg-black bg-opacity-95 flex items-center justify-center z-[100001] p-4";
+    modal.innerHTML = `
+        <div class="bg-gray-800 rounded-3xl max-w-sm w-full modal-uber">
+            <div class="text-center pt-6 pb-3 border-b border-gray-700">
+                <div class="w-16 h-16 bg-orange-500 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <i class="fas fa-user-circle text-white text-3xl"></i>
+                </div>
+                <h2 class="text-xl font-bold text-white">Mi Perfil</h2>
+                <p class="text-gray-400 text-sm mt-1">Delivery Partner</p>
+            </div>
+            
+            <div class="p-5 space-y-3">
+                <div class="bg-gray-700 rounded-xl p-3 flex items-center gap-3">
+                    <i class="fas fa-user text-orange-500 w-5"></i>
+                    <div class="flex-1">
+                        <div class="text-xs text-gray-400">Nombre</div>
+                        <div class="text-white font-medium">${currentUser?.nombre || 'No disponible'}</div>
+                    </div>
+                </div>
+                
+                <div class="bg-gray-700 rounded-xl p-3 flex items-center gap-3">
+                    <i class="fas fa-envelope text-orange-500 w-5"></i>
+                    <div class="flex-1">
+                        <div class="text-xs text-gray-400">Correo electrónico</div>
+                        <div class="text-white font-medium">${currentUser?.email || 'No disponible'}</div>
+                    </div>
+                </div>
+                
+                <div class="bg-gray-700 rounded-xl p-3 flex items-center gap-3">
+                    <i class="fas fa-tag text-orange-500 w-5"></i>
+                    <div class="flex-1">
+                        <div class="text-xs text-gray-400">Rol</div>
+                        <div class="text-white font-medium">
+                            <span class="bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded-full text-xs">Delivery</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="bg-gray-700 rounded-xl p-3 flex items-center gap-3">
+                    <i class="fas fa-star text-yellow-500 w-5"></i>
+                    <div class="flex-1">
+                        <div class="text-xs text-gray-400">Calificación</div>
+                        <div class="text-white font-medium">
+                            <span class="text-yellow-400">★★★★☆</span> 4.9
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="px-5 pb-5">
+                <button onclick="cerrarModalPerfilDelivery()" class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl transition-all">
+                    Cerrar
+                </button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+}
+
+function cerrarModalPerfilDelivery() {
+    const modal = document.getElementById("modalPerfilDelivery");
+    if (modal) modal.remove();
+}
+
+// ==================== FUNCIÓN ACTUALIZAR ESTADÍSTICAS CORREGIDA ====================
+async function actualizarEstadisticas() {
+    const supabase = supabaseClient;
+    if (!supabase || !currentUser) {
+        console.log("❌ No se pueden actualizar estadísticas: supabase o usuario no disponible");
+        return;
+    }
+    
+    try {
+        console.log("📊 Actualizando estadísticas para delivery:", currentUser.id);
+        
+        // Obtener todos los pedidos completados por este delivery
+        const { data: completados, error } = await supabase
+            .from('pedidos')
+            .select('tarifa, estado')
+            .eq('delivery_id', currentUser.id)
+            .eq('estado', 'completado');
+        
+        if (error) throw error;
+        
+        const totalEntregas = completados?.length || 0;
+        const totalGanado = completados?.reduce((sum, p) => sum + (p.tarifa || 0), 0) || 0;
+        
+        // Actualizar elementos del DOM
+        const totalEntregasEl = document.getElementById("totalEntregas");
+        const totalGanadoEl = document.getElementById("totalGanado");
+        
+        if (totalEntregasEl) {
+            totalEntregasEl.innerText = totalEntregas;
+            console.log(`✅ Total entregas actualizado: ${totalEntregas}`);
+        } else {
+            console.warn("⚠️ Elemento totalEntregas no encontrado");
+        }
+        
+        if (totalGanadoEl) {
+            totalGanadoEl.innerText = `$${totalGanado}`;
+            console.log(`✅ Total ganado actualizado: $${totalGanado}`);
+        } else {
+            console.warn("⚠️ Elemento totalGanado no encontrado");
+        }
+        
+        // También actualizar calificación si quieres (simulada por ahora)
+        const calificacionEl = document.getElementById("calificacion");
+        if (calificacionEl) {
+            // Podrías calcular calificación real desde una tabla 'calificaciones'
+            calificacionEl.innerText = "4.9";
+        }
+        
+    } catch(e) {
+        console.error('❌ Error actualizando estadísticas:', e);
+    }
+}
 
 // ==================== MODAL DE CONFIRMACIÓN MEJORADO ====================
 function mostrarModalConfirmacionDeliveryPersonalizado(titulo, mensaje, onConfirm) {
@@ -1356,6 +1566,11 @@ function mostrarModalConfirmacionDelivery(titulo, mensaje) {
 window.onload = () => { 
     loadUser(); 
     initMap();
+
+     // ✅ AGREGAR: Pequeño delay para asegurar que el DOM está listo
+    setTimeout(() => {
+        actualizarEstadisticas();
+    }, 1000);
     
     // ✅ Si ya está online, conectar ubicación inmediatamente
     if (isOnline) {

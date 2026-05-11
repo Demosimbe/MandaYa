@@ -700,289 +700,314 @@
     <script src="js/config.js"></script>
     <script src="js/cliente.js"></script>
     
-    <script>
-        let mobileSidebarOpen = true;
+   <script>
+    let mobileSidebarOpen = true;
+    let busquedaTimeout = null;  // ✅ Asegurar que existe
 
-        
-        // Buscar direcciones en móvil
-        const origenMobile = document.getElementById('origenMobile');
-        const destinoMobile = document.getElementById('destinoMobile');
-        
-        if (origenMobile) {
-            origenMobile.addEventListener('input', (e) => {
-                if (busquedaTimeout) clearTimeout(busquedaTimeout);
-                busquedaTimeout = setTimeout(() => {
-                    buscarDireccionesMobile(e.target.value, 'origenMobile');
-                }, 500);
-            });
+    // Buscar direcciones en móvil
+    const origenMobile = document.getElementById('origenMobile');
+    const destinoMobile = document.getElementById('destinoMobile');
+    
+    if (origenMobile) {
+        origenMobile.addEventListener('input', (e) => {
+            if (busquedaTimeout) clearTimeout(busquedaTimeout);
+            busquedaTimeout = setTimeout(() => {
+                buscarDireccionesMobile(e.target.value, 'origenMobile');
+            }, 500);
+        });
+    }
+    
+    if (destinoMobile) {
+        destinoMobile.addEventListener('input', (e) => {
+            if (busquedaTimeout) clearTimeout(busquedaTimeout);
+            busquedaTimeout = setTimeout(() => {
+                buscarDireccionesMobile(e.target.value, 'destinoMobile');
+            }, 500);
+        });
+    }
+    
+    // Función para buscar direcciones en móvil
+    async function buscarDireccionesMobile(query, tipo) {
+        if (!query || query.length < 3) {
+            document.getElementById(`${tipo}Sugerencias`).classList.add('hidden');
+            return;
         }
         
-        if (destinoMobile) {
-            destinoMobile.addEventListener('input', (e) => {
-                if (busquedaTimeout) clearTimeout(busquedaTimeout);
-                busquedaTimeout = setTimeout(() => {
-                    buscarDireccionesMobile(e.target.value, 'destinoMobile');
-                }, 500);
-            });
-        }
-        
-        // Función para buscar direcciones en móvil
-        async function buscarDireccionesMobile(query, tipo) {
-            if (!query || query.length < 3) {
-                document.getElementById(`${tipo}Sugerencias`).classList.add('hidden');
+        try {
+            const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query + ', Ciudad del Carmen, Campeche')}&limit=5&addressdetails=1`);
+            const data = await response.json();
+            
+            const sugerenciasDiv = document.getElementById(`${tipo}Sugerencias`);
+            
+            if (data.length === 0) {
+                sugerenciasDiv.classList.add('hidden');
                 return;
             }
             
-            try {
-                const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query + ', Ciudad del Carmen, Campeche')}&limit=5&addressdetails=1`);
-                const data = await response.json();
-                
-                const sugerenciasDiv = document.getElementById(`${tipo}Sugerencias`);
-                
-                if (data.length === 0) {
-                    sugerenciasDiv.classList.add('hidden');
-                    return;
-                }
-                
-                sugerenciasDiv.innerHTML = data.map(lugar => `
-                    <div class="sugerencia-item p-3 hover:bg-gray-100 cursor-pointer border-b border-gray-100 flex items-start gap-2" 
-                         onclick="seleccionarDireccionMobile('${tipo}', ${lugar.lat}, ${lugar.lon}, '${lugar.display_name.replace(/'/g, "\\'")}')">
-                        <i class="fas fa-map-marker-alt text-gray-400 mt-0.5 text-xs"></i>
-                        <div class="flex-1">
-                            <div class="text-sm font-medium text-gray-800">${lugar.display_name.split(',')[0]}</div>
-                            <div class="text-xs text-gray-500">${lugar.display_name.split(',').slice(1, 3).join(',')}</div>
-                        </div>
+            sugerenciasDiv.innerHTML = data.map(lugar => `
+                <div class="sugerencia-item p-3 hover:bg-gray-100 cursor-pointer border-b border-gray-100 flex items-start gap-2" 
+                     onclick="seleccionarDireccionMobile('${tipo}', ${lugar.lat}, ${lugar.lon}, '${lugar.display_name.replace(/'/g, "\\'")}')">
+                    <i class="fas fa-map-marker-alt text-gray-400 mt-0.5 text-xs"></i>
+                    <div class="flex-1">
+                        <div class="text-sm font-medium text-gray-800">${lugar.display_name.split(',')[0]}</div>
+                        <div class="text-xs text-gray-500">${lugar.display_name.split(',').slice(1, 3).join(',')}</div>
                     </div>
-                `).join('');
-                
-                sugerenciasDiv.classList.remove('hidden');
-                
-            } catch(e) {
-                console.error('Error buscando direcciones:', e);
-            }
-        }
-        
-
-function seleccionarDireccionMobile(tipo, lat, lng, direccion) {
-    const coords = { lat: parseFloat(lat), lng: parseFloat(lng) };
-    
-    if (coords.lat < 18.58 || coords.lat > 18.70 || coords.lng < -91.88 || coords.lng > -91.75) {
-        mostrarToast("❌ Ubicación fuera de Ciudad del Carmen", true);
-        document.getElementById(`${tipo}Sugerencias`).classList.add('hidden');
-        return;
-    }
-    
-    // Sincronizar con escritorio
-    if (tipo === 'origenMobile') {
-        if (originMarker) originMarker.setLatLng([coords.lat, coords.lng]);
-        if (window.originCoords) window.originCoords = coords;
-        document.getElementById("origen").value = direccion.split(',')[0];
-        document.getElementById("origenMobile").value = direccion.split(',')[0];
-    } else {
-        if (destMarker) destMarker.setLatLng([coords.lat, coords.lng]);
-        if (window.destCoords) window.destCoords = coords;
-        document.getElementById("destino").value = direccion.split(',')[0];
-        document.getElementById("destinoMobile").value = direccion.split(',')[0];
-    }
-    
-    document.getElementById(`${tipo}Sugerencias`).classList.add('hidden');
-    if (typeof actualizarRutaYTarifa === 'function') actualizarRutaYTarifa();
-    mostrarToast(`📍 ${tipo === 'origenMobile' ? 'Origen' : 'Destino'} actualizado`);
-}
-
-        function toggleMobileSidebar() {
-            const sidebar = document.getElementById('mobileSidebar');
-            if (mobileSidebarOpen) {
-                sidebar.style.transform = 'translateY(100%)';
-                mobileSidebarOpen = false;
-            } else {
-                sidebar.style.transform = 'translateY(0)';
-                mobileSidebarOpen = true;
-            }
-        }
-        
-        function sincronizarInputsMobile() {
-    const origenDesktop = document.getElementById("origen");
-    const destinoDesktop = document.getElementById("destino");
-    const origenMobile = document.getElementById("origenMobile");
-    const destinoMobile = document.getElementById("destinoMobile");
-    const tarifaContainer = document.getElementById("tarifaContainer");
-    const tarifaContainerMobile = document.getElementById("tarifaContainerMobile");
-    const tarifaValue = document.getElementById("tarifaValue");
-    const tarifaValueMobile = document.getElementById("tarifaValueMobile");
-    const tipoEnvio = document.getElementById("tipoEnvio");
-    const tipoEnvioMobile = document.getElementById("tipoEnvioMobile");
-    
-    if (origenDesktop && origenMobile) origenMobile.value = origenDesktop.value;
-    if (destinoDesktop && destinoMobile) destinoMobile.value = destinoDesktop.value;
-    
-    // ✅ CORREGIR: No forzar el valor del tipo de envío de escritorio desde móvil
-    // Solo sincronizar de escritorio a móvil, no al revés
-    if (tipoEnvio && tipoEnvioMobile) {
-        // Solo actualizar móvil si el valor de escritorio cambió
-        if (tipoEnvio.value !== tipoEnvioMobile.value) {
-            tipoEnvioMobile.value = tipoEnvio.value;
+                </div>
+            `).join('');
             
-            // Actualizar el texto del botón seleccionado en móvil
-            const textoSeleccionado = tipoEnvio.options[tipoEnvio.selectedIndex]?.text || '';
-            const mensajeDiv = document.getElementById('tipoSeleccionadoMobile');
-            if (mensajeDiv && textoSeleccionado) {
-                mensajeDiv.innerHTML = `✅ ${textoSeleccionado}`;
-                mensajeDiv.classList.remove('hidden');
-                setTimeout(() => mensajeDiv.classList.add('hidden'), 1500);
+            sugerenciasDiv.classList.remove('hidden');
+            
+        } catch(e) {
+            console.error('Error buscando direcciones:', e);
+        }
+    }
+    
+    function seleccionarDireccionMobile(tipo, lat, lng, direccion) {
+        const coords = { lat: parseFloat(lat), lng: parseFloat(lng) };
+        
+        if (coords.lat < 18.58 || coords.lat > 18.70 || coords.lng < -91.88 || coords.lng > -91.75) {
+            mostrarToast("❌ Ubicación fuera de Ciudad del Carmen", true);
+            document.getElementById(`${tipo}Sugerencias`).classList.add('hidden');
+            return;
+        }
+        
+        const direccionCorta = direccion.split(',')[0];
+        
+        // Sincronizar con escritorio
+        if (tipo === 'origenMobile') {
+            if (typeof originMarker !== 'undefined' && originMarker) {
+                originMarker.setLatLng([coords.lat, coords.lng]);
+            }
+            if (typeof originCoords !== 'undefined') {
+                window.originCoords = coords;
+            }
+            const origenDesktop = document.getElementById("origen");
+            const origenMobileInput = document.getElementById("origenMobile");
+            if (origenDesktop) origenDesktop.value = direccionCorta;
+            if (origenMobileInput) origenMobileInput.value = direccionCorta;
+        } else {
+            if (typeof destMarker !== 'undefined' && destMarker) {
+                destMarker.setLatLng([coords.lat, coords.lng]);
+            }
+            if (typeof destCoords !== 'undefined') {
+                window.destCoords = coords;
+            }
+            const destinoDesktop = document.getElementById("destino");
+            const destinoMobileInput = document.getElementById("destinoMobile");
+            if (destinoDesktop) destinoDesktop.value = direccionCorta;
+            if (destinoMobileInput) destinoMobileInput.value = direccionCorta;
+        }
+        
+        document.getElementById(`${tipo}Sugerencias`).classList.add('hidden');
+        if (typeof actualizarRutaYTarifa === 'function') actualizarRutaYTarifa();
+        mostrarToast(`📍 ${tipo === 'origenMobile' ? 'Origen' : 'Destino'} actualizado: ${direccionCorta}`);
+    }
+    
+    function toggleMobileSidebar() {
+        const sidebar = document.getElementById('mobileSidebar');
+        if (mobileSidebarOpen) {
+            sidebar.style.transform = 'translateY(100%)';
+            mobileSidebarOpen = false;
+        } else {
+            sidebar.style.transform = 'translateY(0)';
+            mobileSidebarOpen = true;
+        }
+    }
+    
+    // ✅ FUNCIÓN CORREGIDA - No sobrescribe mientras el usuario escribe
+    function sincronizarInputsMobile() {
+        const origenDesktop = document.getElementById("origen");
+        const destinoDesktop = document.getElementById("destino");
+        const origenMobileInput = document.getElementById("origenMobile");
+        const destinoMobileInput = document.getElementById("destinoMobile");
+        const tarifaContainer = document.getElementById("tarifaContainer");
+        const tarifaContainerMobile = document.getElementById("tarifaContainerMobile");
+        const tarifaValue = document.getElementById("tarifaValue");
+        const tarifaValueMobile = document.getElementById("tarifaValueMobile");
+        const tipoEnvio = document.getElementById("tipoEnvio");
+        const tipoEnvioMobile = document.getElementById("tipoEnvioMobile");
+        
+        // ✅ IMPORTANTE: Solo sincronizar de desktop a mobile si el mobile NO tiene el foco
+        if (origenDesktop && origenMobileInput && document.activeElement !== origenMobileInput) {
+            if (origenMobileInput.value !== origenDesktop.value) {
+                origenMobileInput.value = origenDesktop.value;
+            }
+        }
+        
+        if (destinoDesktop && destinoMobileInput && document.activeElement !== destinoMobileInput) {
+            if (destinoMobileInput.value !== destinoDesktop.value) {
+                destinoMobileInput.value = destinoDesktop.value;
+            }
+        }
+        
+        // ✅ Sincronizar tipo de envío
+        if (tipoEnvio && tipoEnvioMobile && document.activeElement !== tipoEnvioMobile) {
+            if (tipoEnvio.value !== tipoEnvioMobile.value) {
+                tipoEnvioMobile.value = tipoEnvio.value;
+                
+                const textoSeleccionado = tipoEnvio.options[tipoEnvio.selectedIndex]?.text || '';
+                const mensajeDiv = document.getElementById('tipoSeleccionadoMobile');
+                if (mensajeDiv && textoSeleccionado) {
+                    mensajeDiv.innerHTML = `✅ ${textoSeleccionado}`;
+                    mensajeDiv.classList.remove('hidden');
+                    setTimeout(() => mensajeDiv.classList.add('hidden'), 1500);
+                }
+            }
+        }
+        
+        // ✅ Sincronizar tarifa
+        if (tarifaContainer && tarifaContainerMobile) {
+            if (!tarifaContainer.classList.contains("hidden")) {
+                tarifaContainerMobile.classList.remove("hidden");
+                if (tarifaValue && tarifaValueMobile && tarifaValueMobile.innerHTML !== tarifaValue.innerHTML) {
+                    tarifaValueMobile.innerHTML = tarifaValue.innerHTML;
+                }
+            } else {
+                tarifaContainerMobile.classList.add("hidden");
             }
         }
     }
     
-    if (tarifaContainer && tarifaContainerMobile) {
-        if (!tarifaContainer.classList.contains("hidden")) {
-            tarifaContainerMobile.classList.remove("hidden");
-            if (tarifaValue && tarifaValueMobile) {
-                tarifaValueMobile.innerHTML = tarifaValue.innerHTML;
-            }
-        } else {
-            tarifaContainerMobile.classList.add("hidden");
-        }
-    }
-}
-        function sincronizarBloqueoMobile(bloquear) {
+    function sincronizarBloqueoMobile(bloquear) {
         const inputsMobile = ['origenMobile', 'destinoMobile'];
         inputsMobile.forEach(id => {
-        const input = document.getElementById(id);
-        if (input) {
-            input.disabled = bloquear;
-            if (bloquear) {
-                input.classList.add('bg-gray-100', 'cursor-not-allowed', 'opacity-70');
-                input.placeholder = id === 'origenMobile' ? '📍 Origen (bloqueado)' : '🏁 Destino (bloqueado)';
-            } else {
-                input.classList.remove('bg-gray-100', 'cursor-not-allowed', 'opacity-70');
-                input.placeholder = id === 'origenMobile' ? 'Origen' : 'Destino';
+            const input = document.getElementById(id);
+            if (input) {
+                input.disabled = bloquear;
+                if (bloquear) {
+                    input.classList.add('bg-gray-100', 'cursor-not-allowed', 'opacity-70');
+                    input.placeholder = id === 'origenMobile' ? '📍 Origen (bloqueado)' : '🏁 Destino (bloqueado)';
+                } else {
+                    input.classList.remove('bg-gray-100', 'cursor-not-allowed', 'opacity-70');
+                    input.placeholder = id === 'origenMobile' ? 'Buscar dirección...' : 'Buscar dirección...';
+                }
             }
-        }
-    });
-    
-    // Agregar esta llamada dentro de bloquearUIporPedidoActivo
-}        
-
-       function solicitarEnvioMobile() {
-           const origenMobile = document.getElementById("origenMobile").value;
-           const destinoMobile = document.getElementById("destinoMobile").value;
-           const tipoMobile = document.getElementById("tipoEnvioMobile").value;
-           
-           if (!origenMobile || !destinoMobile) {
-               mostrarToast("❌ Selecciona origen y destino", true);
-               return;
-           }
-           
-           // ✅ MEJOR VALIDACIÓN para móvil
-           if (!tipoMobile || tipoMobile === '') {
-               mostrarToast("❌ Selecciona el tipo de envío (Comida, Paquete, etc.)", true);
-               // Resaltar los botones de tipo
-               document.querySelectorAll('.tipo-mobile-btn').forEach(btn => {
-                   btn.style.animation = 'shake 0.5s ease';
-                   setTimeout(() => {
-                       btn.style.animation = '';
-                   }, 500);
-               });
-               return;
-           }
-           
-           if (document.getElementById("origen")) document.getElementById("origen").value = origenMobile;
-           if (document.getElementById("destino")) document.getElementById("destino").value = destinoMobile;
-           if (document.getElementById("tipoEnvio")) document.getElementById("tipoEnvio").value = tipoMobile;
-           
-           solicitarEnvio();
-       }
-       
-       // Agregar animación shake para errores
-       const style = document.createElement('style');
-       style.textContent = `
-           @keyframes shake {
-               0%, 100% { transform: translateX(0); }
-               25% { transform: translateX(-5px); }
-               75% { transform: translateX(5px); }
-           }
-       `;
-       document.head.appendChild(style);
-        
-      function seleccionarTipoMobile(valor, texto) {
-    // Actualizar ambos selects
-    const tipoDesktop = document.getElementById('tipoEnvio');
-    const tipoMobile = document.getElementById('tipoEnvioMobile');
-    const mensajeDiv = document.getElementById('tipoSeleccionadoMobile');
-    
-    if (tipoDesktop) tipoDesktop.value = valor;
-    if (tipoMobile) tipoMobile.value = valor;
-    
-    // Mostrar confirmación
-    if (mensajeDiv) {
-        mensajeDiv.innerHTML = `✅ ${texto} seleccionado`;
-        mensajeDiv.classList.remove('hidden');
-        setTimeout(() => {
-            mensajeDiv.classList.add('hidden');
-        }, 2000);
-    }
-    
-    // Cambiar estilo de los botones
-    document.querySelectorAll('.tipo-mobile-btn').forEach(btn => {
-        btn.classList.remove('bg-orange-500', 'text-white');
-        btn.classList.add('bg-gray-100', 'text-gray-800');
-    });
-    
-    // Resaltar el botón clickeado
-    const botones = document.querySelectorAll('.tipo-mobile-btn');
-    for (let btn of botones) {
-        if (btn.textContent.includes(texto.split(' ')[0])) {
-            btn.classList.remove('bg-gray-100', 'text-gray-800');
-            btn.classList.add('bg-orange-500', 'text-white');
-            break;
-        }
-    }
-    
-    console.log(`✅ Tipo seleccionado: ${valor} - ${texto}`);
-}
-        function centrarMapa() {
-            if (map) map.setView([18.6456, -91.8249], 13);
-            mostrarToast("📍 Mapa centrado en Ciudad del Carmen");
-        }
-        
-        let syncInterval = null;
-        function ejecutarSincronizacion() {
-            sincronizarInputsMobile();
-            const userInfo = document.getElementById("userInfo");
-            const userInfoMobile = document.getElementById("userInfoMobile");
-            if (userInfo && userInfoMobile && userInfo.innerHTML !== userInfoMobile.innerHTML) {
-                userInfoMobile.innerHTML = userInfo.innerHTML;
-            }
-        }
-        function iniciarSincronizacion() {
-            if (syncInterval) return;
-            syncInterval = setInterval(ejecutarSincronizacion, 500);
-            console.log("✅ Sincronización mobile iniciada");
-        }
-        function detenerSincronizacion() {
-            if (syncInterval) {
-                clearInterval(syncInterval);
-                syncInterval = null;
-                console.log("🛑 Sincronización mobile detenida");
-            }
-        }
-        iniciarSincronizacion();
-        window.addEventListener('beforeunload', function() {
-            detenerSincronizacion();
         });
-        const originalCerrarSesion = window.cerrarSesion;
-        window.cerrarSesion = function() {
-            detenerSincronizacion();
-            if (originalCerrarSesion) {
-                originalCerrarSesion();
+    }
+    
+    function solicitarEnvioMobile() {
+        const origenMobileVal = document.getElementById("origenMobile").value;
+        const destinoMobileVal = document.getElementById("destinoMobile").value;
+        const tipoMobileVal = document.getElementById("tipoEnvioMobile").value;
+        
+        if (!origenMobileVal || !destinoMobileVal) {
+            mostrarToast("❌ Selecciona origen y destino", true);
+            return;
+        }
+        
+        if (!tipoMobileVal || tipoMobileVal === '') {
+            mostrarToast("❌ Selecciona el tipo de envío", true);
+            document.querySelectorAll('.tipo-mobile-btn').forEach(btn => {
+                btn.style.animation = 'shake 0.5s ease';
+                setTimeout(() => {
+                    btn.style.animation = '';
+                }, 500);
+            });
+            return;
+        }
+        
+        const origenDesktop = document.getElementById("origen");
+        const destinoDesktop = document.getElementById("destino");
+        const tipoDesktop = document.getElementById("tipoEnvio");
+        
+        if (origenDesktop) origenDesktop.value = origenMobileVal;
+        if (destinoDesktop) destinoDesktop.value = destinoMobileVal;
+        if (tipoDesktop) tipoDesktop.value = tipoMobileVal;
+        
+        if (typeof solicitarEnvio === 'function') solicitarEnvio();
+    }
+    
+    // Agregar animación shake para errores
+    const style = document.createElement('style');
+    style.textContent = `
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+    `;
+    document.head.appendChild(style);
+    
+    function seleccionarTipoMobile(valor, texto) {
+        const tipoDesktop = document.getElementById('tipoEnvio');
+        const tipoMobile = document.getElementById('tipoEnvioMobile');
+        const mensajeDiv = document.getElementById('tipoSeleccionadoMobile');
+        
+        if (tipoDesktop) tipoDesktop.value = valor;
+        if (tipoMobile) tipoMobile.value = valor;
+        
+        if (mensajeDiv) {
+            mensajeDiv.innerHTML = `✅ ${texto} seleccionado`;
+            mensajeDiv.classList.remove('hidden');
+            setTimeout(() => {
+                mensajeDiv.classList.add('hidden');
+            }, 2000);
+        }
+        
+        document.querySelectorAll('.tipo-mobile-btn').forEach(btn => {
+            btn.classList.remove('bg-orange-500', 'text-white');
+            btn.classList.add('bg-gray-100', 'text-gray-800');
+        });
+        
+        const botones = document.querySelectorAll('.tipo-mobile-btn');
+        for (let btn of botones) {
+            if (btn.textContent.includes(texto.split(' ')[0])) {
+                btn.classList.remove('bg-gray-100', 'text-gray-800');
+                btn.classList.add('bg-orange-500', 'text-white');
+                break;
             }
-        };
-        const originalMostrarToast = window.mostrarToast;
-        window.mostrarToast = function(msg, err) {
-            if (originalMostrarToast) originalMostrarToast(msg, err);
-            console.log(msg);
-        };
-    </script>
+        }
+        
+        console.log(`✅ Tipo seleccionado: ${valor} - ${texto}`);
+    }
+    
+    function centrarMapa() {
+        if (typeof map !== 'undefined' && map) map.setView([18.6456, -91.8249], 13);
+        if (typeof mostrarToast === 'function') mostrarToast("📍 Mapa centrado en Ciudad del Carmen");
+    }
+    
+    let syncInterval = null;
+    function ejecutarSincronizacion() {
+        sincronizarInputsMobile();
+        const userInfo = document.getElementById("userInfo");
+        const userInfoMobile = document.getElementById("userInfoMobile");
+        if (userInfo && userInfoMobile && userInfo.innerHTML !== userInfoMobile.innerHTML) {
+            userInfoMobile.innerHTML = userInfo.innerHTML;
+        }
+    }
+    
+    function iniciarSincronizacion() {
+        if (syncInterval) return;
+        syncInterval = setInterval(ejecutarSincronizacion, 500);
+        console.log("✅ Sincronización mobile iniciada");
+    }
+    
+    function detenerSincronizacion() {
+        if (syncInterval) {
+            clearInterval(syncInterval);
+            syncInterval = null;
+            console.log("🛑 Sincronización mobile detenida");
+        }
+    }
+    
+    iniciarSincronizacion();
+    window.addEventListener('beforeunload', function() {
+        detenerSincronizacion();
+    });
+    
+    const originalCerrarSesion = window.cerrarSesion;
+    window.cerrarSesion = function() {
+        detenerSincronizacion();
+        if (originalCerrarSesion) {
+            originalCerrarSesion();
+        }
+    };
+    
+    const originalMostrarToast = window.mostrarToast;
+    window.mostrarToast = function(msg, err) {
+        if (originalMostrarToast) originalMostrarToast(msg, err);
+        console.log(msg);
+    };
+</script>
 </body>
 </html>
