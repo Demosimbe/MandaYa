@@ -114,32 +114,34 @@ function initMap() {
 }
 
 // ==================== CIERRE DE SESIÓN CORREGIDO ====================
-function cerrarSesion() { 
-    mostrarModalConfirmacionDeliveryPersonalizado(
+async function cerrarSesion() {
+    // Usar el modal ya definido (retorna Promise true/false)
+    const confirmado = await mostrarModalConfirmacionDelivery(
         "Cerrar Sesión",
-        "¿Estás seguro de que deseas cerrar sesión?",
-        async () => {
-            // Limpiar recursos específicos de delivery
-            if(watchId) navigator.geolocation.clearWatch(watchId);
-            if(ubicacionInterval) clearInterval(ubicacionInterval);
-            if(cargaPedidosInterval) clearInterval(cargaPedidosInterval);
-            
-            limpiarRutasYMarcadores();
-            
-            // Actualizar estado offline en Supabase
-            if(currentUser && userMarker && userMarker.getLatLng) {
-                const coords = userMarker.getLatLng();
-                await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, coords.lat, coords.lng, false);
-            }
-            
-            if(currentUser && isOnline && supabaseClient) {
-                await setDeliveryOnlineSupabase(currentUser.id, false);
-            }
-            
-            // Cerrar sesión con securityManager
-            await securityManager.cerrarSesion();
-        }
+        "¿Estás seguro de que deseas cerrar sesión?"
     );
+
+    if (!confirmado) return;
+
+    // Limpiar recursos específicos de delivery
+    if (watchId) navigator.geolocation.clearWatch(watchId);
+    if (ubicacionInterval) clearInterval(ubicacionInterval);
+    if (cargaPedidosInterval) clearInterval(cargaPedidosInterval);
+
+    limpiarRutasYMarcadores();
+
+    // Actualizar estado offline en Supabase
+    if (currentUser && userMarker && userMarker.getLatLng) {
+        const coords = userMarker.getLatLng();
+        await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, coords.lat, coords.lng, false);
+    }
+
+    if (currentUser && isOnline && supabaseClient) {
+        await setDeliveryOnlineSupabase(currentUser.id, false);
+    }
+
+    // Cerrar sesión con securityManager
+    await securityManager.cerrarSesion();
 }
 
 async function actualizarBadgeEstado() {
