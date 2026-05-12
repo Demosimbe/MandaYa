@@ -36,7 +36,6 @@ async function registrarUsuarioSupabase(nombre, email, telefono, password, rol) 
         
         // Crear nuevo usuario CONTRASEÑA HASHEADA
         const nuevoUsuario = {
-            id: Date.now(),
             nombre: nombre,
             email: email,
             telefono: telefono || '',
