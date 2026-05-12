@@ -31,15 +31,20 @@ async function registrarUsuarioSupabase(nombre, email, telefono, password, rol) 
         
         if (existe) return { error: 'El correo ya está registrado' };
         
-        // Crear nuevo usuario
+        // ✅ HASHEAR CONTRASEÑA antes de guardar
+        const hashedPassword = await securityManager.hashPassword(password);
+        
+        // Crear nuevo usuario CONTRASEÑA HASHEADA
         const nuevoUsuario = {
             id: Date.now(),
             nombre: nombre,
             email: email,
             telefono: telefono || '',
-            password: password,
+            password_hash: hashedPassword,  // ← CAMBIADO de 'password' a 'password_hash'
             rol: rol,
             online: false,
+            session_token: null,
+            device_id: null,
             fecha_registro: new Date().toISOString()
         };
         
@@ -64,22 +69,79 @@ async function loginSupabase(email, password) {
     if (!supabase) return { error: 'Supabase no disponible' };
     
     try {
-        const { data, error } = await supabase
+        // Buscar usuario por email
+        const { data: usuario, error } = await supabase
             .from('usuarios')
             .select('*')
             .eq('email', email)
-            .eq('password', password)
             .maybeSingle();
         
         if (error) return { error: error.message };
-        if (!data) return { error: 'Correo o contraseña incorrectos' };
+        if (!usuario) return { error: 'Correo o contraseña incorrectos' };
         
-        return { data: data, error: null };
+        // ✅ VERIFICAR CONTRASEÑA CONTRA EL HASH
+        let passwordValida = false;
+        
+        // Soporte para migración: si existe password_hash, usarlo
+        if (usuario.password_hash) {
+            passwordValida = await securityManager.verifyPassword(password, usuario.password_hash);
+        } 
+        // Migración: Si todavía tiene password en texto plano, convertir a hash
+        else if (usuario.password && usuario.password === password) {
+            // Migrar a hash automáticamente
+            const hashedPassword = await securityManager.hashPassword(password);
+            await supabase
+                .from('usuarios')
+                .update({ 
+                    password_hash: hashedPassword,
+                    password: null  // Eliminar texto plano
+                })
+                .eq('id', usuario.id);
+            passwordValida = true;
+        }
+        
+        if (!passwordValida) {
+            return { error: 'Correo o contraseña incorrectos' };
+        }
+        
+        // ✅ INICIAR SESIÓN SEGURA (sesión única)
+        const sessionToken = await securityManager.iniciarSesion(usuario);
+        
+        // Retornar usuario sin datos sensibles
+        const usuarioSeguro = {
+            id: usuario.id,
+            nombre: usuario.nombre,
+            email: usuario.email,
+            rol: usuario.rol,
+            session_token: sessionToken
+        };
+        
+        return { data: usuarioSeguro, error: null };
         
     } catch(e) {
         console.error('Error en login:', e);
         return { error: e.message };
     }
+}
+
+// Verificar sesión activa (llamar al cargar cada página)
+async function verificarYProtegerSesion() {
+    const usuario = securityManager.obtenerUsuarioActual();
+    if (!usuario) {
+        window.location.href = "index.html";
+        return false;
+    }
+    
+    const esValida = await securityManager.verificarSesionUnica();
+    if (!esValida) {
+        // Ya redirige adentro
+        return false;
+    }
+    
+    // Iniciar monitoreo de sesión
+    securityManager.iniciarMonitoreoSesion();
+    
+    return true;
 }
 
 // Obtener todos los deliverys ONLINE
@@ -367,6 +429,28 @@ async function completarPedidoEnSupabase(pedidoId) {
         return null;
     }
 }
+// Al final de config.js, agregar:
+async function inicializarSeguridad() {
+    // Pequeño delay para asegurar que todo está cargado
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    // Verificar si hay una sesión activa al cargar
+    const sesion = securityManager.obtenerUsuarioActual();
+    if (sesion && window.location.pathname.includes('cliente.html') || window.location.pathname.includes('delivery.html')) {
+        const valida = await securityManager.verificarSesionUnica();
+        if (!valida) {
+            // Ya redirige
+        }
+    }
+}
+
+// Ejecutar después de initSupabase
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', inicializarSeguridad);
+} else {
+    inicializarSeguridad();
+}
+
 
 // Inicializar
 initSupabase();

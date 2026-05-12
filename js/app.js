@@ -36,6 +36,7 @@ function togglePassword() {
 }
 
 // ==================== LOGIN con Supabase ====================
+// Reemplazar el event listener de login
 document.getElementById("loginForm").addEventListener("submit", async function(e) {
     e.preventDefault();
     const email = document.getElementById("email").value.trim();
@@ -51,8 +52,9 @@ document.getElementById("loginForm").addEventListener("submit", async function(e
         const usuario = resultado.data;
         mostrarToast(`✅ ¡Bienvenido ${usuario.nombre}!`);
         
-        // Guardar sesión activa
-        localStorage.setItem('sesion_activa', JSON.stringify(usuario));
+        // El session_token ya está guardado por securityManager.iniciarSesion()
+        // Solo guardamos referencia
+        localStorage.setItem('sesion_activa_temp', JSON.stringify(usuario));
         
         setTimeout(() => {
             if (usuario.rol === 'cliente') {

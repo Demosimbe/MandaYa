@@ -24,6 +24,127 @@ let ultimaPeticionTime = 0;
 let paginaVisible = true;
 let ultimaPeticionDeliverys = 0;
 
+// ==================== INICIALIZACIÓN PRINCIPAL ====================
+document.addEventListener('DOMContentLoaded', async () => {
+    console.log("🚀 Inicializando cliente...");
+    
+    // Verificar sesión antes de cualquier cosa
+    const sesionValida = await verificarYProtegerSesion();
+    if (!sesionValida) return;
+    
+    // Cargar usuario con securityManager
+    cargarUsuarioSeguro();
+
+    // ✅ Verificar que el usuario se cargó correctamente
+    if (!currentUser) {
+        console.error("❌ No se pudo cargar el usuario");
+        window.location.href = "index.html";
+        return;
+    }
+    
+    // Inicializar mapa
+    initMap();
+    
+    // Cargar deliverys en línea si es cliente
+    if (currentUser && currentUser.rol === 'cliente') {
+        setTimeout(() => cargarDeliverysEnLinea(), 2000);
+        
+        if (deliverysInterval) clearInterval(deliverysInterval);
+        deliverysInterval = setInterval(() => {
+            if (currentUser && currentUser.rol === 'cliente' && paginaVisible) {
+                cargarDeliverysEnLinea();
+            }
+        }, 15000);
+    }
+});
+
+// ==================== FUNCIÓN CARGAR USUARIO (SOLO UNA VEZ) ====================
+function cargarUsuarioSeguro() {
+    const usuario = securityManager.obtenerUsuarioActual();
+    if (!usuario) { 
+        window.location.href = "index.html"; 
+        return; 
+    }
+    
+    currentUser = usuario;
+    
+    if (currentUser.rol !== 'cliente') { 
+        window.location.href = "delivery.html"; 
+        return; 
+    }
+    
+    document.getElementById("userInfo").innerHTML = `
+        <div class="flex items-center gap-2">
+            <i class="fas fa-user-circle text-[#FF6200] text-xl"></i>
+            <span class="font-medium">${currentUser.nombre}</span>
+            <span class="text-gray-400 text-xs">(Cliente)</span>
+        </div>
+    `;
+    
+    // También actualizar mobile si existe
+    const userInfoMobile = document.getElementById("userInfoMobile");
+    if (userInfoMobile) {
+        userInfoMobile.innerHTML = document.getElementById("userInfo").innerHTML;
+    }
+}
+
+// ==================== CERRAR SESIÓN CORREGIDO (SOLO UNA VEZ) ====================
+function cerrarSesion() { 
+    mostrarModalConfirmacion(
+        "Cerrar Sesión",
+        "¿Estás seguro de que deseas cerrar sesión?",
+        async () => {
+            // Limpiar intervalos
+            if(seguimientoInterval) clearInterval(seguimientoInterval);
+            if(ubicacionInterval) clearInterval(ubicacionInterval);
+            if(deliverysInterval) clearInterval(deliverysInterval);
+            
+            // Usar securityManager para cerrar sesión
+            await securityManager.cerrarSesion();
+        }
+    );
+}
+
+// ==================== EVENT LISTENERS ====================
+const origenInput = document.getElementById('origen');
+const destinoInput = document.getElementById('destino');
+const btnCancelarPedido = document.getElementById('btnCancelarPedido');
+
+if (btnCancelarPedido) {
+    btnCancelarPedido.addEventListener('click', cancelarPedido);
+}
+
+if (origenInput) {
+    origenInput.addEventListener('input', (e) => {
+        if (busquedaTimeout) clearTimeout(busquedaTimeout);
+        busquedaTimeout = setTimeout(() => {
+            buscarDirecciones(e.target.value, 'origen');
+        }, 500);
+    });
+    
+    origenInput.addEventListener('blur', () => {
+        setTimeout(() => {
+            document.getElementById('origenSugerencias')?.classList.add('hidden');
+        }, 200);
+    });
+}
+
+if (destinoInput) {
+    destinoInput.addEventListener('input', (e) => {
+        if (busquedaTimeout) clearTimeout(busquedaTimeout);
+        busquedaTimeout = setTimeout(() => {
+            buscarDirecciones(e.target.value, 'destino');
+        }, 500);
+    });
+    
+    destinoInput.addEventListener('blur', () => {
+        setTimeout(() => {
+            document.getElementById('destinoSugerencias')?.classList.add('hidden');
+        }, 200);
+    });
+}
+
+
 // ==================== BLOQUEAR/REACTIVAR UI CUANDO HAY PEDIDO ACTIVO ====================
 function bloquearUIporPedidoActivo(bloquear) {
     const elementos = {
@@ -280,19 +401,6 @@ function initMap() {
     
     // ✅ Inicializar ruta después de un breve retraso
     setTimeout(() => actualizarRutaYTarifa(), 500);
-}
-
-function loadUser() {
-    // ✅ Limpiar intervalos previos antes de cargar nuevo usuario
-    if (seguimientoInterval) clearInterval(seguimientoInterval);
-    if (ubicacionInterval) clearInterval(ubicacionInterval);
-    if (deliverysInterval) clearInterval(deliverysInterval);
-    
-    const sesion = localStorage.getItem('sesion_activa');
-    if (!sesion) { window.location.href = "index.html"; return; }
-    currentUser = JSON.parse(sesion);
-    if (currentUser.rol !== 'cliente') { window.location.href = "delivery.html"; return; }
-    document.getElementById("userInfo").innerHTML = `<div class="flex items-center gap-2"><i class="fas fa-user-circle text-[#FF6200] text-xl"></i><span class="font-medium">${currentUser.nombre}</span><span class="text-gray-400 text-xs">(Cliente)</span></div>`;
 }
 
 function centrarMapa() {
@@ -1799,21 +1907,6 @@ async function mostrarDeliveryEnMapa(deliveryId, deliveryNombre = null) {
     }
 }
 
-function cerrarSesion() { 
-    mostrarModalConfirmacion(
-        "Cerrar Sesión",
-        "¿Estás seguro de que deseas cerrar sesión?",
-        () => {
-            if(seguimientoInterval) { clearInterval(seguimientoInterval); seguimientoInterval = null;}
-            if(ubicacionInterval) { clearInterval(ubicacionInterval); ubicacionInterval = null;}
-            if(deliverysInterval) { clearInterval(deliverysInterval); deliverysInterval = null; }
-            
-            localStorage.removeItem('sesion_activa'); 
-            window.location.href = "index.html";
-        }
-    );
-}
-
 function mostrarToast(msg, err = false) {
     // ✅ Eliminar toasts anteriores para evitar acumulación
     const toastsAnteriores = document.querySelectorAll('.toast-moderno');
@@ -2639,59 +2732,4 @@ document.addEventListener('visibilitychange', function() {
     }
 });
 
-// ==================== EVENT LISTENERS ====================
-document.addEventListener('DOMContentLoaded', () => {
-    const origenInput = document.getElementById('origen');
-    const destinoInput = document.getElementById('destino');
-    const btnCancelarPedido = document.getElementById('btnCancelarPedido');
-    
-    if (btnCancelarPedido) {
-        btnCancelarPedido.addEventListener('click', cancelarPedido);
-    }
-    
-    if (origenInput) {
-        origenInput.addEventListener('input', (e) => {
-            if (busquedaTimeout) clearTimeout(busquedaTimeout);
-            busquedaTimeout = setTimeout(() => {
-                buscarDirecciones(e.target.value, 'origen');
-            }, 500);
-        });
-        
-        origenInput.addEventListener('blur', () => {
-            setTimeout(() => {
-                document.getElementById('origenSugerencias')?.classList.add('hidden');
-            }, 200);
-        });
-    }
-    
-    if (destinoInput) {
-        destinoInput.addEventListener('input', (e) => {
-            if (busquedaTimeout) clearTimeout(busquedaTimeout);
-            busquedaTimeout = setTimeout(() => {
-                buscarDirecciones(e.target.value, 'destino');
-            }, 500);
-        });
-        
-        destinoInput.addEventListener('blur', () => {
-            setTimeout(() => {
-                document.getElementById('destinoSugerencias')?.classList.add('hidden');
-            }, 200);
-        });
-    }
-});
 
-window.onload = () => { 
-    loadUser(); 
-    initMap();
-    if (currentUser && currentUser.rol === 'cliente') {
-        setTimeout(() => cargarDeliverysEnLinea(), 2000);
-        
-        if (deliverysInterval) clearInterval(deliverysInterval);
-        
-        deliverysInterval = setInterval(() => {
-            if (currentUser && currentUser.rol === 'cliente') {
-                cargarDeliverysEnLinea();
-            }
-        }, 15000); // 15 segundos
-    }
-};

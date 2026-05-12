@@ -8,18 +8,19 @@ let pedidoSeleccionado = null;
 let watchId = null;
 let ubicacionInterval = null;
 let cargaPedidosInterval = null;
-let ultimaUbicacionEnviada = null;   // ✅ Para evitar actualizaciones innecesarias
-let primeraUbicacionObtenida = false; // ✅ Para saber si ya tenemos ubicación
+let ultimaUbicacionEnviada = null;
+let primeraUbicacionObtenida = false;
 
-// ==================== NUEVAS VARIABLES PARA RUTAS ====================
-let currentRoutingControl = null;  // Control de ruta actual
-let recogidaMarker = null;         // Marcador del punto de recogida (origen)
-let destinoMarker = null;          // Marcador del punto de destino
+// Variables para rutas
+let currentRoutingControl = null;
+let recogidaMarker = null;
+let destinoMarker = null;
 let ultimoPedidoDibujado = null;
 let ultimaEtapa = null;
 let dibujandoRuta = false;
 let ultimaPeticionPedidos = 0;
-// ==================== CONTROL DE PETICIONES INTELIGENTE ====================
+
+// Control de página visible
 let paginaVisible = true;
 
 document.addEventListener('visibilitychange', () => {
@@ -31,36 +32,50 @@ document.addEventListener('visibilitychange', () => {
         console.log("🔴 Página oculta - Reduciendo actualizaciones");
     }
 });
-// ==================== INICIALIZACIÓN ====================
-function initMap() {
-    const cdDelCarmen = { lat: 18.6456, lng: -91.8249 };
-    map = L.map('map').setView([cdDelCarmen.lat, cdDelCarmen.lng], 13);
-    
-   // Mismo cambio aquí
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    maxZoom: 19
-    }).addTo(map);
-    
-    limitarMapaACarmen(map);
-    startLocationTracking();
-    cargarPedidos();
-    
-    if(cargaPedidosInterval) clearInterval(cargaPedidosInterval);
-    
-    cargaPedidosInterval = setInterval(() => { 
-        if(isOnline) cargarPedidos(); 
-    },  5000);
-}
 
-async function loadUser() {  // ✅ Agregar 'async'
-    const sesion = localStorage.getItem('sesion_activa');
-    if(!sesion) { window.location.href = "index.html"; return; }
-    currentUser = JSON.parse(sesion);
-    if(currentUser.rol !== 'delivery') { window.location.href = "cliente.html"; return; }
+// ==================== INICIALIZACIÓN PRINCIPAL ====================
+document.addEventListener('DOMContentLoaded', async () => {
+    console.log("🚀 Inicializando delivery...");
+    
+    // Verificar sesión antes de cualquier cosa
+    const sesionValida = await verificarYProtegerSesion();
+    if (!sesionValida) return;
+    
+    // Cargar usuario seguro
+    loadUser();
+    
+    // Inicializar mapa
+    initMap();
+    
+    // Actualizar estadísticas después de un momento
+    setTimeout(() => actualizarEstadisticas(), 1000);
+    
+    // Si está online, iniciar localización y cargar pedidos
+    if (isOnline) {
+        setTimeout(() => {
+            startLocationTracking();
+            cargarPedidos(true);
+        }, 500);
+    }
+});
+
+// ==================== FUNCIÓN LOAD USER (SOLO UNA VEZ) ====================
+function loadUser() {
+    const usuario = securityManager.obtenerUsuarioActual();
+    if (!usuario) { 
+        window.location.href = "index.html"; 
+        return; 
+    }
+    
+    currentUser = usuario;
+    
+    if (currentUser.rol !== 'delivery') { 
+        window.location.href = "cliente.html"; 
+        return; 
+    }
+    
     isOnline = currentUser.online === true;
     
-    // ✅ HTML con espacio para el badge de estado
     document.getElementById("userInfo").innerHTML = `
         <div class="flex items-center gap-2">
             <i class="fas fa-motorcycle text-[#FF6200] text-xl"></i>
@@ -77,12 +92,54 @@ async function loadUser() {  // ✅ Agregar 'async'
         document.getElementById("onlineToggle").classList.remove("bg-gray-500");
         document.getElementById("onlineToggle").classList.add("bg-green-500");
         document.getElementById("onlineStatusText").innerHTML = '<i class="fas fa-circle online-dot mr-1"></i> En línea';
-        setTimeout(() => actualizarColorMarcador(), 1000);
     }
-    cargarPedidos();
+}
+
+// ==================== INICIALIZACIÓN DEL MAPA ====================
+function initMap() {
+    const cdDelCarmen = { lat: 18.6456, lng: -91.8249 };
+    map = L.map('map').setView([cdDelCarmen.lat, cdDelCarmen.lng], 13);
     
-    // ✅ AHORA SÍ FUNCIONA porque loadUser es async
-    await actualizarEstadisticas();
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        maxZoom: 19
+    }).addTo(map);
+    
+    limitarMapaACarmen(map);
+    
+    if(cargaPedidosInterval) clearInterval(cargaPedidosInterval);
+    cargaPedidosInterval = setInterval(() => { 
+        if(isOnline) cargarPedidos(); 
+    }, 5000);
+}
+
+// ==================== CIERRE DE SESIÓN CORREGIDO ====================
+function cerrarSesion() { 
+    mostrarModalConfirmacionDeliveryPersonalizado(
+        "Cerrar Sesión",
+        "¿Estás seguro de que deseas cerrar sesión?",
+        async () => {
+            // Limpiar recursos específicos de delivery
+            if(watchId) navigator.geolocation.clearWatch(watchId);
+            if(ubicacionInterval) clearInterval(ubicacionInterval);
+            if(cargaPedidosInterval) clearInterval(cargaPedidosInterval);
+            
+            limpiarRutasYMarcadores();
+            
+            // Actualizar estado offline en Supabase
+            if(currentUser && userMarker && userMarker.getLatLng) {
+                const coords = userMarker.getLatLng();
+                await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, coords.lat, coords.lng, false);
+            }
+            
+            if(currentUser && isOnline && supabaseClient) {
+                await setDeliveryOnlineSupabase(currentUser.id, false);
+            }
+            
+            // Cerrar sesión con securityManager
+            await securityManager.cerrarSesion();
+        }
+    );
 }
 
 async function actualizarBadgeEstado() {
@@ -1356,87 +1413,52 @@ async function actualizarEstadisticas() {
 }
 
 // ==================== MODAL DE CONFIRMACIÓN MEJORADO ====================
-function mostrarModalConfirmacionDeliveryPersonalizado(titulo, mensaje, onConfirm) {
-    // Eliminar modal existente si hay
-    let modalExistente = document.getElementById("modalConfirmacionDeliveryPersonalizado");
-    if (modalExistente) modalExistente.remove();
-    
-    const modal = document.createElement('div');
-    modal.id = "modalConfirmacionDeliveryPersonalizado";
-    modal.className = "fixed inset-0 bg-black bg-opacity-95 flex items-center justify-center z-[100000] p-4";
-    modal.innerHTML = `
-        <div class="bg-gray-800 rounded-3xl max-w-sm w-full modal-uber text-center p-6" style="animation: slideUp 0.3s ease-out;">
-            <div class="w-20 h-20 bg-orange-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                <i class="fas fa-motorcycle text-4xl text-orange-500"></i>
+function mostrarModalConfirmacionDelivery(titulo, mensaje) {
+    return new Promise((resolve) => {
+        // Eliminar modal existente si hay
+        const modalExistente = document.getElementById("modalConfirmacionDelivery");
+        if (modalExistente) modalExistente.remove();
+        
+        const modal = document.createElement('div');
+        modal.id = "modalConfirmacionDelivery";
+        modal.className = "fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[100000] p-4";
+        modal.innerHTML = `
+            <div class="bg-gray-800 rounded-3xl max-w-sm w-full modal-uber text-center p-6">
+                <div class="w-16 h-16 bg-orange-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <i class="fas fa-motorcycle text-3xl text-orange-500"></i>
+                </div>
+                <h3 class="text-xl font-bold text-white mb-2">${titulo}</h3>
+                <p class="text-gray-400 text-sm mb-6">${mensaje}</p>
+                <div class="flex gap-3">
+                    <button id="btnCancelarConfirm" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-3 rounded-xl transition-all font-medium">
+                        Cancelar
+                    </button>
+                    <button id="btnAceptarConfirm" class="flex-1 bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-xl transition-all font-medium">
+                        <i class="fas fa-hand-paper mr-2"></i>Aceptar
+                    </button>
+                </div>
             </div>
-            <h3 class="text-2xl font-bold text-white mb-3">${titulo}</h3>
-            <p class="text-gray-300 text-base mb-8">${mensaje}</p>
-            <div class="flex gap-3">
-                <button id="btnCancelarConfirmDelivery" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-3 rounded-xl transition-all text-base">
-                    Cancelar
-                </button>
-                <button id="btnAceptarConfirmDelivery" class="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3 rounded-xl transition-all text-base">
-                    <i class="fas fa-sign-out-alt mr-2"></i>SALIR
-                </button>
-            </div>
-        </div>
-    `;
-    
-    document.body.appendChild(modal);
-    
-    // Eventos
-    document.getElementById("btnAceptarConfirmDelivery").onclick = () => {
-        modal.remove();
-        if (onConfirm) onConfirm();
-    };
-    
-    document.getElementById("btnCancelarConfirmDelivery").onclick = () => {
-        modal.remove();
-    };
-    
-    // Cerrar al hacer clic fuera
-    modal.addEventListener('click', (e) => {
-        if (e.target === modal) {
+        `;
+        
+        document.body.appendChild(modal);
+        
+        document.getElementById("btnAceptarConfirm").onclick = () => {
             modal.remove();
-        }
+            resolve(true);
+        };
+        
+        document.getElementById("btnCancelarConfirm").onclick = () => {
+            modal.remove();
+            resolve(false);
+        };
+        
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.remove();
+                resolve(false);
+            }
+        });
     });
-}
-
-function cerrarSesion() { 
-    mostrarModalConfirmacionDeliveryPersonalizado(
-        "Cerrar Sesión",
-        "¿Estás seguro de que deseas cerrar sesión?",
-        () => {
-            // Limpiar recursos
-            if(watchId) navigator.geolocation.clearWatch(watchId);
-            
-            if(ubicacionInterval) {
-                clearInterval(ubicacionInterval);
-                ubicacionInterval = null;
-            }
-
-            if(cargaPedidosInterval) {
-                clearInterval(cargaPedidosInterval);
-                cargaPedidosInterval = null;
-            }
-            
-            limpiarRutasYMarcadores();
-            
-            // Actualizar estado offline en Supabase
-            if(currentUser && typeof guardarUbicacionEnSupabase !== 'undefined' && userMarker) {
-                const coords = userMarker.getLatLng();
-                guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, coords.lat, coords.lng, false);
-            }
-            
-            if(currentUser && isOnline && supabaseClient) {
-                setDeliveryOnlineSupabase(currentUser.id, false).catch(console.error);
-            }
-            
-            // Limpiar sesión y redirigir
-            localStorage.removeItem('sesion_activa'); 
-            window.location.href = "index.html"; 
-        }
-    );
 }
 
 async function actualizarColorMarcador() {
@@ -1624,72 +1646,3 @@ function mostrarToast(msg, err = false) {
         setTimeout(() => toast.remove(), 400);
     }, duracion);
 }
-
-// ==================== MODAL DE CONFIRMACIÓN PERSONALIZADO ====================
-function mostrarModalConfirmacionDelivery(titulo, mensaje) {
-    return new Promise((resolve) => {
-        // Eliminar modal existente si hay
-        const modalExistente = document.getElementById("modalConfirmacionDelivery");
-        if (modalExistente) modalExistente.remove();
-        
-        const modal = document.createElement('div');
-        modal.id = "modalConfirmacionDelivery";
-        modal.className = "fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[100000] p-4";
-        modal.innerHTML = `
-            <div class="bg-gray-800 rounded-3xl max-w-sm w-full modal-uber text-center p-6">
-                <div class="w-16 h-16 bg-orange-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <i class="fas fa-motorcycle text-3xl text-orange-500"></i>
-                </div>
-                <h3 class="text-xl font-bold text-white mb-2">${titulo}</h3>
-                <p class="text-gray-400 text-sm mb-6">${mensaje}</p>
-                <div class="flex gap-3">
-                    <button id="btnCancelarConfirm" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-3 rounded-xl transition-all font-medium">
-                        Cancelar
-                    </button>
-                    <button id="btnAceptarConfirm" class="flex-1 bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-xl transition-all font-medium">
-                        <i class="fas fa-hand-paper mr-2"></i>Aceptar
-                    </button>
-                </div>
-            </div>
-        `;
-        
-        document.body.appendChild(modal);
-        
-        // Eventos
-        document.getElementById("btnAceptarConfirm").onclick = () => {
-            modal.remove();
-            resolve(true);
-        };
-        
-        document.getElementById("btnCancelarConfirm").onclick = () => {
-            modal.remove();
-            resolve(false);
-        };
-        
-        // Cerrar al hacer clic fuera
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                modal.remove();
-                resolve(false);
-            }
-        });
-    });
-}
-
-window.onload = () => { 
-    loadUser(); 
-    initMap();
-
-     // ✅ AGREGAR: Pequeño delay para asegurar que el DOM está listo
-    setTimeout(() => {
-        actualizarEstadisticas();
-    }, 1000);
-    
-    // ✅ Si ya está online, conectar ubicación inmediatamente
-    if (isOnline) {
-        setTimeout(() => {
-            startLocationTracking();
-            cargarPedidos(true);
-        }, 500);
-    }
-};
