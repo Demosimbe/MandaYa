@@ -291,12 +291,16 @@ async function peticionConThrottling(funcion, nombre, intervaloMinimo = 3000) {
 
 // ==================== INICIALIZACIÓN ====================
 function initMap() {
-    map = L.map('map', {
+   map = L.map('map', {
         maxBoundsViscosity: 1.0,
-        rotate: true,
-        rotateControl: true,
+        rotate: true,                    // Rotación activada
+        rotateControl: true,             // Control visual
         zoomControl: true,
-        attributionControl: true
+        attributionControl: true,
+        touchZoom: true,                 // ← Importante para móviles
+        dragging: true,
+        tap: true,
+        inertia: false
     }).setView([18.6456, -91.8249], 13);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {

@@ -109,11 +109,15 @@ function initMap() {
     const cdDelCarmen = { lat: 18.6456, lng: -91.8249 };
     
     map = L.map('map', {
-        maxBoundsViscosity: 1.0,
+     maxBoundsViscosity: 1.0,
         rotate: true,
         rotateControl: true,
         zoomControl: true,
-        attributionControl: true
+        attributionControl: true,
+        touchZoom: true,
+        dragging: true,
+        tap: true,
+        inertia: false
     }).setView([cdDelCarmen.lat, cdDelCarmen.lng], 13);
     
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
