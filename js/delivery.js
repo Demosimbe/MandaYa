@@ -23,6 +23,13 @@ let ultimaPeticionPedidos = 0;
 // Control de página visible
 let paginaVisible = true;
 
+// ==================== UTILIDADES ====================
+function vibrar(duracion = 200) {
+    if (window.navigator.vibrate) {
+        window.navigator.vibrate(duracion);
+    }
+}
+
 document.addEventListener('visibilitychange', () => {
     paginaVisible = !document.hidden;
     if (paginaVisible) {
@@ -377,6 +384,7 @@ async function marcarPaqueteRecogido(pedidoId) {
         if (error) throw error;
         
         mostrarToast(`✅ ¡Paquete #${pedidoId} RECOGIDO! Ahora dirígete al destino.`);
+        vibrar(200);  // <-- AGREGAR
         
           // ✅ Forzar recarga para obtener el nuevo estado 'recogido'
         await cargarPedidos(true);
@@ -934,6 +942,7 @@ async function agarrarPedido(pedidoId) {
         if (error) throw error;
         
         mostrarToast(`✅ Pedido #${pedidoId} AGARRADO! Dirígete al origen para recoger.`);
+        vibrar(300);  // <-- AGREGAR
         
         // ✅ Limpiar selección y recargar
         pedidoSeleccionado = null;
@@ -985,6 +994,7 @@ async function completarPedido(pedidoId) {
             .single();
         
         mostrarToast(`✅ Pedido #${pedidoId} ENTREGADO! Ganaste $${pedido?.tarifa || 0} MXN`);
+        vibrar(200);  // <-- AGREGAR
 
          // ✅ AGREGAR: Actualizar estadísticas después de completar
         await actualizarEstadisticas();

@@ -22,7 +22,10 @@ async function drawRealRoute(map, origin, dest, color, weight) {
             }).addTo(map);
             
             const bounds = L.latLngBounds([origin, dest]);
-            map.fitBounds(bounds, { padding: [50, 50] });
+            map.fitBounds(bounds, {
+            padding: [50, 50],
+            maxZoom: 16
+        });
             
             return {
                 line: line,
@@ -80,6 +83,18 @@ function calculateShippingRate(distanceKm, tipo) {
         base: baseRate, 
         porKm: null 
     };
+}
+
+// ✅ Función para calcular distancia entre dos puntos (útil para fallback)
+function calcularDistanciaEntrePuntos(punto1, punto2) {
+    if (!punto1 || !punto2) return 0;
+    const R = 6371; // km
+    const dLat = (punto2.lat - punto1.lat) * Math.PI / 180;
+    const dLon = (punto2.lng - punto1.lng) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(punto1.lat * Math.PI / 180) * Math.cos(punto2.lat * Math.PI / 180) *
+              Math.sin(dLon/2) * Math.sin(dLon/2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
 // ==================== EXTRAER SOLO EL PRIMER NOMBRE ====================
@@ -186,31 +201,68 @@ function convertirPedidoDeSupabase(pedidoSupabase) {
 
 // ==================== LIMITAR MAPA A CD DEL CARMEN ====================
 function limitarMapaACarmen(map) {
-    // Límites exactos de Ciudad del Carmen
+
     const southWest = L.latLng(18.58, -91.88);
     const northEast = L.latLng(18.70, -91.75);
     const bounds = L.latLngBounds(southWest, northEast);
-    
+
+    // 🔒 LÍMITES DUROS
     map.setMaxBounds(bounds);
-    
-    // ✅ Ahora podemos usar zoom hasta 17 (Voyager tiene tiles)
+
+    // 🔒 Hace que el usuario NO pueda arrastrar fuera
+    map.options.maxBoundsViscosity = 1.0;
+
+    // Zoom permitido
     map.setMinZoom(12);
-    map.setMaxZoom(18);   // Cambiado de 15 a 18
-    
-    map.on('drag', function() {
+    map.setMaxZoom(18);
+
+    // 🔒 CORREGIR automáticamente si algo mueve el mapa fuera
+    map.on('moveend', function () {
+
         if (!bounds.contains(map.getCenter())) {
-            map.panInsideBounds(bounds, { animate: true, duration: 0.5 });
+
+            map.panInsideBounds(bounds, {
+                animate: false
+            });
+
         }
+
     });
-    
-    map.on('zoomend', function() {
+
+    // 🔒 Evitar zoom raro
+    map.on('zoomend', function () {
+
         if (map.getZoom() > 18) {
             map.setZoom(18);
         }
+
         if (map.getZoom() < 12) {
             map.setZoom(12);
         }
+
     });
-    
-    console.log('🗺️ Mapa limitado a Ciudad del Carmen (zoom 12-18)');
+
+    console.log('🗺️ Mapa BLOQUEADO a Ciudad del Carmen');
 }
+
+// Función para limitar coordenadas dentro de los límites de Ciudad del Carmen
+function limitarCoordenadasACarmen(lat, lng) {
+    const minLat = 18.58;
+    const maxLat = 18.70;
+    const minLng = -91.88;
+    const maxLng = -91.75;
+    
+    let nuevaLat = lat;
+    let nuevaLng = lng;
+    
+    if (lat < minLat) nuevaLat = minLat;
+    if (lat > maxLat) nuevaLat = maxLat;
+    if (lng < minLng) nuevaLng = minLng;
+    if (lng > maxLng) nuevaLng = maxLng;
+    
+    return { lat: nuevaLat, lng: nuevaLng };
+}
+
+window.limitarCoordenadasACarmen = limitarCoordenadasACarmen;
+window.getRealDistanceAndTime = getRealDistanceAndTime;
+window.calcularDistanciaEntrePuntos = calcularDistanciaEntrePuntos;

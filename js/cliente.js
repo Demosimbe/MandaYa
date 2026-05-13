@@ -18,6 +18,7 @@ let rutaActualTipo = null;     // 'recogida' o 'entrega'
 let rutaDestinoActual = null;  // Guardar destino para comparar
 let rutaYaDibujada = false;
 let ultimoEstadoPedido = null;
+let busquedaTimeout = null;
 
 // ==================== CONTROL DE PETICIONES INTELIGENTE ====================
 let ultimaPeticionTime = 0;
@@ -110,10 +111,7 @@ const origenInput = document.getElementById('origen');
 const destinoInput = document.getElementById('destino');
 const btnCancelarPedido = document.getElementById('btnCancelarPedido');
 
-if (btnCancelarPedido) {
-    btnCancelarPedido.addEventListener('click', cancelarPedido);
-}
-
+if (btnCancelarPedido) { btnCancelarPedido.addEventListener('click', cancelarPedido); }
 if (origenInput) {
     origenInput.addEventListener('input', (e) => {
         if (busquedaTimeout) clearTimeout(busquedaTimeout);
@@ -191,9 +189,7 @@ function bloquearUIporPedidoActivo(bloquear) {
         }
         
         // Deshabilitar click en el mapa para seleccionar ubicación
-        if (map) {
-            map._container.style.cursor = 'default';
-        }
+        if (map) { map._container.style.cursor = 'default'; }
         
         // Ocultar/deshabilitar botón solicitar envío
         const btnSolicitar = document.querySelector('button[onclick="solicitarEnvio()"], button[onclick="solicitarEnvioMobile()"]');
@@ -213,10 +209,7 @@ function bloquearUIporPedidoActivo(bloquear) {
         }
 
           // ✅ SINCRONIZAR BLOQUEO CON MÓVIL
-        if (typeof sincronizarBloqueoMobile === 'function') {
-            sincronizarBloqueoMobile(true);
-        }
-        
+        if (typeof sincronizarBloqueoMobile === 'function') { sincronizarBloqueoMobile(true); }
         console.log("🔒 UI bloqueada - Pedido activo en curso");
         
     } else {
@@ -253,9 +246,7 @@ function bloquearUIporPedidoActivo(bloquear) {
             destMarker.setOpacity(1);
         }
         
-        if (map) {
-            map._container.style.cursor = 'crosshair';
-        }
+        if (map) { map._container.style.cursor = 'crosshair'; }
         
         const btnSolicitar = document.querySelector('button[onclick="solicitarEnvio()"], button[onclick="solicitarEnvioMobile()"]');
         if (btnSolicitar) {
@@ -264,10 +255,7 @@ function bloquearUIporPedidoActivo(bloquear) {
         }
 
         // ✅ SINCRONIZAR REACTIVACIÓN CON MÓVIL
-        if (typeof sincronizarBloqueoMobile === 'function') {
-            sincronizarBloqueoMobile(false);
-        }
-        
+        if (typeof sincronizarBloqueoMobile === 'function') { sincronizarBloqueoMobile(false); }
         console.log("🔓 UI reactivada - Sin pedido activo");
     }
 }
@@ -302,105 +290,256 @@ async function peticionConThrottling(funcion, nombre, intervaloMinimo = 3000) {
 
 // ==================== INICIALIZACIÓN ====================
 function initMap() {
-    map = L.map('map').setView([18.6456, -91.8249], 13);
-    
-    // Capa del mapa
+    map = L.map('map', {
+        maxBoundsViscosity: 1.0
+    }).setView([18.6456, -91.8249], 13);
+
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
         maxZoom: 19
     }).addTo(map);
-    
-    // ✅ Limitar mapa a Ciudad del Carmen
+
+    // 🔒 Limitar mapa a Ciudad del Carmen
     limitarMapaACarmen(map);
-    
-    // ✅ Inicializar coordenadas por defecto USANDO LAS FUNCIONES HELPER
-    setOriginCoords({ lat: 18.6456, lng: -91.8249 });
-    setDestCoords({ lat: 18.6556, lng: -91.8149 });
-    
-    // Marcador de origen ARRASTRABLE
+    setOriginCoords({
+        lat: 18.6456,
+        lng: -91.8249
+    });
+
+    setDestCoords({
+        lat: 18.6556,
+        lng: -91.8149
+    });
+
+    function limitarCoord(lat, lng) {
+        return limitarCoordenadasACarmen(lat, lng);
+    }
+
     const originIcon = L.divIcon({
-        html: '<div style="background:#FF6200; width:28px; height:28px; border-radius:50%; border:3px solid white; box-shadow:0 2px 5px rgba(0,0,0,0.3); display:flex; align-items:center; justify-content:center;"><i class="fas fa-circle" style="color:white; font-size:12px;"></i></div>',
+        html: `
+            <div style="
+                background:#FF6200;
+                width:28px;
+                height:28px;
+                border-radius:50%;
+                border:3px solid white;
+                box-shadow:0 2px 5px rgba(0,0,0,0.3);
+                display:flex;
+                align-items:center;
+                justify-content:center;
+            ">
+                <i class="fas fa-circle" style="color:white; font-size:12px;"></i>
+            </div>
+        `,
         iconSize: [28, 28],
         className: 'custom-marker'
     });
-    
+
+    // =========================
+    // MARCADOR ORIGEN
+    // =========================
     const origenInicial = getOriginCoords();
-    originMarker = L.marker([origenInicial.lat, origenInicial.lng], { icon: originIcon, draggable: true }).addTo(map);
+
+    originMarker = L.marker(
+        [origenInicial.lat, origenInicial.lng],
+        {
+            icon: originIcon,
+            draggable: true
+        }
+    ).addTo(map);
+
     originMarker.bindPopup('📍 <b>Origen</b><br>Arrástrame para cambiar');
-    
-    // Marcador de destino ARRASTRABLE
-    const destIcon = L.divIcon({
-        html: '<div style="background:#3B82F6; width:28px; height:28px; border-radius:50%; border:3px solid white; box-shadow:0 2px 5px rgba(0,0,0,0.3); display:flex; align-items:center; justify-content:center;"><i class="fas fa-square" style="color:white; font-size:12px;"></i></div>',
-        iconSize: [28, 28],
-        className: 'custom-marker'
+
+    // 🔒 Limitar movimiento en tiempo real
+    originMarker.on('drag', function(e) {
+
+        const latlng = e.target.getLatLng();
+
+        const limitada = limitarCoord(
+            latlng.lat,
+            latlng.lng
+        );
+
+        if (
+            limitada.lat !== latlng.lat ||
+            limitada.lng !== latlng.lng
+        ) {
+            e.target.setLatLng([
+                limitada.lat,
+                limitada.lng
+            ]);
+        }
     });
-    
-    const destinoInicial = getDestCoords();
-    destMarker = L.marker([destinoInicial.lat, destinoInicial.lng], { icon: destIcon, draggable: true }).addTo(map);
-    destMarker.bindPopup('🏁 <b>Destino</b><br>Arrástrame para cambiar');
-    
-    // ✅ Eventos de arrastre con validación de límites (USANDO FUNCIONES HELPER)
+
+    // ✅ Al terminar de mover
     originMarker.on('dragend', function(e) {
         const coords = e.target.getLatLng();
-        if (coords.lat >= 18.58 && coords.lat <= 18.70 && coords.lng >= -91.88 && coords.lng <= -91.75) {
-            setOriginCoords({ lat: coords.lat, lng: coords.lng });
-            const newOrigin = getOriginCoords();
-            reverseGeocode(newOrigin, (addr) => document.getElementById("origen").value = addr);
-            actualizarRutaYTarifa();
-            mostrarToast("📍 Origen actualizado");
-        } else {
-            mostrarToast("❌ Ubicación fuera de Ciudad del Carmen", true);
-            const currentOrigin = getOriginCoords();
-            if (currentOrigin) originMarker.setLatLng([currentOrigin.lat, currentOrigin.lng]);
-        }
+        const limitada = limitarCoord(
+            coords.lat,
+            coords.lng
+        );
+
+        e.target.setLatLng([
+            limitada.lat,
+            limitada.lng
+        ]);
+
+        setOriginCoords(limitada);
+        reverseGeocode(
+            getOriginCoords(),
+            (addr) => {
+                document.getElementById("origen").value = addr;
+            }
+        );
+
+        actualizarRutaYTarifa();
+        mostrarToast("📍 Origen actualizado");
     });
-    
+
+    const destIcon = L.divIcon({
+        html: `
+            <div style="
+                background:#3B82F6;
+                width:28px;
+                height:28px;
+                border-radius:50%;
+                border:3px solid white;
+                box-shadow:0 2px 5px rgba(0,0,0,0.3);
+                display:flex;
+                align-items:center;
+                justify-content:center;
+            ">
+                <i class="fas fa-square" style="color:white; font-size:12px;"></i>
+            </div>
+        `,
+        iconSize: [28, 28],
+        className: 'custom-marker'
+    });
+
+    const destinoInicial = getDestCoords();
+
+    destMarker = L.marker(
+        [destinoInicial.lat, destinoInicial.lng],
+        {
+            icon: destIcon,
+            draggable: true
+        }
+    ).addTo(map);
+
+    destMarker.bindPopup('🏁 <b>Destino</b><br>Arrástrame para cambiar');
+
+    // 🔒 Limitar movimiento en tiempo real
+    destMarker.on('drag', function(e) {
+
+        const latlng = e.target.getLatLng();
+
+        const limitada = limitarCoord(
+            latlng.lat,
+            latlng.lng
+        );
+
+        if (
+            limitada.lat !== latlng.lat ||
+            limitada.lng !== latlng.lng
+        ) {
+            e.target.setLatLng([
+                limitada.lat,
+                limitada.lng
+            ]);
+        }
+
+    });
+
+    // ✅ Al terminar de mover
     destMarker.on('dragend', function(e) {
         const coords = e.target.getLatLng();
-        if (coords.lat >= 18.58 && coords.lat <= 18.70 && coords.lng >= -91.88 && coords.lng <= -91.75) {
-            setDestCoords({ lat: coords.lat, lng: coords.lng });
-            const newDest = getDestCoords();
-            reverseGeocode(newDest, (addr) => document.getElementById("destino").value = addr);
+        const limitada = limitarCoord(
+            coords.lat,
+            coords.lng
+        );
+
+        e.target.setLatLng([
+            limitada.lat,
+            limitada.lng
+        ]);
+
+        setDestCoords(limitada);
+        reverseGeocode(
+            getDestCoords(),
+            (addr) => {
+                document.getElementById("destino").value = addr;
+            }
+        );
+
+        actualizarRutaYTarifa();
+        mostrarToast("🏁 Destino actualizado");
+
+    });
+
+    map.on('click', (e) => {
+
+        const limitada = limitarCoord(
+            e.latlng.lat,
+            e.latlng.lng
+        );
+
+        if (selectMode === 'origen') {
+
+            originMarker.setLatLng([
+                limitada.lat,
+                limitada.lng
+            ]);
+
+            setOriginCoords(limitada);
+            reverseGeocode(
+                getOriginCoords(),
+                (addr) => {
+                    document.getElementById("origen").value = addr;
+                }
+            );
+
+            actualizarRutaYTarifa();
+            mostrarToast("📍 Origen actualizado");
+
+        } else {
+
+            destMarker.setLatLng([
+                limitada.lat,
+                limitada.lng
+            ]);
+
+            setDestCoords(limitada);
+            reverseGeocode(
+                getDestCoords(),
+                (addr) => {
+                    document.getElementById("destino").value = addr;
+                }
+            );
+
             actualizarRutaYTarifa();
             mostrarToast("🏁 Destino actualizado");
-        } else {
-            mostrarToast("❌ Ubicación fuera de Ciudad del Carmen", true);
-            const currentDest = getDestCoords();
-            if (currentDest) destMarker.setLatLng([currentDest.lat, currentDest.lng]);
         }
+
     });
-    
-    // ✅ Click en el mapa con validación (USANDO FUNCIONES HELPER)
-    map.on('click', (e) => {
-        if (e.latlng.lat >= 18.58 && e.latlng.lat <= 18.70 && e.latlng.lng >= -91.88 && e.latlng.lng <= -91.75) {
-            if (selectMode === 'origen') {
-                originMarker.setLatLng(e.latlng);
-                setOriginCoords({ lat: e.latlng.lat, lng: e.latlng.lng });
-                const newOrigin = getOriginCoords();
-                reverseGeocode(newOrigin, (addr) => document.getElementById("origen").value = addr);
-                actualizarRutaYTarifa();
-                mostrarToast("📍 Origen actualizado");
-            } else {
-                destMarker.setLatLng(e.latlng);
-                setDestCoords({ lat: e.latlng.lat, lng: e.latlng.lng });
-                const newDest = getDestCoords();
-                reverseGeocode(newDest, (addr) => document.getElementById("destino").value = addr);
-                actualizarRutaYTarifa();
-                mostrarToast("🏁 Destino actualizado");
-            }
-        } else {
-            mostrarToast("❌ Solo dentro de Ciudad del Carmen", true);
+
+    reverseGeocode(
+        getOriginCoords(),
+        (addr) => {
+            document.getElementById("origen").value = addr;
         }
-    });
-    
-    // ✅ Obtener direcciones iniciales (USANDO FUNCIONES HELPER)
-    const origenFinal = getOriginCoords();
-    const destinoFinal = getDestCoords();
-    reverseGeocode(origenFinal, (addr) => document.getElementById("origen").value = addr);
-    reverseGeocode(destinoFinal, (addr) => document.getElementById("destino").value = addr);
-    
-    // ✅ Inicializar ruta después de un breve retraso
-    setTimeout(() => actualizarRutaYTarifa(), 500);
+    );
+
+    reverseGeocode(
+        getDestCoords(),
+        (addr) => {
+            document.getElementById("destino").value = addr;
+        }
+    );
+
+    setTimeout(() => {
+        actualizarRutaYTarifa();
+    }, 500);
+
 }
 
 function centrarMapa() {
@@ -457,7 +596,8 @@ function limpiarRutaCliente() {
 
 async function dibujarRutaDeliveryEnCliente(ubicacionDelivery, destinoCoords, tipo) {
     if (!ubicacionDelivery || !destinoCoords) {
-        console.log("❌ Faltan coordenadas para dibujar ruta:", { ubicacionDelivery, destinoCoords });
+        console.error("❌ Faltan coordenadas:", { ubicacionDelivery, destinoCoords });
+        mostrarToast("❌ No se puede mostrar la ruta del delivery", true);
         return;
     }
     
@@ -547,137 +687,235 @@ function verRutaCompleta() {
 }
 
 async function actualizarRutaYTarifa() {
-    // ✅ Usar las funciones helper para obtener coordenadas
     const orig = getOriginCoords();
     const dest = getDestCoords();
-    
+
     if (!orig || !dest) {
         console.log("⚠️ No hay coordenadas de origen o destino");
         return;
     }
-    
-    const tarifaContainer = document.getElementById("tarifaContainer");
-    if (tarifaContainer) tarifaContainer.classList.remove("hidden");
-    
-    const tarifaValue = document.getElementById("tarifaValue");
-    if (tarifaValue) {
-        tarifaValue.innerHTML = '<div class="loading-spinner"></div> Calculando...';
+
+    const origenSeguro = limitarCoordenadasACarmen(
+        orig.lat,
+        orig.lng
+    );
+
+    const destinoSeguro = limitarCoordenadasACarmen(
+        dest.lat,
+        dest.lng
+    );
+
+    // Guardar corregidas
+    setOriginCoords(origenSeguro);
+    setDestCoords(destinoSeguro);
+
+    // Corregir marcadores visualmente
+    if (originMarker) {
+        originMarker.setLatLng([
+            origenSeguro.lat,
+            origenSeguro.lng
+        ]);
     }
-    
-    // ✅ Limpiar ruta anterior completamente
+
+    if (destMarker) {
+        destMarker.setLatLng([
+            destinoSeguro.lat,
+            destinoSeguro.lng
+        ]);
+    }
+
+    const tarifaContainer = document.getElementById("tarifaContainer");
+    if (tarifaContainer) { tarifaContainer.classList.remove("hidden"); }
+    const tarifaValue = document.getElementById("tarifaValue");
+    if (tarifaValue) { tarifaValue.innerHTML = '<div class="loading-spinner"></div> Calculando...'; }
     if (routeLine) {
+
         try {
+
             if (typeof routeLine.remove === 'function') {
                 routeLine.remove();
             } else if (routeLine._map) {
                 map.removeLayer(routeLine);
             }
+
         } catch(e) {
-            console.warn("Error limpiando routeLine:", e);
+
+            console.warn(
+                "Error limpiando routeLine:",
+                e
+            );
+
         }
+
         routeLine = null;
     }
-    
-    // ✅ También limpiar clienteRouteControl si existe
-    if (clienteRouteControl) {
-        try {
-            if (clienteRouteControl._map) {
-                map.removeControl(clienteRouteControl);
-            }
+
+    if (clienteRouteControl) { try { if (clienteRouteControl._map) { map.removeControl(clienteRouteControl); }
         } catch(e) {}
         clienteRouteControl = null;
     }
-    
-    // ✅ Guardar los extras actuales antes de recalcular
-    const extrasGuardados = currentRouteData?.extras || null;
+
+    const extrasGuardados =
+        currentRouteData?.extras || {
+            lluvia: false,
+            noche: false,
+            espera: false
+        };
+
     const tipoEnvio = document.getElementById("tipoEnvio")?.value || 'paquete';
-    
-    // ✅ Usar window.originCoords/destCoords para drawRealRoute
     const routeResult = await drawRealRoute(
-        map, 
-        window.originCoords || orig, 
-        window.destCoords || dest, 
-        '#FF6200', 
+        map,
+        origenSeguro,
+        destinoSeguro,
+        '#FF6200',
         5
     );
-    
+
     if (routeResult && routeResult.routeData) {
         routeLine = routeResult.line;
+
         const distance = routeResult.routeData.distance;
         const duration = routeResult.routeData.duration;
-        const rate = calculateShippingRate(distance, tipoEnvio);
-        
-        // ✅ Crear currentRouteData manteniendo los extras si existían
-        currentRouteData = { 
-            distance: distance, 
+        const rate = calculateShippingRate( distance, tipoEnvio );
+
+        // Guardar datos actuales
+        currentRouteData = {
+            distance: distance,
             duration: duration,
-            extras: extrasGuardados || { lluvia: false, noche: false, espera: false }
+            extras: extrasGuardados
         };
-        
-        // ✅ Calcular tarifa base y aplicar extras si existen
+
         let tarifaMostrar = rate.total;
-        if (currentRouteData.extras) {
-            if (currentRouteData.extras.lluvia) tarifaMostrar += 10;
-            if (currentRouteData.extras.noche) tarifaMostrar += 10;
-            if (currentRouteData.extras.espera) tarifaMostrar += 10;
-        }
-        
-        const tarifaElement = document.getElementById("tarifaValue");
+        if (currentRouteData.extras.lluvia) { tarifaMostrar += 10; }
+        if (currentRouteData.extras.noche) { tarifaMostrar += 10; }
+        if (currentRouteData.extras.espera) { tarifaMostrar += 10; }
+
+        // =========================
+        // ACTUALIZAR UI DESKTOP
+        // =========================
+        const tarifaElement =
+            document.getElementById("tarifaValue");
+
         if (tarifaElement) {
-            tarifaElement.innerHTML = `$${tarifaMostrar} MXN`;
+            tarifaElement.innerHTML =
+                `$${tarifaMostrar} MXN`;
         }
-        
-        // ✅ También actualizar versión mobile
-        const tarifaMobile = document.getElementById("tarifaValueMobile");
+
+        // =========================
+        // ACTUALIZAR UI MOBILE
+        // =========================
+        const tarifaMobile =
+            document.getElementById("tarifaValueMobile");
+
         if (tarifaMobile) {
-            tarifaMobile.innerHTML = `$${tarifaMostrar} MXN`;
+            tarifaMobile.innerHTML =
+                `$${tarifaMostrar} MXN`;
         }
-        
-        mostrarToast(`📏 Distancia: ${distance.toFixed(2)} km • ⏱️ ${formatDuration(duration)}`);
-        
-    } else {
-        // ✅ Fallback: calcular distancia directa
-        const distance = calcularDistanciaEntrePuntos(orig, dest);
-        const rate = calculateShippingRate(distance, tipoEnvio);
-        
-        // ✅ Crear currentRouteData manteniendo los extras si existían
-        currentRouteData = { 
-            distance: distance, 
-            duration: distance * 2,
-            extras: extrasGuardados || { lluvia: false, noche: false, espera: false }
+
+        // =========================
+        // MENSAJE
+        // =========================
+        mostrarToast(
+            `📏 Distancia: ${distance.toFixed(2)} km • ⏱️ ${formatDuration(duration)}`
+        );
+
+    }
+
+    // =========================
+    // FALLBACK SI FALLA OSRM
+    // =========================
+    else {
+
+        const distance =
+            calcularDistanciaEntrePuntos(
+                origenSeguro,
+                destinoSeguro
+            );
+
+        const duration =
+            distance * 2;
+
+        const rate =
+            calculateShippingRate(
+                distance,
+                tipoEnvio
+            );
+
+        currentRouteData = {
+            distance: distance,
+            duration: duration,
+            extras: extrasGuardados
         };
-        
+
+        // =========================
+        // TARIFA FINAL
+        // =========================
         let tarifaMostrar = rate.total;
-        if (currentRouteData.extras) {
-            if (currentRouteData.extras.lluvia) tarifaMostrar += 10;
-            if (currentRouteData.extras.noche) tarifaMostrar += 10;
-            if (currentRouteData.extras.espera) tarifaMostrar += 10;
+
+        if (currentRouteData.extras.lluvia) {
+            tarifaMostrar += 10;
         }
-        
-        const tarifaElement = document.getElementById("tarifaValue");
+
+        if (currentRouteData.extras.noche) {
+            tarifaMostrar += 10;
+        }
+
+        if (currentRouteData.extras.espera) {
+            tarifaMostrar += 10;
+        }
+
+        // =========================
+        // UI DESKTOP
+        // =========================
+        const tarifaElement =
+            document.getElementById("tarifaValue");
+
         if (tarifaElement) {
-            tarifaElement.innerHTML = `$${tarifaMostrar} MXN (estimado)`;
+            tarifaElement.innerHTML =
+                `$${tarifaMostrar} MXN (estimado)`;
         }
-        
-        const tarifaMobile = document.getElementById("tarifaValueMobile");
+
+        // =========================
+        // UI MOBILE
+        // =========================
+        const tarifaMobile =
+            document.getElementById("tarifaValueMobile");
+
         if (tarifaMobile) {
-            tarifaMobile.innerHTML = `$${tarifaMostrar} MXN (estimado)`;
+            tarifaMobile.innerHTML =
+                `$${tarifaMostrar} MXN (estimado)`;
         }
-        
-        // ✅ Línea recta como fallback (usando las coordenadas correctas)
-        if (map && window.originCoords && window.destCoords) {
+
+        // =========================
+        // LÍNEA RECTA FALLBACK
+        // =========================
+        if (map) {
+
             routeLine = L.polyline([
-                [window.originCoords.lat, window.originCoords.lng],
-                [window.destCoords.lat, window.destCoords.lng]
-            ], { color: '#FF6200', weight: 5, opacity: 0.6, dashArray: '5, 10' }).addTo(map);
-        } else if (map && orig && dest) {
-            routeLine = L.polyline([
-                [orig.lat, orig.lng],
-                [dest.lat, dest.lng]
-            ], { color: '#FF6200', weight: 5, opacity: 0.6, dashArray: '5, 10' }).addTo(map);
+                [
+                    origenSeguro.lat,
+                    origenSeguro.lng
+                ],
+                [
+                    destinoSeguro.lat,
+                    destinoSeguro.lng
+                ]
+            ], {
+                color: '#FF6200',
+                weight: 5,
+                opacity: 0.6,
+                dashArray: '5, 10'
+            }).addTo(map);
+
         }
-        
-        mostrarToast(`📏 Distancia: ${distance.toFixed(2)} km (estimado)`);
+
+        // =========================
+        // MENSAJE
+        // =========================
+        mostrarToast(
+            `📏 Distancia: ${distance.toFixed(2)} km (estimado)`
+        );
+
     }
 }
 
@@ -709,28 +947,6 @@ function initDefaultCoords() {
     
     if (!window.originCoords) setOriginCoords(defaultCoords);
     if (!window.destCoords) setDestCoords(defaultDestCoords);
-}
-
-// ✅ Función para calcular distancia entre dos puntos (útil para fallback)
-function calcularDistanciaEntrePuntos(punto1, punto2) {
-    if (!punto1 || !punto2) return 0;
-    const R = 6371; // km
-    const dLat = (punto2.lat - punto1.lat) * Math.PI / 180;
-    const dLon = (punto2.lng - punto1.lng) * Math.PI / 180;
-    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-              Math.cos(punto1.lat * Math.PI / 180) * Math.cos(punto2.lat * Math.PI / 180) *
-              Math.sin(dLon/2) * Math.sin(dLon/2);
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-}
-
-function calcularDistancia() {
-    const R = 6371;
-    const dLat = (destCoords.lat - originCoords.lat) * Math.PI / 180;
-    const dLon = (destCoords.lng - originCoords.lng) * Math.PI / 180;
-    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-              Math.cos(originCoords.lat * Math.PI / 180) * Math.cos(destCoords.lat * Math.PI / 180) *
-              Math.sin(dLon/2) * Math.sin(dLon/2);
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
 function reverseGeocode(latlng, callback) {
@@ -1907,86 +2123,6 @@ async function mostrarDeliveryEnMapa(deliveryId, deliveryNombre = null) {
     }
 }
 
-function mostrarToast(msg, err = false) {
-    // ✅ Eliminar toasts anteriores para evitar acumulación
-    const toastsAnteriores = document.querySelectorAll('.toast-moderno');
-    toastsAnteriores.forEach(toast => toast.remove());
-    
-    const toast = document.createElement('div');
-    toast.className = 'toast-moderno';
-    
-    // ✅ Diseño moderno y adaptable a móvil
-    const isMobile = window.innerWidth < 768;
-    const paddingY = isMobile ? '12px' : '14px';
-    const paddingX = isMobile ? '20px' : '28px';
-    const fontSize = isMobile ? '13px' : '14px';
-    
-    // Iconos según el tipo
-    let icono = err ? 'fa-exclamation-triangle' : 'fa-check-circle';
-    let colorFondo = err 
-        ? 'linear-gradient(135deg, #dc2626, #b91c1c)' 
-        : 'linear-gradient(135deg, #10b981, #059669)';
-    
-    // Si el mensaje contiene palabras clave, personalizar icono
-    if (msg.includes('📍')) icono = 'fa-location-dot';
-    else if (msg.includes('🏁')) icono = 'fa-flag-checkered';
-    else if (msg.includes('💰') || msg.includes('$')) icono = 'fa-money-bill-wave';
-    else if (msg.includes('🚚') || msg.includes('delivery')) icono = 'fa-motorcycle';
-    else if (msg.includes('✅')) icono = 'fa-circle-check';
-    else if (msg.includes('❌')) icono = 'fa-circle-exclamation';
-    
-    toast.style.cssText = `
-        position: fixed;
-        bottom: ${isMobile ? '80px' : '20px'};
-        left: 50%;
-        transform: translateX(-50%) translateY(20px);
-        background: ${colorFondo};
-        color: white;
-        padding: ${paddingY} ${paddingX};
-        border-radius: ${isMobile ? '30px' : '50px'};
-        font-size: ${fontSize};
-        font-weight: 500;
-        z-index: 100000;
-        box-shadow: 0 10px 25px -5px rgba(0,0,0,0.2), 0 8px 10px -6px rgba(0,0,0,0.1);
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        opacity: 0;
-        transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        backdrop-filter: blur(4px);
-        border: 1px solid rgba(255,255,255,0.2);
-        max-width: ${isMobile ? '85%' : 'auto'};
-        white-space: ${isMobile ? 'normal' : 'nowrap'};
-        text-align: center;
-        line-height: 1.4;
-        word-break: break-word;
-    `;
-    
-    toast.innerHTML = `
-        <i class="fas ${icono}" style="font-size: ${isMobile ? '16px' : '18px'}; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.2));"></i>
-        <span>${msg}</span>
-    `;
-    
-    document.body.appendChild(toast);
-    
-    // Animación de entrada
-    setTimeout(() => {
-        toast.style.transform = 'translateX(-50%) translateY(0)';
-        toast.style.opacity = '1';
-    }, 10);
-    
-    // Mostrar por más tiempo si es error o mensaje largo
-    const duracion = err ? 3500 : (msg.length > 50 ? 3500 : 2500);
-    
-    // Animación de salida
-    setTimeout(() => {
-        toast.style.transform = 'translateX(-50%) translateY(20px)';
-        toast.style.opacity = '0';
-        setTimeout(() => toast.remove(), 400);
-    }, duracion);
-}
-
 function mostrarResumenRuta() {
     if (!originCoords || !destCoords) {
         mostrarToast("❌ Selecciona origen y destino primero", true);
@@ -2420,7 +2556,6 @@ function cerrarModalResumen() {
 }
 
 // ==================== BÚSQUEDA DE DIRECCIONES ====================
-let busquedaTimeout = null;
 
 async function buscarDirecciones(query, tipo) {
     if (!query || query.length < 3) {
@@ -2640,59 +2775,15 @@ function limpiarTodosLosIntervalos() {
         console.log("✅ seguimientoInterval limpiado");
     }
     
-    if (ubicacionInterval) {
-        clearInterval(ubicacionInterval);
-        ubicacionInterval = null;
-        console.log("✅ ubicacionInterval limpiado");
-    }
-    
-    if (deliverysInterval) {
-        clearInterval(deliverysInterval);
-        deliverysInterval = null;
-        console.log("✅ deliverysInterval limpiado");
-    }
-    
-    // Limpiar timeout si existe
-    if (busquedaTimeout) {
-        clearTimeout(busquedaTimeout);
-        busquedaTimeout = null;
-    }
+    if (ubicacionInterval) { clearInterval(ubicacionInterval); ubicacionInterval = null; console.log("✅ ubicacionInterval limpiado"); }
+    if (deliverysInterval) { clearInterval(deliverysInterval); deliverysInterval = null; console.log("✅ deliverysInterval limpiado"); }
+    if (busquedaTimeout) { clearTimeout(busquedaTimeout); busquedaTimeout = null; }
     
     // Limpiar rutas del mapa para liberar memoria
-    if (clienteRouteControl) {
-        try {
-            if (clienteRouteControl._map) {
-                map.removeControl(clienteRouteControl);
-            }
-        } catch(e) {}
-        clienteRouteControl = null;
-    }
-    
+    if (clienteRouteControl) {try { if (clienteRouteControl._map) { map.removeControl(clienteRouteControl); } } catch(e) {} clienteRouteControl = null; }
     // Eliminar marcadores
-    if (deliveryMarker) {
-        try { map.removeLayer(deliveryMarker); } catch(e) {}
-        deliveryMarker = null;
-    }
-    
+    if (deliveryMarker) { try { map.removeLayer(deliveryMarker); } catch(e) {} deliveryMarker = null; }
     console.log("✅ Todos los recursos liberados");
-}
-
-// ==================== SINCRONIZACIÓN CON MÓVIL ====================
-function sincronizarBloqueoMobile(bloquear) {
-    const inputsMobile = ['origenMobile', 'destinoMobile'];
-    inputsMobile.forEach(id => {
-        const input = document.getElementById(id);
-        if (input) {
-            input.disabled = bloquear;
-            if (bloquear) {
-                input.classList.add('bg-gray-100', 'cursor-not-allowed', 'opacity-70');
-                input.placeholder = id === 'origenMobile' ? '📍 Origen (bloqueado)' : '🏁 Destino (bloqueado)';
-            } else {
-                input.classList.remove('bg-gray-100', 'cursor-not-allowed', 'opacity-70');
-                input.placeholder = id === 'origenMobile' ? 'Buscar dirección...' : 'Buscar dirección...';
-            }
-        }
-    });
 }
 
 // Guardar referencia a la función original de cerrar sesión si existe
@@ -2731,5 +2822,3 @@ document.addEventListener('visibilitychange', function() {
         console.log("🟢 Pestaña visible - Reanudando actividad normal");
     }
 });
-
-

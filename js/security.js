@@ -84,6 +84,15 @@ class SecurityManager {
 
     // ==================== CONTROL DE SESIÓN ÚNICA ====================
     
+    // Limpiar todo rastro de sesión (para conflictos)
+    async limpiarTodo() {
+        // Limpiar localStorage
+        localStorage.removeItem(this.SESSION_KEY);
+        localStorage.removeItem('sesion_activa_temp');
+        localStorage.removeItem('device_id');
+        console.log("🧹 Sesión limpiada por conflicto");
+    }
+    
     // Iniciar sesión (guardar token único)
     async iniciarSesion(usuario) {
         const sessionToken = this.generateUUID();
@@ -117,7 +126,7 @@ class SecurityManager {
                 })
                 .eq('id', usuario.id);
                 
-            // Registrar en tabla de sesiones (nueva tabla recomendada)
+            // Registrar en tabla de sesiones (opcional)
             await this.registrarSesion(sessionData);
         }
         
@@ -130,7 +139,6 @@ class SecurityManager {
         if (!supabase) return;
         
         try {
-            // Verificar si existe la tabla, si no, crearla
             await supabase.from('sesiones').insert([sessionData]);
         } catch(e) {
             console.log('Tabla sesiones no existe, omitiendo registro');
@@ -164,7 +172,7 @@ class SecurityManager {
                                   usuario.device_id === this.DEVICE_ID;
             
             if (!sessionValida) {
-                // ¡Sesión expirada! Alguien más inició sesión
+                await this.limpiarTodo();
                 this.cerrarSesionForzado();
                 return false;
             }
@@ -198,7 +206,11 @@ class SecurityManager {
         localStorage.removeItem(this.SESSION_KEY);
         
         // Mostrar mensaje y redirigir
-        Shared.mostrarToast("⚠️ Sesión cerrada: iniciaste sesión en otro dispositivo", true);
+        if (window.mostrarToast) {
+            window.mostrarToast("⚠️ Sesión cerrada: iniciaste sesión en otro dispositivo", true);
+        } else {
+            alert("⚠️ Sesión cerrada: iniciaste sesión en otro dispositivo");
+        }
         setTimeout(() => {
             window.location.href = "index.html";
         }, 2000);
@@ -213,13 +225,12 @@ class SecurityManager {
         this.activeSessionCheck = setInterval(async () => {
             const esValida = await this.verificarSesionUnica();
             if (!esValida) {
-                // La función ya redirige, solo limpiamos el intervalo
                 if (this.activeSessionCheck) {
                     clearInterval(this.activeSessionCheck);
                     this.activeSessionCheck = null;
                 }
             }
-        }, 5000); // Verificar cada 5 segundos
+        }, 5000);
     }
     
     // Detener monitoreo
@@ -232,7 +243,6 @@ class SecurityManager {
     
     // Simular hash de IP (para privacidad)
     async hashIP() {
-        // En producción, esto se haría desde el backend
         return 'hashed_' + this.generateUUID().substring(0, 8);
     }
     

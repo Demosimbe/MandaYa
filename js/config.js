@@ -333,7 +333,7 @@ async function obtenerUbicacionDeSupabase(deliveryId) {
         return null;
     }
 }
-
+// ==================== SINCRONIZACIÓN CON MÓVIL ====================
   function sincronizarBloqueoMobile(bloquear) {
         const inputsMobile = ['origenMobile', 'destinoMobile'];
         inputsMobile.forEach(id => {
