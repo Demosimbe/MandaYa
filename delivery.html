@@ -5,240 +5,120 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>MandaYa - Panel Delivery</title>
     
- <!-- ✅ Script para silenciar la advertencia (AHORA ANTES del CDN) -->
+    <!-- ✅ Script para silenciar la advertencia -->
     <script>const originalWarn = console.warn;console.warn = function(...args) { if (args[0] && args[0].includes('cdn.tailwindcss.com should not be used in production')) return; originalWarn.apply(console, args);};</script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-    
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    
-    <!-- Leaflet Routing Machine -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
     <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
-
-    <!-- Supabase JS -->
+    <script src="https://cdn.jsdelivr.net/npm/leaflet-rotatedmarker@0.2.0/leaflet.rotatedMarker.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body { 
-            background-color: #f8fafc;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-        }
-        
-        .sidebar { 
-            box-shadow: -4px 0 15px rgba(0, 0, 0, 0.1);
-            background: white;
-        }
-        
-        #map { 
-            height: 100vh; 
-            width: 100%; 
-            z-index: 1;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+        .sidebar { box-shadow: -4px 0 15px rgba(0, 0, 0, 0.1); background: white; }
+        #map { height: 100vh; width: 100%; z-index: 1; }
         
         .toast-message {
-            position: fixed;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%) translateY(20px);
-            background: #1f2937;
-            color: white;
-            padding: 14px 28px;
-            border-radius: 50px;
-            font-size: 14px;
-            font-weight: 500;
-            z-index: 10000;
-            box-shadow: 0 10px 25px -5px rgba(0,0,0,0.2);
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            opacity: 0;
-            transition: all 0.3s ease;
+            position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(20px);
+            background: #1f2937; color: white; padding: 14px 28px; border-radius: 50px;
+            font-size: 14px; font-weight: 500; z-index: 10000;
+            box-shadow: 0 10px 25px -5px rgba(0,0,0,0.2); display: flex; align-items: center; gap: 8px;
+            opacity: 0; transition: all 0.3s ease;
         }
         
-        .pedido-card {
-            transition: all 0.3s ease;
-            cursor: pointer;
-        }
+        .pedido-card { transition: all 0.3s ease; cursor: pointer; }
+        .pedido-card:hover { transform: translateX(-5px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
         
-        .pedido-card:hover { 
-            transform: translateX(-5px); 
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1); 
-        }
+        .online-dot { animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(1.1); } 100% { opacity: 1; transform: scale(1); } }
         
-        .online-dot { 
-            animation: pulse 2s infinite; 
-        }
+        .pedido-seleccionado { border: 2px solid #FF6200; background: #fff7ed; }
+        .moto-marker { background: transparent; border: none; }
         
-        @keyframes pulse {
-            0% { opacity: 1; transform: scale(1); }
-            50% { opacity: 0.5; transform: scale(1.1); }
-            100% { opacity: 1; transform: scale(1); }
-        }
+        .overflow-y-auto::-webkit-scrollbar { width: 4px; }
+        .overflow-y-auto::-webkit-scrollbar-track { background: #e5e7eb; border-radius: 10px; }
+        .overflow-y-auto::-webkit-scrollbar-thumb { background: #FF6200; border-radius: 10px; }
         
-        .pedido-seleccionado { 
-            border: 2px solid #FF6200; 
-            background: #fff7ed; 
-        }
-        
-        .moto-marker {
-            background: transparent;
-            border: none;
-        }
-        
-        /* Scrollbar bonito */
-        .overflow-y-auto::-webkit-scrollbar {
-            width: 4px;
-        }
-        
-        .overflow-y-auto::-webkit-scrollbar-track {
-            background: #e5e7eb;
-            border-radius: 10px;
-        }
-        
-        .overflow-y-auto::-webkit-scrollbar-thumb {
-            background: #FF6200;
-            border-radius: 10px;
-        }
-        
-        /* Responsive ajustes */
         @media (max-width: 1024px) {
-            .delivery-info {
-                bottom: 80px;
-                right: 16px;
-                left: auto;
-                padding: 10px 16px;
-                font-size: 12px;
-            }
+            .delivery-info { bottom: 80px; right: 16px; left: auto; padding: 10px 16px; font-size: 12px; }
         }
         
-        /* Botón flotante para mobile */
-        .fab-menu {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            z-index: 1000;
-        }
+        .fab-menu { position: fixed; bottom: 20px; right: 20px; z-index: 1000; }
+        .fab-button { background: #FF6200; width: 56px; height: 56px; border-radius: 28px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.3); cursor: pointer; transition: all 0.3s ease; }
+        .fab-button:hover { transform: scale(1.05); background: #E65C00; }
         
-        .fab-button {
-            background: #FF6200;
-            width: 56px;
-            height: 56px;
-            border-radius: 28px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
+        .line-clamp-1 { display: -webkit-box; -webkit-line-clamp: 1; line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
         
-        .fab-button:hover {
-            transform: scale(1.05);
-            background: #E65C00;
-        }
-
-        .line-clamp-1 {
-    display: -webkit-box;
-    -webkit-line-clamp: 1;
-    line-clamp: 1;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-}
-        
-        /* Badge superior */
         .badge-top {
-            position: absolute;
-            top: 16px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(255,255,255,0.95);
-            backdrop-filter: blur(4px);
-            padding: 8px 16px;
-            border-radius: 30px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-            z-index: 1000;
-            font-size: 14px;
-            font-weight: 500;
-            white-space: nowrap;
+            position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+            background: rgba(255,255,255,0.95); backdrop-filter: blur(4px);
+            padding: 8px 16px; border-radius: 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            z-index: 1000; font-size: 14px; font-weight: 500; white-space: nowrap;
         }
         
         @media (max-width: 640px) {
-            .badge-top span.desktop-text {
-                display: none;
-            }
-            .badge-top span.mobile-text {
-                display: inline;
-            }
-            .badge-top {
-                font-size: 12px;
-                padding: 6px 12px;
-            }
+            .badge-top span.desktop-text { display: none; }
+            .badge-top span.mobile-text { display: inline; }
+            .badge-top { font-size: 12px; padding: 6px 12px; }
+        }
+        @media (min-width: 641px) {
+            .badge-top span.desktop-text { display: inline; }
+            .badge-top span.mobile-text { display: none; }
         }
         
-        @media (min-width: 641px) {
-            .badge-top span.desktop-text {
-                display: inline;
-            }
-            .badge-top span.mobile-text {
-                display: none;
-            }
+        @media (max-width: 768px) {
+            .toast-moderno { white-space: normal !important; text-align: center; line-height: 1.4; max-width: calc(100% - 40px) !important; word-break: break-word; font-size: 13px; padding: 12px 20px !important; bottom: 80px !important; }
         }
-        /* Estilos adicionales para toasts en móvil */
-@media (max-width: 768px) {
-    .toast-moderno {
-        white-space: normal !important;
-        text-align: center;
-        line-height: 1.4;
-        max-width: calc(100% - 40px) !important;
-        word-break: break-word;
-        font-size: 13px;
-        padding: 12px 20px !important;
-        bottom: 80px !important;
-    }
-}
-
-/* Modal de confirmación con entrada suave */
-#modalConfirmacionDelivery {
-    animation: fadeIn 0.2s ease-out;
-}
-
-#modalConfirmacionDelivery .modal-uber {
-    animation: slideUp 0.3s ease-out;
-}
-
-@keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
-}
-
-@keyframes slideUp {
-    from { transform: translateY(30px); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
-}
-
-/* Animación de vibración suave para errores */
-@keyframes shakeToast {
-    0%, 100% { transform: translateX(-50%) translateY(0); }
-    25% { transform: translateX(-52%) translateY(0); }
-    75% { transform: translateX(-48%) translateY(0); }
-}
-
-.toast-error-shake {
-    animation: shakeToast 0.3s ease-in-out !important;
-}
+        
+        #modalConfirmacionDelivery { animation: fadeIn 0.2s ease-out; }
+        #modalConfirmacionDelivery .modal-uber { animation: slideUp 0.3s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes slideUp { from { transform: translateY(30px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes shakeToast { 0%, 100% { transform: translateX(-50%) translateY(0); } 25% { transform: translateX(-52%) translateY(0); } 75% { transform: translateX(-48%) translateY(0); } }
+        .toast-error-shake { animation: shakeToast 0.3s ease-in-out !important; }
+        
+        /* Botones del mapa - contenedor compacto */
+        .map-buttons-container {
+            position: absolute;
+            bottom: 20px;
+            right: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            z-index: 1000;
+        }
+        
+        .map-btn {
+            background: white;
+            padding: 12px;
+            border-radius: 50%;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 44px;
+            height: 44px;
+        }
+        
+        .map-btn:hover { background: #f3f4f6; transform: scale(1.05); }
+        .map-btn i { font-size: 18px; }
+        
+        @media (max-width: 640px) {
+            .map-buttons-container { bottom: 80px; gap: 8px; }
+            .map-btn { padding: 10px; width: 40px; height: 40px; }
+            .map-btn i { font-size: 16px; }
+        }
     </style>
 </head>
 <body class="h-screen overflow-hidden flex flex-row">
 
-    <!-- MAPA (IZQUIERDA en PC) -->
+    <!-- ==================== MAPA (IZQUIERDA en PC) ==================== -->
     <div class="flex-1 relative h-full w-full order-first lg:order-first">
         <div id="map" class="h-full w-full"></div>
         
@@ -268,11 +148,29 @@
                 </div>
             </div>
         </div>
-         
-        <!-- Botón centrar mapa -->
-        <button onclick="centrarMapa()" class="absolute bottom-20 right-4 bg-white p-3 rounded-full shadow-lg z-[1000] hover:bg-gray-100 transition-all">
-            <i class="fas fa-location-dot text-[#FF6200] text-lg"></i>
-        </button>
+        
+        <!-- Contenedor de botones del mapa (lado derecho, ordenados de abajo hacia arriba) -->
+        <div class="map-buttons-container">
+            <!-- Centrar mapa (abajo del todo) -->
+            <div class="map-btn" onclick="centrarMapa()" title="Centrar mapa">
+                <i class="fas fa-location-dot text-[#FF6200]"></i>
+            </div>
+            
+            <!-- Rotar izquierda -->
+            <div class="map-btn" onclick="rotateMapLeft()" title="Rotar izquierda">
+                <i class="fas fa-undo-alt text-blue-500 transform scale-x-[-1]"></i>
+            </div>
+            
+            <!-- Resetear rotación -->
+            <div class="map-btn" onclick="resetMapRotation()" title="Resetear orientación">
+                <i class="fas fa-compass text-green-500"></i>
+            </div>
+            
+            <!-- Rotar derecha (arriba del todo) -->
+            <div class="map-btn" onclick="rotateMapRight()" title="Rotar derecha">
+                <i class="fas fa-undo-alt text-blue-500"></i>
+            </div>
+        </div>
         
         <!-- Botón toggle sidebar mobile (solo se ve en móvil) -->
         <button onclick="toggleMobileSidebar()" class="fixed bottom-20 left-4 bg-[#FF6200] text-white p-3 rounded-full shadow-lg z-[1000] lg:hidden">
@@ -280,7 +178,7 @@
         </button>
     </div>
 
-    <!-- SIDEBAR DESKTOP (DERECHA en PC) -->
+    <!-- ==================== SIDEBAR DESKTOP (DERECHA en PC) ==================== -->
     <div class="hidden lg:flex w-96 bg-white sidebar flex-col h-full overflow-auto z-10 relative shadow-xl order-last lg:order-last">
         <div class="bg-[#FF6200] text-white p-5 flex items-center justify-between sticky top-0 z-20">
             <div class="flex items-center gap-3">
@@ -338,7 +236,7 @@
         </div>
     </div>
 
-    <!-- SIDEBAR MOBILE (flotante abajo, solo visible en móvil) -->
+    <!-- ==================== SIDEBAR MOBILE ==================== -->
     <div id="mobileSidebar" class="fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-2xl z-50 transition-transform duration-300 transform translate-y-0 lg:hidden" style="max-height: 70vh; overflow-y: auto;">
         <div class="bg-[#FF6200] text-white p-4 rounded-t-3xl flex items-center justify-between sticky top-0 z-20">
             <div class="flex items-center gap-2">
@@ -390,14 +288,14 @@
         </div>
     </div>
 
+    <!-- ==================== SCRIPTS ==================== -->
     <script src="js/shared.js"></script>
     <script src="js/security.js"></script>
     <script src="js/config.js"></script>
     <script src="js/map-utils.js"></script>
     <script src="js/delivery.js"></script>
-   
+    
     <script>
-        // Función para toggle del sidebar mobile
         let mobileSidebarOpen = true;
         
         function toggleMobileSidebar() {
@@ -411,7 +309,6 @@
             }
         }
         
-        // Sincronizar los pedidos con los contenedores mobile
         function actualizarListaPedidosMobile() {
             const containerDisponibles = document.getElementById("pedidosDisponibles");
             const containerActivos = document.getElementById("pedidosActivos");
@@ -426,7 +323,6 @@
             }
         }
         
-        // Sincronizar userInfo mobile
         function actualizarUserInfoMobile() {
             const userInfo = document.getElementById("userInfo");
             const userInfoMobile = document.getElementById("userInfoMobile");
@@ -442,48 +338,40 @@
             }
         }
         
-       // ==================== CONTROL DE INTERVALOS ====================
-// Guardamos el intervalo en una variable para poder limpiarlo después
-let syncInterval = null;
-
-// Función que ejecuta la sincronización
-function ejecutarSincronizacion() {
-    actualizarListaPedidosMobile();
-    actualizarUserInfoMobile();
-}
-
-// Iniciar el intervalo solo si no existe
-function iniciarSincronizacion() {
-    if (syncInterval) return; // Ya está corriendo
-    syncInterval = setInterval(ejecutarSincronizacion, 500);
-    console.log("✅ Sincronización mobile iniciada");
-}
-
-// Detener el intervalo
-function detenerSincronizacion() {
-    if (syncInterval) {
-        clearInterval(syncInterval);
-        syncInterval = null;
-        console.log("🛑 Sincronización mobile detenida");
-    }
-}
-
-// Iniciar la sincronización automáticamente
-iniciarSincronizacion();
-
-// ✅ IMPORTANTE: Detener la sincronización cuando la página se cierra o cambia
-window.addEventListener('beforeunload', function() {
-    detenerSincronizacion();
-});
-
-// ✅ También limpiar cuando el usuario cierra sesión
-const originalCerrarSesion = window.cerrarSesion;
-window.cerrarSesion = function() {
-    detenerSincronizacion();
-    if (originalCerrarSesion) {
-        originalCerrarSesion();
-    }
-};
+        let syncInterval = null;
+        
+        function ejecutarSincronizacion() {
+            actualizarListaPedidosMobile();
+            actualizarUserInfoMobile();
+        }
+        
+        function iniciarSincronizacion() {
+            if (syncInterval) return;
+            syncInterval = setInterval(ejecutarSincronizacion, 500);
+            console.log("✅ Sincronización mobile iniciada");
+        }
+        
+        function detenerSincronizacion() {
+            if (syncInterval) {
+                clearInterval(syncInterval);
+                syncInterval = null;
+                console.log("🛑 Sincronización mobile detenida");
+            }
+        }
+        
+        iniciarSincronizacion();
+        
+        window.addEventListener('beforeunload', function() {
+            detenerSincronizacion();
+        });
+        
+        const originalCerrarSesion = window.cerrarSesion;
+        window.cerrarSesion = function() {
+            detenerSincronizacion();
+            if (originalCerrarSesion) {
+                originalCerrarSesion();
+            }
+        };
         
         function centrarMapa() {
             if (map) map.setView([18.6456, -91.8249], 13);

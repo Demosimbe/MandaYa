@@ -1,5 +1,4 @@
 // Utilidades para mapas y rutas
-
 function getMotoIcon() {
     return L.divIcon({
         html: '<div style="background:#FF6200; width:32px; height:32px; border-radius:50%; border:2px solid white; box-shadow:0 2px 5px rgba(0,0,0,0.3); display:flex; align-items:center; justify-content:center;"><i class="fas fa-motorcycle" style="color:white; font-size:16px;"></i></div>',

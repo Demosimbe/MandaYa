@@ -1658,3 +1658,58 @@ function mostrarToast(msg, err = false) {
         setTimeout(() => toast.remove(), 400);
     }, duracion);
 }
+
+// ==================== ROTACIÓN DEL MAPA (2D) ====================
+let mapRotationAngle = 0;
+
+function rotateMapLeft() {
+    mapRotationAngle = (mapRotationAngle - 45) % 360;
+    applyMapRotationDelivery();
+    mostrarToast(`🧭 Mapa girado ${mapRotationAngle}°`);
+}
+
+function rotateMapRight() {
+    mapRotationAngle = (mapRotationAngle + 45) % 360;
+    applyMapRotationDelivery();
+    mostrarToast(`🧭 Mapa girado ${mapRotationAngle}°`);
+}
+
+function resetMapRotation() {
+    mapRotationAngle = 0;
+    applyMapRotationDelivery();
+    mostrarToast("🧭 Orientación restablecida");
+}
+
+function applyMapRotationDelivery() {
+    const mapContainer = map.getContainer();
+    const currentCenter = map.getCenter();
+    
+    mapContainer.style.transform = `rotate(${mapRotationAngle}deg)`;
+    mapContainer.style.transition = 'transform 0.3s ease';
+    
+    if (mapRotationAngle !== 0) {
+        mapContainer.style.width = '150%';
+        mapContainer.style.height = '150%';
+        mapContainer.style.margin = '-25%';
+    } else {
+        mapContainer.style.width = '100%';
+        mapContainer.style.height = '100%';
+        mapContainer.style.margin = '0';
+    }
+    
+    // Rotar marcadores
+    if (userMarker && userMarker.setRotationAngle) {
+        userMarker.setRotationAngle(mapRotationAngle);
+    }
+    if (recogidaMarker && recogidaMarker.setRotationAngle) {
+        recogidaMarker.setRotationAngle(mapRotationAngle);
+    }
+    if (destinoMarker && destinoMarker.setRotationAngle) {
+        destinoMarker.setRotationAngle(mapRotationAngle);
+    }
+    
+    setTimeout(() => {
+        map.invalidateSize();
+        map.setView(currentCenter);
+    }, 50);
+}

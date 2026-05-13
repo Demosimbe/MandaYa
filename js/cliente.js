@@ -19,6 +19,7 @@ let rutaDestinoActual = null;  // Guardar destino para comparar
 let rutaYaDibujada = false;
 let ultimoEstadoPedido = null;
 let busquedaTimeout = null;
+let mapRotationAngle = 0;
 
 // ==================== CONTROL DE PETICIONES INTELIGENTE ====================
 let ultimaPeticionTime = 0;
@@ -2762,6 +2763,65 @@ async function tienePedidoActivo(deliveryId) {
         console.error('Error verificando pedido activo:', e);
         return false;
     }
+}
+
+// ==================== ROTACIÓN DEL MAPA (2D) ====================
+function rotateMapLeft() {
+    mapRotationAngle = (mapRotationAngle - 45) % 360;
+    applyMapRotation();
+    mostrarToast(`🧭 Mapa girado ${mapRotationAngle}°`);
+}
+
+function rotateMapRight() {
+    mapRotationAngle = (mapRotationAngle + 45) % 360;
+    applyMapRotation();
+    mostrarToast(`🧭 Mapa girado ${mapRotationAngle}°`);
+}
+
+function resetMapRotation() {
+    mapRotationAngle = 0;
+    applyMapRotation();
+    mostrarToast("🧭 Orientación restablecida");
+}
+
+function applyMapRotation() {
+    const mapContainer = map.getContainer();
+    const center = map.getCenter();
+    
+    // Guardar el centro actual
+    const currentCenter = map.getCenter();
+    
+    // Aplicar rotación CSS
+    mapContainer.style.transform = `rotate(${mapRotationAngle}deg)`;
+    mapContainer.style.transition = 'transform 0.3s ease';
+    
+    // Ajustar para evitar bordes blancos
+    if (mapRotationAngle !== 0) {
+        mapContainer.style.width = '150%';
+        mapContainer.style.height = '150%';
+        mapContainer.style.margin = '-25%';
+    } else {
+        mapContainer.style.width = '100%';
+        mapContainer.style.height = '100%';
+        mapContainer.style.margin = '0';
+    }
+    
+    // Rotar marcadores que lo soporten
+    if (originMarker && originMarker.setRotationAngle) {
+        originMarker.setRotationAngle(mapRotationAngle);
+    }
+    if (destMarker && destMarker.setRotationAngle) {
+        destMarker.setRotationAngle(mapRotationAngle);
+    }
+    if (deliveryMarker && deliveryMarker.setRotationAngle) {
+        deliveryMarker.setRotationAngle(mapRotationAngle);
+    }
+    
+    // Reajustar el mapa después de la rotación
+    setTimeout(() => {
+        map.invalidateSize();
+        map.setView(currentCenter);
+    }, 50);
 }
 
 // ==================== LIMPIAR RECURSOS AL CERRAR PESTAÑA ====================
