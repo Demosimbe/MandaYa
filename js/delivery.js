@@ -22,6 +22,8 @@ let ultimaPeticionPedidos = 0;
 
 // Control de página visible
 let paginaVisible = true;
+// ==================== ROTACIÓN DEL MAPA ====================
+let mapRotationAngle = 0;   // ← Mover aquí arriba
 
 // ==================== UTILIDADES ====================
 function vibrar(duracion = 200) {
@@ -105,7 +107,14 @@ function loadUser() {
 // ==================== INICIALIZACIÓN DEL MAPA ====================
 function initMap() {
     const cdDelCarmen = { lat: 18.6456, lng: -91.8249 };
-    map = L.map('map').setView([cdDelCarmen.lat, cdDelCarmen.lng], 13);
+    
+    map = L.map('map', {
+        maxBoundsViscosity: 1.0,
+        rotate: true,
+        rotateControl: true,
+        zoomControl: true,
+        attributionControl: true
+    }).setView([cdDelCarmen.lat, cdDelCarmen.lng], 13);
     
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
@@ -114,10 +123,26 @@ function initMap() {
     
     limitarMapaACarmen(map);
     
-    if(cargaPedidosInterval) clearInterval(cargaPedidosInterval);
+    if (cargaPedidosInterval) clearInterval(cargaPedidosInterval);
     cargaPedidosInterval = setInterval(() => { 
-        if(isOnline) cargarPedidos(); 
+        if (isOnline) cargarPedidos(); 
     }, 5000);
+
+    // ==================== ROTACIÓN ====================
+    map.on('rotate', function() {
+        const transform = map.getContainer().style.transform || '';
+        const match = transform.match(/rotate\(([-0-9.]+)deg\)/);
+        if (match) {
+            mapRotationAngle = parseFloat(match[1]);
+        }
+        actualizarRotacionMarcadores();
+    });
+
+    // Rotación inicial
+    map.getContainer().style.transform = 'rotate(0deg)';
+    mapRotationAngle = 0;
+
+    console.log("🗺️ Mapa de Delivery inicializado con rotación activada");
 }
 
 // ==================== CIERRE DE SESIÓN CORREGIDO ====================
@@ -1660,21 +1685,22 @@ function mostrarToast(msg, err = false) {
 }
 
 // ==================== ROTACIÓN DEL MAPA (2D) ====================
-let mapRotationAngle = 0;
-
 function rotateMapLeft() {
+    if (!map) return;
     mapRotationAngle = (mapRotationAngle - 45) % 360;
     applyMapRotationDelivery();
     mostrarToast(`🧭 Mapa girado ${mapRotationAngle}°`);
 }
 
 function rotateMapRight() {
+    if (!map) return;
     mapRotationAngle = (mapRotationAngle + 45) % 360;
     applyMapRotationDelivery();
     mostrarToast(`🧭 Mapa girado ${mapRotationAngle}°`);
 }
 
 function resetMapRotation() {
+    if (!map) return;
     mapRotationAngle = 0;
     applyMapRotationDelivery();
     mostrarToast("🧭 Orientación restablecida");
@@ -1685,7 +1711,7 @@ function applyMapRotationDelivery() {
     const currentCenter = map.getCenter();
     
     mapContainer.style.transform = `rotate(${mapRotationAngle}deg)`;
-    mapContainer.style.transition = 'transform 0.3s ease';
+    mapContainer.style.transition = 'transform 0.4s ease';
     
     if (mapRotationAngle !== 0) {
         mapContainer.style.width = '150%';
@@ -1698,18 +1724,18 @@ function applyMapRotationDelivery() {
     }
     
     // Rotar marcadores
-    if (userMarker && userMarker.setRotationAngle) {
+    if (userMarker && typeof userMarker.setRotationAngle === 'function') {
         userMarker.setRotationAngle(mapRotationAngle);
     }
-    if (recogidaMarker && recogidaMarker.setRotationAngle) {
+    if (recogidaMarker && typeof recogidaMarker.setRotationAngle === 'function') {
         recogidaMarker.setRotationAngle(mapRotationAngle);
     }
-    if (destinoMarker && destinoMarker.setRotationAngle) {
+    if (destinoMarker && typeof destinoMarker.setRotationAngle === 'function') {
         destinoMarker.setRotationAngle(mapRotationAngle);
     }
     
     setTimeout(() => {
         map.invalidateSize();
         map.setView(currentCenter);
-    }, 50);
+    }, 80);
 }

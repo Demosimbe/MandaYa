@@ -292,7 +292,11 @@ async function peticionConThrottling(funcion, nombre, intervaloMinimo = 3000) {
 // ==================== INICIALIZACIÓN ====================
 function initMap() {
     map = L.map('map', {
-        maxBoundsViscosity: 1.0
+        maxBoundsViscosity: 1.0,
+        rotate: true,
+        rotateControl: true,
+        zoomControl: true,
+        attributionControl: true
     }).setView([18.6456, -91.8249], 13);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -300,35 +304,19 @@ function initMap() {
         maxZoom: 19
     }).addTo(map);
 
-    // 🔒 Limitar mapa a Ciudad del Carmen
     limitarMapaACarmen(map);
-    setOriginCoords({
-        lat: 18.6456,
-        lng: -91.8249
-    });
 
-    setDestCoords({
-        lat: 18.6556,
-        lng: -91.8149
-    });
+    setOriginCoords({ lat: 18.6456, lng: -91.8249 });
+    setDestCoords({ lat: 18.6556, lng: -91.8149 });
 
     function limitarCoord(lat, lng) {
         return limitarCoordenadasACarmen(lat, lng);
     }
 
+    // ==================== ICONOS ====================
     const originIcon = L.divIcon({
         html: `
-            <div style="
-                background:#FF6200;
-                width:28px;
-                height:28px;
-                border-radius:50%;
-                border:3px solid white;
-                box-shadow:0 2px 5px rgba(0,0,0,0.3);
-                display:flex;
-                align-items:center;
-                justify-content:center;
-            ">
+            <div style="background:#FF6200; width:28px; height:28px; border-radius:50%; border:3px solid white; box-shadow:0 2px 5px rgba(0,0,0,0.3); display:flex; align-items:center; justify-content:center;">
                 <i class="fas fa-circle" style="color:white; font-size:12px;"></i>
             </div>
         `,
@@ -336,80 +324,9 @@ function initMap() {
         className: 'custom-marker'
     });
 
-    // =========================
-    // MARCADOR ORIGEN
-    // =========================
-    const origenInicial = getOriginCoords();
-
-    originMarker = L.marker(
-        [origenInicial.lat, origenInicial.lng],
-        {
-            icon: originIcon,
-            draggable: true
-        }
-    ).addTo(map);
-
-    originMarker.bindPopup('📍 <b>Origen</b><br>Arrástrame para cambiar');
-
-    // 🔒 Limitar movimiento en tiempo real
-    originMarker.on('drag', function(e) {
-
-        const latlng = e.target.getLatLng();
-
-        const limitada = limitarCoord(
-            latlng.lat,
-            latlng.lng
-        );
-
-        if (
-            limitada.lat !== latlng.lat ||
-            limitada.lng !== latlng.lng
-        ) {
-            e.target.setLatLng([
-                limitada.lat,
-                limitada.lng
-            ]);
-        }
-    });
-
-    // ✅ Al terminar de mover
-    originMarker.on('dragend', function(e) {
-        const coords = e.target.getLatLng();
-        const limitada = limitarCoord(
-            coords.lat,
-            coords.lng
-        );
-
-        e.target.setLatLng([
-            limitada.lat,
-            limitada.lng
-        ]);
-
-        setOriginCoords(limitada);
-        reverseGeocode(
-            getOriginCoords(),
-            (addr) => {
-                document.getElementById("origen").value = addr;
-            }
-        );
-
-        actualizarRutaYTarifa();
-        mostrarToast("📍 Origen actualizado");
-    });
-
     const destIcon = L.divIcon({
         html: `
-            <div style="
-                background:#3B82F6;
-                width:28px;
-                height:28px;
-                border-radius:50%;
-                border:3px solid white;
-                box-shadow:0 2px 5px rgba(0,0,0,0.3);
-                display:flex;
-                align-items:center;
-                justify-content:center;
-            ">
+            <div style="background:#3B82F6; width:28px; height:28px; border-radius:50%; border:3px solid white; box-shadow:0 2px 5px rgba(0,0,0,0.3); display:flex; align-items:center; justify-content:center;">
                 <i class="fas fa-square" style="color:white; font-size:12px;"></i>
             </div>
         `,
@@ -417,132 +334,122 @@ function initMap() {
         className: 'custom-marker'
     });
 
+    // ==================== MARCADORES ====================
+    const origenInicial = getOriginCoords();
+    originMarker = L.marker([origenInicial.lat, origenInicial.lng], {
+        icon: originIcon,
+        draggable: true,
+        rotationAngle: 0,
+        rotationOrigin: 'center center'
+    }).addTo(map);
+
     const destinoInicial = getDestCoords();
+    destMarker = L.marker([destinoInicial.lat, destinoInicial.lng], {
+        icon: destIcon,
+        draggable: true,
+        rotationAngle: 0,
+        rotationOrigin: 'center center'
+    }).addTo(map);
 
-    destMarker = L.marker(
-        [destinoInicial.lat, destinoInicial.lng],
-        {
-            icon: destIcon,
-            draggable: true
-        }
-    ).addTo(map);
-
+    originMarker.bindPopup('📍 <b>Origen</b><br>Arrástrame para cambiar');
     destMarker.bindPopup('🏁 <b>Destino</b><br>Arrástrame para cambiar');
 
-    // 🔒 Limitar movimiento en tiempo real
-    destMarker.on('drag', function(e) {
-
+    // Drag events
+    originMarker.on('drag', function(e) {
         const latlng = e.target.getLatLng();
-
-        const limitada = limitarCoord(
-            latlng.lat,
-            latlng.lng
-        );
-
-        if (
-            limitada.lat !== latlng.lat ||
-            limitada.lng !== latlng.lng
-        ) {
-            e.target.setLatLng([
-                limitada.lat,
-                limitada.lng
-            ]);
+        const limitada = limitarCoord(latlng.lat, latlng.lng);
+        if (limitada.lat !== latlng.lat || limitada.lng !== latlng.lng) {
+            e.target.setLatLng([limitada.lat, limitada.lng]);
         }
-
     });
 
-    // ✅ Al terminar de mover
+    originMarker.on('dragend', function(e) {
+        const coords = e.target.getLatLng();
+        const limitada = limitarCoord(coords.lat, coords.lng);
+        e.target.setLatLng([limitada.lat, limitada.lng]);
+
+        setOriginCoords(limitada);
+        reverseGeocode(getOriginCoords(), (addr) => {
+            document.getElementById("origen").value = addr;
+        });
+        actualizarRutaYTarifa();
+        mostrarToast("📍 Origen actualizado");
+    });
+
+    destMarker.on('drag', function(e) {
+        const latlng = e.target.getLatLng();
+        const limitada = limitarCoord(latlng.lat, latlng.lng);
+        if (limitada.lat !== latlng.lat || limitada.lng !== latlng.lng) {
+            e.target.setLatLng([limitada.lat, limitada.lng]);
+        }
+    });
+
     destMarker.on('dragend', function(e) {
         const coords = e.target.getLatLng();
-        const limitada = limitarCoord(
-            coords.lat,
-            coords.lng
-        );
-
-        e.target.setLatLng([
-            limitada.lat,
-            limitada.lng
-        ]);
+        const limitada = limitarCoord(coords.lat, coords.lng);
+        e.target.setLatLng([limitada.lat, limitada.lng]);
 
         setDestCoords(limitada);
-        reverseGeocode(
-            getDestCoords(),
-            (addr) => {
-                document.getElementById("destino").value = addr;
-            }
-        );
-
+        reverseGeocode(getDestCoords(), (addr) => {
+            document.getElementById("destino").value = addr;
+        });
         actualizarRutaYTarifa();
         mostrarToast("🏁 Destino actualizado");
-
     });
 
+    // Click en mapa
     map.on('click', (e) => {
-
-        const limitada = limitarCoord(
-            e.latlng.lat,
-            e.latlng.lng
-        );
+        const limitada = limitarCoord(e.latlng.lat, e.latlng.lng);
 
         if (selectMode === 'origen') {
-
-            originMarker.setLatLng([
-                limitada.lat,
-                limitada.lng
-            ]);
-
+            originMarker.setLatLng([limitada.lat, limitada.lng]);
             setOriginCoords(limitada);
-            reverseGeocode(
-                getOriginCoords(),
-                (addr) => {
-                    document.getElementById("origen").value = addr;
-                }
-            );
-
-            actualizarRutaYTarifa();
-            mostrarToast("📍 Origen actualizado");
-
+            reverseGeocode(getOriginCoords(), (addr) => {
+                document.getElementById("origen").value = addr;
+            });
         } else {
-
-            destMarker.setLatLng([
-                limitada.lat,
-                limitada.lng
-            ]);
-
+            destMarker.setLatLng([limitada.lat, limitada.lng]);
             setDestCoords(limitada);
-            reverseGeocode(
-                getDestCoords(),
-                (addr) => {
-                    document.getElementById("destino").value = addr;
-                }
-            );
-
-            actualizarRutaYTarifa();
-            mostrarToast("🏁 Destino actualizado");
+            reverseGeocode(getDestCoords(), (addr) => {
+                document.getElementById("destino").value = addr;
+            });
         }
 
+        actualizarRutaYTarifa();
+        mostrarToast(selectMode === 'origen' ? "📍 Origen actualizado" : "🏁 Destino actualizado");
     });
 
-    reverseGeocode(
-        getOriginCoords(),
-        (addr) => {
-            document.getElementById("origen").value = addr;
+    // ==================== ROTACIÓN DEL MAPA ====================
+    map.on('rotate', function() {
+        const container = map.getContainer();
+        const transform = container.style.transform || '';
+        const match = transform.match(/rotate\(([-0-9.]+)deg\)/);
+        if (match) {
+            mapRotationAngle = parseFloat(match[1]);
         }
-    );
+        actualizarRotacionMarcadoresCliente();
+    });
 
-    reverseGeocode(
-        getDestCoords(),
-        (addr) => {
-            document.getElementById("destino").value = addr;
-        }
-    );
+    // Rotación inicial
+    map.getContainer().style.transform = 'rotate(0deg)';
+    mapRotationAngle = 0;
+
+    // Geocodificación inicial
+    reverseGeocode(getOriginCoords(), (addr) => {
+        document.getElementById("origen").value = addr;
+    });
+
+    reverseGeocode(getDestCoords(), (addr) => {
+        document.getElementById("destino").value = addr;
+    });
 
     setTimeout(() => {
         actualizarRutaYTarifa();
     }, 500);
 
+    console.log("🗺️ Mapa Cliente inicializado con rotación activada");
 }
-
+    
 function centrarMapa() {
     if(map) map.setView([18.6456, -91.8249], 13);
     mostrarToast("📍 Mapa centrado en Ciudad del Carmen");
@@ -2767,18 +2674,21 @@ async function tienePedidoActivo(deliveryId) {
 
 // ==================== ROTACIÓN DEL MAPA (2D) ====================
 function rotateMapLeft() {
+    if (!map) return;
     mapRotationAngle = (mapRotationAngle - 45) % 360;
     applyMapRotation();
     mostrarToast(`🧭 Mapa girado ${mapRotationAngle}°`);
 }
 
 function rotateMapRight() {
+    if (!map) return;
     mapRotationAngle = (mapRotationAngle + 45) % 360;
     applyMapRotation();
     mostrarToast(`🧭 Mapa girado ${mapRotationAngle}°`);
 }
 
 function resetMapRotation() {
+    if (!map) return;
     mapRotationAngle = 0;
     applyMapRotation();
     mostrarToast("🧭 Orientación restablecida");
@@ -2786,16 +2696,13 @@ function resetMapRotation() {
 
 function applyMapRotation() {
     const mapContainer = map.getContainer();
-    const center = map.getCenter();
-    
-    // Guardar el centro actual
     const currentCenter = map.getCenter();
     
-    // Aplicar rotación CSS
+    // Aplicar rotación
     mapContainer.style.transform = `rotate(${mapRotationAngle}deg)`;
-    mapContainer.style.transition = 'transform 0.3s ease';
+    mapContainer.style.transition = 'transform 0.4s ease';
     
-    // Ajustar para evitar bordes blancos
+    // Evitar bordes blancos
     if (mapRotationAngle !== 0) {
         mapContainer.style.width = '150%';
         mapContainer.style.height = '150%';
@@ -2806,22 +2713,22 @@ function applyMapRotation() {
         mapContainer.style.margin = '0';
     }
     
-    // Rotar marcadores que lo soporten
-    if (originMarker && originMarker.setRotationAngle) {
+    // Rotar marcadores
+    if (originMarker && typeof originMarker.setRotationAngle === 'function') {
         originMarker.setRotationAngle(mapRotationAngle);
     }
-    if (destMarker && destMarker.setRotationAngle) {
+    if (destMarker && typeof destMarker.setRotationAngle === 'function') {
         destMarker.setRotationAngle(mapRotationAngle);
     }
-    if (deliveryMarker && deliveryMarker.setRotationAngle) {
+    if (deliveryMarker && typeof deliveryMarker.setRotationAngle === 'function') {
         deliveryMarker.setRotationAngle(mapRotationAngle);
     }
     
-    // Reajustar el mapa después de la rotación
+    // Reajustar mapa
     setTimeout(() => {
         map.invalidateSize();
         map.setView(currentCenter);
-    }, 50);
+    }, 100);
 }
 
 // ==================== LIMPIAR RECURSOS AL CERRAR PESTAÑA ====================
