@@ -9,7 +9,6 @@ let watchId = null;
 let ubicacionInterval = null;
 let cargaPedidosInterval = null;
 let ultimaUbicacionEnviada = null;
-let primeraUbicacionObtenida = false;
 
 // Variables para rutas
 let currentRoutingControl = null;
@@ -761,14 +760,13 @@ async function cargarPedidos(force = false) {
     
     // ✅ Throttling INTELIGENTE: 2 segundos si está online, 5 si está offline
     const ahora = Date.now();
-    let tiempoEspera = 5000; // Valor por defecto
+    let tiempoEspera = 5000;
     
     if (!force) {
-        // Si está online, reducir throttling a 2 segundos
         if (isOnline) {
-            tiempoEspera = 2000;  // ⚡ 2 segundos cuando está conectado
+            tiempoEspera = 2000;
         } else {
-            tiempoEspera = 5000;  // 5 segundos cuando está offline
+            tiempoEspera = 5000;
         }
         
         if (ahora - ultimaPeticionPedidos < tiempoEspera) {
@@ -822,17 +820,27 @@ async function cargarPedidos(force = false) {
             const pedidoActivo = misPedidosActivos[0];
             const estadoActual = pedidoActivo.estado;
             
-            if (estadoAnteriorActivo === 'asignado' && estadoActual === 'recogido') {
-                console.log("🔄 Estado cambiado: asignado → recogido. Dibujando ruta de entrega...");
-                await dibujarRutaEntrega(pedidoActivo);
+            // 🔄 SIEMPRE recalcular ruta si hay pedido activo (para actualizar con nueva ubicación)
+            if (estadoActual === 'asignado' && pedidoActivo.origenCoords) {
+                // Verificar si la ruta actual es válida o necesita recálculo por movimiento
+                const necesitaRecalculo = !currentRoutingControl || 
+                                          ultimaEtapa !== 'recogida' ||
+                                          ultimoPedidoDibujado !== pedidoActivo.id;
+                
+                if (necesitaRecalculo || estadoAnteriorActivo !== estadoActual) {
+                    console.log("🟢 Dibujando/Actualizando ruta de RECOGIDA...");
+                    await dibujarRutaRecogida(pedidoActivo);
+                }
             }
-            else if (estadoActual === 'recogido' && (!currentRoutingControl || ultimaEtapa !== 'entrega')) {
-                console.log("🟠 Pedido en estado recogido, dibujando ruta de entrega...");
-                await dibujarRutaEntrega(pedidoActivo);
-            }
-            else if (estadoActual === 'asignado' && (!currentRoutingControl || ultimaEtapa !== 'recogida')) {
-                console.log("🟢 Pedido asignado, dibujando ruta de recogida...");
-                await dibujarRutaRecogida(pedidoActivo);
+            else if (estadoActual === 'recogido' && pedidoActivo.destinoCoords) {
+                const necesitaRecalculo = !currentRoutingControl || 
+                                          ultimaEtapa !== 'entrega' ||
+                                          ultimoPedidoDibujado !== pedidoActivo.id;
+                
+                if (necesitaRecalculo || estadoAnteriorActivo !== estadoActual) {
+                    console.log("🟠 Dibujando/Actualizando ruta de ENTREGA...");
+                    await dibujarRutaEntrega(pedidoActivo);
+                }
             }
         } else {
             limpiarRutasYMarcadores();
@@ -1742,4 +1750,16 @@ function applyMapRotationDelivery() {
         map.invalidateSize();
         map.setView(currentCenter);
     }, 80);
+}
+
+function actualizarRotacionMarcadores() {
+    if (userMarker && typeof userMarker.setRotationAngle === 'function') {
+        userMarker.setRotationAngle(mapRotationAngle);
+    }
+    if (recogidaMarker && typeof recogidaMarker.setRotationAngle === 'function') {
+        recogidaMarker.setRotationAngle(mapRotationAngle);
+    }
+    if (destinoMarker && typeof destinoMarker.setRotationAngle === 'function') {
+        destinoMarker.setRotationAngle(mapRotationAngle);
+    }
 }

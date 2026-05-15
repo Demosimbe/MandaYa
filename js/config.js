@@ -435,7 +435,7 @@ async function inicializarSeguridad() {
     
     // Verificar si hay una sesión activa al cargar
     const sesion = securityManager.obtenerUsuarioActual();
-    if (sesion && window.location.pathname.includes('cliente.html') || window.location.pathname.includes('delivery.html')) {
+       if (sesion && (window.location.pathname.includes('cliente.html') || window.location.pathname.includes('delivery.html'))) {
         const valida = await securityManager.verificarSesionUnica();
         if (!valida) {
             // Ya redirige

@@ -1,30 +1,48 @@
-// Constantes y variables globales
+// ==================== CONSTANTES Y LÍMITES ====================
 const BOUNDS = { north: 18.70, south: 18.58, east: -91.75, west: -91.88 };
 
-let map, originMarker, destMarker, routeLine, deliveryMarker;
-window.originCoords = null;
-window.destCoords = null;
-let originCoords = null, destCoords = null;
-let currentUser = null, pedidoActual = null;
-let selectMode = 'origen';
-let seguimientoInterval = null;
-let ubicacionInterval = null;
-let currentRouteData = null;
-let deliverysMarkers = []; // Para los marcadores de deliverys en línea
-let deliverysInterval = null;  // Para el intervalo de deliverys en línea
-let pedidoPendiente = null; // Variable global para guardar pedido antes de pagar
+// ==================== VARIABLES DEL MAPA ====================
+let map = null;
+let originMarker = null;
+let destMarker = null;
+let routeLine = null;
+let deliveryMarker = null;
 let clienteRouteControl = null;
-let rutaActualTipo = null;     // 'recogida' o 'entrega'
-let rutaDestinoActual = null;  // Guardar destino para comparar
+
+// ==================== COORDENADAS (SOLO UNA DECLARACIÓN) ====================
+window.originCoords = null;
+window.destCoords = null;    // ✅ Única variable de destino
+
+// ==================== USUARIOS Y PEDIDOS ====================
+let currentUser = null;
+let pedidoActual = null;
+let pedidoPendiente = null;
+
+// ==================== INTERVALOS Y TIEMPOS ====================
+let seguimientoInterval = null;     // Seguimiento de estado del pedido
+let ubicacionInterval = null;       // Seguimiento de ubicación del delivery
+let deliverysInterval = null;       // Carga de deliverys en línea
+let busquedaTimeout = null;         // Timeout para búsqueda de direcciones
+
+// ==================== CONTROL DE RUTAS ====================
+let currentRouteData = null;        // Datos de la ruta actual (distancia, duración, extras)
+let rutaActualTipo = null;          // 'recogida' o 'entrega'
+let rutaDestinoActual = null;       // Guardar destino para comparar
 let rutaYaDibujada = false;
 let ultimoEstadoPedido = null;
-let busquedaTimeout = null;
-let mapRotationAngle = 0;
 
-// ==================== CONTROL DE PETICIONES INTELIGENTE ====================
-let ultimaPeticionTime = 0;
-let paginaVisible = true;
-let ultimaPeticionDeliverys = 0;
+// ==================== DELIVERYS EN LÍNEA ====================
+let deliverysMarkers = [];           // Marcadores de deliverys disponibles
+
+// ==================== UI Y MODOS ====================
+let selectMode = 'origen';           // 'origen' o 'destino'
+let mapRotationAngle = 0;            // Ángulo de rotación del mapa
+
+// ==================== CONTROL DE PETICIONES (THROTTLING) ====================
+let ultimaPeticionTime = 0;          // Para throttling general
+let ultimaPeticionDeliverys = 0;     // Para throttling de deliverys
+let paginaVisible = true;            // Estado de visibilidad de la pestaña
+
 
 // ==================== INICIALIZACIÓN PRINCIPAL ====================
 document.addEventListener('DOMContentLoaded', async () => {
@@ -274,30 +292,18 @@ document.addEventListener('visibilitychange', () => {
     }
 });
 
-// Función para peticiones con throttling
-async function peticionConThrottling(funcion, nombre, intervaloMinimo = 3000) {
-    const ahora = Date.now();
-    if (!paginaVisible) {
-        console.log(`⏸️ Página oculta, omitiendo ${nombre}`);
-        return null;
-    }
-    if (ahora - ultimaPeticionTime < intervaloMinimo) {
-        console.log(`⏳ Throttling: ${nombre} - muy rápido`);
-        return null;
-    }
-    ultimaPeticionTime = ahora;
-    return await funcion();
-}
-
 // ==================== INICIALIZACIÓN ====================
 function initMap() {
-   map = L.map('map', {
+    // ✅ Inicializar coordenadas por defecto ANTES de crear el mapa
+    initDefaultCoords();
+    
+    map = L.map('map', {
         maxBoundsViscosity: 1.0,
-        rotate: true,                    // Rotación activada
-        rotateControl: true,             // Control visual
+        rotate: true,
+        rotateControl: true,
         zoomControl: true,
         attributionControl: true,
-        touchZoom: true,                 // ← Importante para móviles
+        touchZoom: true,
         dragging: true,
         tap: true,
         inertia: false
@@ -310,9 +316,7 @@ function initMap() {
 
     limitarMapaACarmen(map);
 
-    setOriginCoords({ lat: 18.6456, lng: -91.8249 });
-    setDestCoords({ lat: 18.6556, lng: -91.8149 });
-
+    // ✅ Función auxiliar para limitar coordenadas
     function limitarCoord(lat, lng) {
         return limitarCoordenadasACarmen(lat, lng);
     }
@@ -339,6 +343,7 @@ function initMap() {
     });
 
     // ==================== MARCADORES ====================
+    // ✅ Usar getOriginCoords() en lugar de variables directas
     const origenInicial = getOriginCoords();
     originMarker = L.marker([origenInicial.lat, origenInicial.lng], {
         icon: originIcon,
@@ -358,7 +363,7 @@ function initMap() {
     originMarker.bindPopup('📍 <b>Origen</b><br>Arrástrame para cambiar');
     destMarker.bindPopup('🏁 <b>Destino</b><br>Arrástrame para cambiar');
 
-    // Drag events
+    // ==================== DRAG EVENTS ====================
     originMarker.on('drag', function(e) {
         const latlng = e.target.getLatLng();
         const limitada = limitarCoord(latlng.lat, latlng.lng);
@@ -372,10 +377,17 @@ function initMap() {
         const limitada = limitarCoord(coords.lat, coords.lng);
         e.target.setLatLng([limitada.lat, limitada.lng]);
 
+        // ✅ Usar setOriginCoords en lugar de asignar directamente
         setOriginCoords(limitada);
+        
         reverseGeocode(getOriginCoords(), (addr) => {
-            document.getElementById("origen").value = addr;
+            const origenInput = document.getElementById("origen");
+            if (origenInput) origenInput.value = addr;
+            // ✅ Sincronizar con móvil si existe
+            const origenMobile = document.getElementById("origenMobile");
+            if (origenMobile) origenMobile.value = addr;
         });
+        
         actualizarRutaYTarifa();
         mostrarToast("📍 Origen actualizado");
     });
@@ -393,15 +405,22 @@ function initMap() {
         const limitada = limitarCoord(coords.lat, coords.lng);
         e.target.setLatLng([limitada.lat, limitada.lng]);
 
+        // ✅ Usar setDestCoords
         setDestCoords(limitada);
+        
         reverseGeocode(getDestCoords(), (addr) => {
-            document.getElementById("destino").value = addr;
+            const destinoInput = document.getElementById("destino");
+            if (destinoInput) destinoInput.value = addr;
+            // ✅ Sincronizar con móvil
+            const destinoMobile = document.getElementById("destinoMobile");
+            if (destinoMobile) destinoMobile.value = addr;
         });
+        
         actualizarRutaYTarifa();
         mostrarToast("🏁 Destino actualizado");
     });
 
-    // Click en mapa
+    // ==================== CLICK EN MAPA ====================
     map.on('click', (e) => {
         const limitada = limitarCoord(e.latlng.lat, e.latlng.lng);
 
@@ -409,13 +428,19 @@ function initMap() {
             originMarker.setLatLng([limitada.lat, limitada.lng]);
             setOriginCoords(limitada);
             reverseGeocode(getOriginCoords(), (addr) => {
-                document.getElementById("origen").value = addr;
+                const origenInput = document.getElementById("origen");
+                if (origenInput) origenInput.value = addr;
+                const origenMobile = document.getElementById("origenMobile");
+                if (origenMobile) origenMobile.value = addr;
             });
         } else {
             destMarker.setLatLng([limitada.lat, limitada.lng]);
             setDestCoords(limitada);
             reverseGeocode(getDestCoords(), (addr) => {
-                document.getElementById("destino").value = addr;
+                const destinoInput = document.getElementById("destino");
+                if (destinoInput) destinoInput.value = addr;
+                const destinoMobile = document.getElementById("destinoMobile");
+                if (destinoMobile) destinoMobile.value = addr;
             });
         }
 
@@ -438,20 +463,32 @@ function initMap() {
     map.getContainer().style.transform = 'rotate(0deg)';
     mapRotationAngle = 0;
 
-    // Geocodificación inicial
+    // ==================== GEOCODIFICACIÓN INICIAL ====================
     reverseGeocode(getOriginCoords(), (addr) => {
-        document.getElementById("origen").value = addr;
+        const origenInput = document.getElementById("origen");
+        if (origenInput) origenInput.value = addr;
+        const origenMobile = document.getElementById("origenMobile");
+        if (origenMobile) origenMobile.value = addr;
     });
 
     reverseGeocode(getDestCoords(), (addr) => {
-        document.getElementById("destino").value = addr;
+        const destinoInput = document.getElementById("destino");
+        if (destinoInput) destinoInput.value = addr;
+        const destinoMobile = document.getElementById("destinoMobile");
+        if (destinoMobile) destinoMobile.value = addr;
     });
 
+    // ✅ Pequeño delay para asegurar que el mapa está listo
     setTimeout(() => {
         actualizarRutaYTarifa();
+        map.invalidateSize(); // Forzar resize por si acaso
     }, 500);
 
     console.log("🗺️ Mapa Cliente inicializado con rotación activada");
+    console.log("📍 Coordenadas iniciales:", {
+        origen: getOriginCoords(),
+        destino: getDestCoords()
+    });
 }
     
 function centrarMapa() {
@@ -503,6 +540,18 @@ function limpiarRutaCliente() {
     if (clienteRouteControl) {
         try { map.removeControl(clienteRouteControl); } catch(e) {}
         clienteRouteControl = null;
+    }
+}
+
+function actualizarRotacionMarcadoresCliente() {
+    if (originMarker && typeof originMarker.setRotationAngle === 'function') {
+        originMarker.setRotationAngle(mapRotationAngle);
+    }
+    if (destMarker && typeof destMarker.setRotationAngle === 'function') {
+        destMarker.setRotationAngle(mapRotationAngle);
+    }
+    if (deliveryMarker && typeof deliveryMarker.setRotationAngle === 'function') {
+        deliveryMarker.setRotationAngle(mapRotationAngle);
     }
 }
 
@@ -602,10 +651,7 @@ async function actualizarRutaYTarifa() {
     const orig = getOriginCoords();
     const dest = getDestCoords();
 
-    if (!orig || !dest) {
-        console.log("⚠️ No hay coordenadas de origen o destino");
-        return;
-    }
+    if (!orig || !dest) { console.log("⚠️ No hay coordenadas de origen o destino"); return; }
 
     const origenSeguro = limitarCoordenadasACarmen(
         orig.lat,
@@ -832,33 +878,49 @@ async function actualizarRutaYTarifa() {
 }
 
 // ==================== FUNCIONES DE SINCRONIZACIÓN DE COORDENADAS ====================
-// Estas funciones mantienen sincronizadas las variables locales con window
-
+// ✅ NUEVAS FUNCIONES UNIFICADAS
 function setOriginCoords(coords) {
-    window.originCoords = coords;
-    originCoords = coords;
+    if (!coords || typeof coords.lat === 'undefined' || typeof coords.lng === 'undefined') {
+        console.error("❌ setOriginCoords: coordenadas inválidas", coords);
+        return;
+    }
+    window.originCoords = { lat: coords.lat, lng: coords.lng };
+    console.log("📍 Origen actualizado:", window.originCoords);
 }
 
 function setDestCoords(coords) {
-    window.destCoords = coords;
-    destCoords = coords;
+    if (!coords || typeof coords.lat === 'undefined' || typeof coords.lng === 'undefined') {
+        console.error("❌ setDestCoords: coordenadas inválidas", coords);
+        return;
+    }
+    window.destCoords = { lat: coords.lat, lng: coords.lng };
+    console.log("🏁 Destino actualizado:", window.destCoords);
 }
 
 function getOriginCoords() {
-    return window.originCoords || originCoords;
+    if (!window.originCoords) {
+        console.warn("⚠️ getOriginCoords: coordenadas no inicializadas, usando default");
+        return { lat: 18.6456, lng: -91.8249 }; // Coordenada por defecto
+    }
+    return window.originCoords;
 }
 
 function getDestCoords() {
-    return window.destCoords || destCoords;
+    if (!window.destCoords) {
+        console.warn("⚠️ getDestCoords: coordenadas no inicializadas, usando default");
+        return { lat: 18.6556, lng: -91.8149 }; // Coordenada por defecto
+    }
+    return window.destCoords;
 }
 
-// ✅ Inicializar coordenadas por defecto
+// ✅ Función para inicializar coordenadas por defecto
 function initDefaultCoords() {
-    const defaultCoords = { lat: 18.6456, lng: -91.8249 };
-    const defaultDestCoords = { lat: 18.6556, lng: -91.8149 };
-    
-    if (!window.originCoords) setOriginCoords(defaultCoords);
-    if (!window.destCoords) setDestCoords(defaultDestCoords);
+    if (!window.originCoords) {
+        setOriginCoords({ lat: 18.6456, lng: -91.8249 });
+    }
+    if (!window.destCoords) {
+        setDestCoords({ lat: 18.6556, lng: -91.8149 });
+    }
 }
 
 function reverseGeocode(latlng, callback) {
@@ -883,16 +945,20 @@ async function solicitarEnvio() {
     const destino = document.getElementById("destino").value;
     const tipo = document.getElementById("tipoEnvio").value;
     
-    // ✅ Validar que las coordenadas existan
-    if (!originCoords || !destCoords) {
+    // ✅ OBTENER COORDENADAS USANDO LAS FUNCIONES (ÚNICA FUENTE DE VERDAD)
+    const origenCoord = getOriginCoords();
+    const destinoCoord = getDestCoords();
+    
+    // ✅ VALIDACIÓN UNIFICADA - Usar las coordenadas obtenidas, NO las variables antiguas
+    if (!origenCoord || !destinoCoord || !origenCoord.lat || !destinoCoord.lat) {
+        console.error("Coordenadas inválidas:", { origenCoord, destinoCoord });
         mostrarToast("❌ Error: No se han seleccionado origen o destino válidos", true);
         return;
     }
     
-    // ✅ MEJOR VALIDACIÓN para tipo de envío
+    // ✅ VALIDACIÓN para tipo de envío
     if (!tipo || tipo === '') {
         mostrarToast("❌ Por favor, selecciona qué vas a enviar (Comida, Paquete, Mercancía o Farmacia)", true);
-        // Opcional: resaltar el select
         const selectTipo = document.getElementById("tipoEnvio");
         selectTipo.style.border = "2px solid #dc2626";
         setTimeout(() => {
@@ -901,11 +967,12 @@ async function solicitarEnvio() {
         return;
     }
     
-    let distancia = currentRouteData ? currentRouteData.distance : calcularDistancia();
+    // ✅ CALCULAR DISTANCIA usando las coordenadas obtenidas
+    let distancia = currentRouteData ? currentRouteData.distance : calcularDistanciaEntrePuntos(origenCoord, destinoCoord);
     const rate = calculateShippingRate(distancia, tipo);
     let tarifaBase = rate.total;
     
-    // Verificar si hay extras guardados del resumen
+    // ✅ Verificar extras
     let tarifaFinal = tarifaBase;
     if (currentRouteData && currentRouteData.extras) {
         tarifaFinal = tarifaBase;
@@ -914,17 +981,17 @@ async function solicitarEnvio() {
         if (currentRouteData.extras.espera) tarifaFinal += 10;
     }
     
-    // Guardar pedido temporalmente
+    // ✅ GUARDAR PEDIDO usando las coordenadas obtenidas
     pedidoPendiente = {
         id: Date.now(),
         cliente_id: currentUser.id,
         cliente_nombre: currentUser.nombre,
         origen: origen,
         destino: destino,
-        origen_lat: originCoords.lat,
-        origen_lng: originCoords.lng,
-        destino_lat: destCoords.lat,
-        destino_lng: destCoords.lng,
+        origen_lat: origenCoord.lat,      // ✅ Usar origenCoord
+        origen_lng: origenCoord.lng,      // ✅ Usar origenCoord
+        destino_lat: destinoCoord.lat,    // ✅ Usar destinoCoord
+        destino_lng: destinoCoord.lng,    // ✅ Usar destinoCoord
         tipo: tipo,
         distancia_real: distancia.toFixed(2),
         tarifa: tarifaFinal,
@@ -933,9 +1000,23 @@ async function solicitarEnvio() {
         fecha: new Date().toISOString()
     };
     
-    // Ir directamente al pago
-    document.getElementById("modalPago").classList.remove("hidden");
-    document.getElementById("modalPago").classList.add("flex");
+    console.log("✅ Pedido preparado:", {
+        id: pedidoPendiente.id,
+        origen: `${origenCoord.lat}, ${origenCoord.lng}`,
+        destino: `${destinoCoord.lat}, ${destinoCoord.lng}`,
+        tarifa: tarifaFinal
+    });
+    
+    // ✅ Ir al pago
+    const modalPago = document.getElementById("modalPago");
+    if (modalPago) {
+        modalPago.classList.remove("hidden");
+        modalPago.classList.add("flex");
+    } else {
+        console.error("❌ Modal de pago no encontrado");
+        mostrarToast("❌ Error al abrir el pago", true);
+        
+    }
 }
 
 function seleccionarPago(metodo) { cerrarModalPago(); 
@@ -1101,9 +1182,7 @@ function actualizarEstadoPanel(estado, deliveryNombre = null) {
            
            // ✅ Ajustar el mapa a vista normal
            setTimeout(() => {
-               if(map && originCoords && destCoords) {
-                   map.setView([18.6456, -91.8249], 13);
-               }
+               if(map) { map.setView([18.6456, -91.8249], 13);}
            }, 500);
            
            mostrarToast("🎉 ¡Envío completado! Gracias por usar MandaYa");
@@ -1149,6 +1228,7 @@ async function cancelarPedido() {
 
 function limpiarYResetearUI() {
     bloquearUIporPedidoActivo(false);
+    
     // Detener intervalos
     if (seguimientoInterval) {
         clearInterval(seguimientoInterval);
@@ -1162,42 +1242,119 @@ function limpiarYResetearUI() {
         clearInterval(deliverysInterval);
         deliverysInterval = null;
     }
-    // Limpiar campos del formulario
-    document.getElementById("origen").value = "";
-    document.getElementById("destino").value = "";
-    document.getElementById("tipoEnvio").value = "";
-    document.getElementById("tarifaContainer").classList.add("hidden");
+    
+    // Limpiar campos del formulario (Desktop)
+    const origenDesktop = document.getElementById("origen");
+    const destinoDesktop = document.getElementById("destino");
+    const tipoEnvio = document.getElementById("tipoEnvio");
+    const tarifaContainer = document.getElementById("tarifaContainer");
+    
+    if (origenDesktop) origenDesktop.value = "";
+    if (destinoDesktop) destinoDesktop.value = "";
+    if (tipoEnvio) tipoEnvio.value = "";
+    if (tarifaContainer) tarifaContainer.classList.add("hidden");
+    
+    // ✅ También limpiar campos móviles si existen
+    const origenMobile = document.getElementById("origenMobile");
+    const destinoMobile = document.getElementById("destinoMobile");
+    if (origenMobile) origenMobile.value = "";
+    if (destinoMobile) destinoMobile.value = "";
+    
     // Restablecer marcadores a posición por defecto
     if (originMarker && destMarker) {
-        setOriginCoords({ lat: 18.6456, lng: -91.8249 });
-        setDestCoords({ lat: 18.6556, lng: -91.8149 });
-        originMarker.setLatLng([originCoords.lat, originCoords.lng]);
-        destMarker.setLatLng([destCoords.lat, destCoords.lng]);
-        reverseGeocode(originCoords, (addr) => document.getElementById("origen").value = addr);
-        reverseGeocode(destCoords, (addr) => document.getElementById("destino").value = addr);
+        // ✅ Coordenadas por defecto
+        const defaultOrigen = { lat: 18.6456, lng: -91.8249 };
+        const defaultDestino = { lat: 18.6556, lng: -91.8149 };
+        
+        // ✅ Usar las funciones setter
+        setOriginCoords(defaultOrigen);
+        setDestCoords(defaultDestino);
+        
+        // ✅ Usar getters para obtener las coordenadas (NO variables directas)
+        const orig = getOriginCoords();
+        const dest = getDestCoords();
+        
+        originMarker.setLatLng([orig.lat, orig.lng]);
+        destMarker.setLatLng([dest.lat, dest.lng]);
+        
+        // ✅ Actualizar los inputs con la dirección
+        reverseGeocode(orig, (addr) => {
+            if (origenDesktop) origenDesktop.value = addr;
+            if (origenMobile) origenMobile.value = addr;
+        });
+        
+        reverseGeocode(dest, (addr) => {
+            if (destinoDesktop) destinoDesktop.value = addr;
+            if (destinoMobile) destinoMobile.value = addr;
+        });
     }
     
     // Eliminar ruta y marcador de delivery
     if (routeLine) {
-        if (typeof routeLine.remove === 'function') routeLine.remove();
+        try {
+            if (typeof routeLine.remove === 'function') {
+                routeLine.remove();
+            } else if (routeLine._map) {
+                map.removeLayer(routeLine);
+            }
+        } catch(e) {
+            console.warn("Error limpiando routeLine:", e);
+        }
         routeLine = null;
     }
+    
     if (deliveryMarker) {
-        map.removeLayer(deliveryMarker);
+        try {
+            map.removeLayer(deliveryMarker);
+        } catch(e) {}
         deliveryMarker = null;
     }
     
-    // Ocultar panel de estado
-    document.getElementById("panelEstadoPedido").classList.add("hidden");
+    // Limpiar ruta del cliente si existe
+    if (clienteRouteControl) {
+        try {
+            if (clienteRouteControl._map) {
+                map.removeControl(clienteRouteControl);
+            }
+        } catch(e) {}
+        clienteRouteControl = null;
+    }
+    
+    // Ocultar panel de estado (Desktop y Mobile)
+    const panelEstado = document.getElementById("panelEstadoPedido");
+    const panelEstadoMobile = document.getElementById("panelEstadoPedidoMobile");
+    if (panelEstado) panelEstado.classList.add("hidden");
+    if (panelEstadoMobile) panelEstadoMobile.classList.add("hidden");
+    
+    // Ocultar información del delivery
+    const deliveryInfo = document.getElementById("deliveryInfo");
+    if (deliveryInfo) deliveryInfo.classList.add("hidden");
+    
+    // Ocultar botón centrar delivery
+    const btnCentrar = document.getElementById("btnCentrarDelivery");
+    if (btnCentrar) btnCentrar.classList.add("hidden");
+    
     // Resetear variables
     pedidoActual = null;
     pedidoPendiente = null;
+    
+    // Resetear variables de control de rutas
+    rutaYaDibujada = false;
+    ultimoEstadoPedido = null;
+    rutaDestinoActual = null;
+    
     // Reactivar la carga de deliverys en línea
     if (currentUser && currentUser.rol === 'cliente') {
         if (deliverysInterval) clearInterval(deliverysInterval);
         deliverysInterval = setInterval(() => cargarDeliverysEnLinea(), 5000);
         cargarDeliverysEnLinea();
     }
+    
+    // Forzar actualización de la tarifa (para resetear)
+    if (typeof actualizarRutaYTarifa === 'function') {
+        setTimeout(() => actualizarRutaYTarifa(), 100);
+    }
+    
     mostrarToast("🔄 Todo listo. Puedes hacer un nuevo envío.");
 }
 
@@ -1368,10 +1525,11 @@ function copiarDatosBancarios() {
 // ==================== SEGUIMIENTO DE DELIVERY ====================
 function iniciarSeguimientoDelivery() {
     if (!pedidoActual || !pedidoActual.id) {
-        console.error("No hay pedido actual para seguir");
+        console.error("❌ No hay pedido actual para seguir");
         return;
     }
 
+    // Limpiar intervalos anteriores si existen
     if (seguimientoInterval) {
         clearInterval(seguimientoInterval);
         seguimientoInterval = null;
@@ -1392,73 +1550,104 @@ function iniciarSeguimientoDelivery() {
             
             if (error) throw error;
             
-            if (pedidoActualizado) {
-                const estadoAnterior = pedidoActual.estado;
-                pedidoActual = pedidoActualizado;
+            if (!pedidoActualizado) return;
+            
+            const estadoAnterior = pedidoActual.estado;
+            pedidoActual = pedidoActualizado;
+            
+            // ========== 1. PEDIDO COMPLETADO ==========
+            if (pedidoActualizado.estado === 'completado') {
+                console.log("🎉 Pedido completado detectado! Limpiando UI...");
                 
-                // ✅ DETECTAR CUANDO EL PEDIDO SE COMPLETA
-                if (pedidoActualizado.estado === 'completado') {
-                    console.log("🎉 Pedido completado detectado! Limpiando UI...");
-                    
-                    // Limpiar intervalos
-                    if (seguimientoInterval) {
-                        clearInterval(seguimientoInterval);
-                        seguimientoInterval = null;
-                    }
-                    if (ubicacionInterval) {
-                        clearInterval(ubicacionInterval);
-                        ubicacionInterval = null;
-                    }
-                    
-                    // Actualizar panel y limpiar UI
-                    actualizarEstadoPanel('completado');
-                    
-                    // Resetear variables de control
-                    rutaYaDibujada = false;
-                    ultimoEstadoPedido = null;
-                    rutaDestinoActual = null;
-                    pedidoActual = null;
-                    
-                    // Reactivar UI
-                    bloquearUIporPedidoActivo(false);
-                    
-                    // Recargar deliverys
-                    cargarDeliverysEnLinea();
-                    
-                    return; // Salir del intervalo
-                    
+                // Limpiar intervalos
+                if (seguimientoInterval) {
+                    clearInterval(seguimientoInterval);
+                    seguimientoInterval = null;
+                }
+                if (ubicacionInterval) {
+                    clearInterval(ubicacionInterval);
+                    ubicacionInterval = null;
                 }
                 
-                // Actualizar el panel según el estado actual
-                if (pedidoActualizado.estado === 'asignado' && pedidoActualizado.delivery_nombre) {
-                    actualizarEstadoPanel('asignado', pedidoActualizado.delivery_nombre);
-                } else if (pedidoActualizado.estado === 'recogido' && pedidoActualizado.delivery_nombre) {
-                    actualizarEstadoPanel('recogido', pedidoActualizado.delivery_nombre);
-                    
-                    if (estadoAnterior === 'asignado') {
-                        mostrarToast(`📦 ¡El delivery ${pedidoActualizado.delivery_nombre} ya recogió tu paquete!`);
-                    }
-                } else if (pedidoActualizado.estado === 'pendiente') {
-                    actualizarEstadoPanel('pendiente');
+                // Limpiar marcador de delivery
+                if (deliveryMarker) {
+                    try { map.removeLayer(deliveryMarker); } catch(e) {}
+                    deliveryMarker = null;
                 }
+                
+                // Limpiar rutas
+                limpiarRutaCliente();
+                
+                // Ocultar paneles de estado
+                const panel = document.getElementById("panelEstadoPedido");
+                const panelMobile = document.getElementById("panelEstadoPedidoMobile");
+                if (panel) panel.classList.add("hidden");
+                if (panelMobile) panelMobile.classList.add("hidden");
+                
+                // Ocultar botón centrar delivery
+                mostrarBotonCentrarDelivery(false);
+                
+                // Ocultar info del delivery
+                const deliveryInfo = document.getElementById("deliveryInfo");
+                if (deliveryInfo) deliveryInfo.classList.add("hidden");
+                
+                // Resetear variables de control
+                rutaYaDibujada = false;
+                ultimoEstadoPedido = null;
+                rutaDestinoActual = null;
+                
+                // Reactivar UI
+                bloquearUIporPedidoActivo(false);
+                
+                // Limpiar pedido actual
+                pedidoActual = null;
+                
+                // Recargar deliverys (ahora mostrará todos nuevamente)
+                cargarDeliverysEnLinea();
+                
+                // Mostrar mensaje final
+                mostrarToast("🎉 ¡Envío completado! Gracias por usar MandaYa");
+                
+                return; // Salir del intervalo (importante)
             }
             
-            // Seguimiento de ubicación para estados activos
-            if (pedidoActualizado && 
-                (pedidoActualizado.estado === 'asignado' || pedidoActualizado.estado === 'recogido') && 
-                pedidoActualizado.delivery_id) {
+            // ========== 2. ACTUALIZAR PANEL DE ESTADO ==========
+            if (pedidoActualizado.estado === 'asignado' && pedidoActualizado.delivery_nombre) {
+                actualizarEstadoPanel('asignado', pedidoActualizado.delivery_nombre);
+            } 
+            else if (pedidoActualizado.estado === 'recogido' && pedidoActualizado.delivery_nombre) {
+                actualizarEstadoPanel('recogido', pedidoActualizado.delivery_nombre);
                 
-                if (!ubicacionInterval) {
-                    mostrarToast(`✅ Delivery asignado: ${pedidoActualizado.delivery_nombre || 'Delivery'}`);
-                    mostrarDeliveryEnMapa(pedidoActualizado.delivery_id, pedidoActualizado.delivery_nombre);
-                    seguirUbicacionDelivery(pedidoActualizado.delivery_id);
+                // Notificar al cliente que el paquete fue recogido
+                if (estadoAnterior === 'asignado') {
+                    mostrarToast(`📦 ¡El delivery ${pedidoActualizado.delivery_nombre} ya recogió tu paquete!`);
+                    vibrar(200); // Si tienes función vibrar
                 }
+            } 
+            else if (pedidoActualizado.estado === 'pendiente') {
+                actualizarEstadoPanel('pendiente');
+            }
+            
+            // ========== 3. INICIAR SEGUIMIENTO DE UBICACIÓN ==========
+            // Solo si el pedido está activo y aún no tenemos intervalo de ubicación
+            const estadoActivo = (pedidoActualizado.estado === 'asignado' || pedidoActualizado.estado === 'recogido');
+            
+            if (estadoActivo && pedidoActualizado.delivery_id && !ubicacionInterval) {
+                mostrarToast(`✅ Delivery asignado: ${pedidoActualizado.delivery_nombre || 'Delivery'}`);
+                mostrarDeliveryEnMapa(pedidoActualizado.delivery_id, pedidoActualizado.delivery_nombre);
+                seguirUbicacionDelivery(pedidoActualizado.delivery_id);
             }
             
         } catch(e) {
-            console.error('Error en seguimiento:', e);
+            console.error('❌ Error en seguimiento:', e);
         }
-    }, 3000);
+    }, 3000); // ✅ Cambiado de 3s a 5s para mejor rendimiento
+}
+
+function vibrar(duracion = 200) {
+    if (window.navigator && window.navigator.vibrate) {
+        window.navigator.vibrate(duracion);
+    }
 }
 
 function seguirUbicacionDelivery(deliveryId) {
@@ -1714,26 +1903,35 @@ function centrarEnDelivery() {
 
 // ✅ Función para ver ruta completa
 function verRutaCompleta() {
+    // ✅ Primero intentar mostrar la ruta del delivery si existe
     if (clienteRouteControl && clienteRouteControl.getWaypoints) {
         const waypoints = clienteRouteControl.getWaypoints();
         if (waypoints && waypoints.length >= 2) {
             const bounds = L.latLngBounds(waypoints);
             map.fitBounds(bounds, { padding: [50, 50] });
-            mostrarToast("🗺️ Mostrando ruta completa");
+            mostrarToast("🗺️ Mostrando ruta completa del delivery");
             return;
         }
     }
     
-    // Si no hay ruta activa, mostrar origen y destino
-    if (originCoords && destCoords) {
+    // ✅ Si no hay ruta activa de delivery, mostrar origen y destino del cliente
+    const origenCoord = getOriginCoords();
+    const destinoCoord = getDestCoords();
+    
+    // ✅ Validar que ambas coordenadas existan
+    if (origenCoord && destinoCoord && origenCoord.lat && destinoCoord.lat) {
         const bounds = L.latLngBounds([
-            [originCoords.lat, originCoords.lng],
-            [destCoords.lat, destCoords.lng]
+            [origenCoord.lat, origenCoord.lng],
+            [destinoCoord.lat, destinoCoord.lng]
         ]);
         map.fitBounds(bounds, { padding: [50, 50] });
-        mostrarToast("📍 Mostrando origen y destino");
+        mostrarToast("📍 Mostrando origen y destino de tu envío");
     } else {
-        mostrarToast("❌ No hay ruta disponible", true);
+        console.warn("No hay coordenadas disponibles:", { 
+            origen: origenCoord, 
+            destino: destinoCoord 
+        });
+        mostrarToast("❌ No hay ruta disponible. Selecciona origen y destino primero", true);
     }
 }
 
@@ -2036,12 +2234,12 @@ async function mostrarDeliveryEnMapa(deliveryId, deliveryNombre = null) {
 }
 
 function mostrarResumenRuta() {
-    if (!originCoords || !destCoords) {
+    if (!getOriginCoords() || !getDestCoords()) {
         mostrarToast("❌ Selecciona origen y destino primero", true);
         return;
     }
     
-    const distancia = currentRouteData ? currentRouteData.distance : calcularDistancia();
+    const distancia = currentRouteData ? currentRouteData.distance : calcularDistanciaEntrePuntos(getOriginCoords(), getDestCoords());
     const tipo = document.getElementById("tipoEnvio").value || 'paquete';
     const rate = calculateShippingRate(distancia, tipo);
     const duracion = currentRouteData ? currentRouteData.duration : (distancia * 2);
@@ -2652,27 +2850,6 @@ async function cargarDeliverysEnLinea() {
         
     } catch(e) {
         console.error('❌ Error cargando deliverys en línea:', e);
-    }
-}
-
-// ==================== FUNCIÓN FALTANTE ====================
-async function tienePedidoActivo(deliveryId) {
-    const supabase = supabaseClient;
-    if (!supabase) return false;
-    
-    try {
-        const { data, error } = await supabase
-            .from('pedidos')
-            .select('id')
-            .eq('delivery_id', deliveryId)
-            .in('estado', ['asignado', 'recogido'])
-            .limit(1);
-        
-        if (error) throw error;
-        return data && data.length > 0;
-    } catch(e) {
-        console.error('Error verificando pedido activo:', e);
-        return false;
     }
 }
 
