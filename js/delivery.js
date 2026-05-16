@@ -87,7 +87,7 @@ function loadUser() {
     document.getElementById("userInfo").innerHTML = `
         <div class="flex items-center gap-2">
             <i class="fas fa-motorcycle text-[#FF6200] text-xl"></i>
-            <span class="font-medium">${currentUser.nombre}</span>
+            <span class="font-medium">${sanitizarHTML(currentUser.nombre)}</span>
             <span class="text-gray-400 text-xs">(Delivery)</span>
         </div>
         <div class="text-xs text-gray-500 mt-1">
@@ -158,25 +158,33 @@ async function cerrarSesion() {
 
     if (!confirmado) return;
 
-    // Limpiar recursos específicos de delivery
-    if (watchId) navigator.geolocation.clearWatch(watchId);
-    if (ubicacionInterval) clearInterval(ubicacionInterval);
-    if (cargaPedidosInterval) clearInterval(cargaPedidosInterval);
+    console.log("👋 Iniciando cierre de sesión...");
 
-    limpiarRutasYMarcadores();
+    try {
+        // Usar la función centralizada de limpieza (evita duplicar código)
+        limpiarIntervalosDelivery();
 
-    // Actualizar estado offline en Supabase
-    if (currentUser && userMarker && userMarker.getLatLng) {
-        const coords = userMarker.getLatLng();
-        await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, coords.lat, coords.lng, false);
+        // Actualizar estado offline en Supabase (por si la limpieza no lo hizo)
+        if (currentUser && supabaseClient) {
+            await setDeliveryOnlineSupabase(currentUser.id, false)
+                .catch(err => console.warn("No se pudo actualizar offline:", err));
+        }
+
+        // Cerrar sesión con securityManager (esto limpia localStorage y redirige)
+        await securityManager.cerrarSesion();
+
+    } catch (error) {
+        console.error("❌ Error durante el cierre de sesión:", error);
+        
+        // Fallback: intentar cerrar sesión de todas formas
+        try {
+            await securityManager.cerrarSesion();
+        } catch (e) {
+            console.error("Error en fallback:", e);
+            // Último recurso
+            window.location.href = "index.html";
+        }
     }
-
-    if (currentUser && isOnline && supabaseClient) {
-        await setDeliveryOnlineSupabase(currentUser.id, false);
-    }
-
-    // Cerrar sesión con securityManager
-    await securityManager.cerrarSesion();
 }
 
 async function actualizarBadgeEstado() {
@@ -197,25 +205,33 @@ async function actualizarBadgeEstado() {
 
 // ==================== LIMPIAR RUTAS Y MARCADORES ====================
 function limpiarRutasYMarcadores() {
+    // Limpiar Routing Control de forma segura
     if (currentRoutingControl) {
-        try { 
-            map.removeControl(currentRoutingControl); 
-        } catch(e) {}
+        try {
+            if (currentRoutingControl._map) {
+                map.removeControl(currentRoutingControl);
+            } else if (currentRoutingControl.getPlan) {
+                currentRoutingControl.getPlan().setWaypoints([]);
+            }
+        } catch (e) {
+            console.warn("Error limpiando routing control:", e.message);
+        }
         currentRoutingControl = null;
     }
-    
-    if (recogidaMarker) {
-        map.removeLayer(recogidaMarker);
-        recogidaMarker = null;
-    }
-    
-    if (destinoMarker) {
-        map.removeLayer(destinoMarker);
-        destinoMarker = null;
-    }
+
+    // Limpiar marcadores
+    [recogidaMarker, destinoMarker].forEach(marker => {
+        if (marker) {
+            try { map.removeLayer(marker); } catch(e) {}
+        }
+    });
+
+    recogidaMarker = null;
+    destinoMarker = null;
+
+    console.log("🧹 Rutas y marcadores limpiados");
 }
 
-// ==================== RUTA DE RECOGIDA (delivery -> origen) ====================
 async function dibujarRutaRecogida(pedido) {
     // ✅ Evitar redibujar si ya estamos en la misma ruta
     if (ultimoPedidoDibujado === pedido.id && ultimaEtapa === 'recogida') {
@@ -293,9 +309,9 @@ async function dibujarRutaRecogida(pedido) {
             iconSize: [36, 36]
         })
     }).addTo(map);
-    recogidaMarker.bindPopup(`<b>📍 RECOGER AQUÍ</b><br>${pedido.origen}`).openPopup();
+    recogidaMarker.bindPopup(`<b>📍 RECOGER AQUÍ</b><br>${sanitizarHTML(pedido.origen)}`);
     
-    mostrarToast(`📍 Ruta de RECOGIDA - Dirígete a: ${pedido.origen}`);
+    mostrarToast(`📍 Ruta de RECOGIDA - Dirígete a: ${sanitizarHTML(pedido.destino)}`);
 }
 
 // ==================== RUTA DE ENTREGA (origen -> destino) ====================
@@ -379,9 +395,9 @@ async function dibujarRutaEntrega(pedido) {
             iconSize: [36, 36]
         })
     }).addTo(map);
-    destinoMarker.bindPopup(`<b>🏁 ENTREGAR AQUÍ</b><br>${pedido.destino}`).openPopup();
+    destinoMarker.bindPopup(`<b>🏁 ENTREGAR AQUÍ</b><br>${sanitizarHTML(pedido.destino)}`).openPopup();
     
-    mostrarToast(`🚚 Ruta de ENTREGA - Desde ${pedido.origen} hasta ${pedido.destino}`);
+    mostrarToast(`🚚 Ruta de ENTREGA - Desde ${sanitizarHTML(pedido.origen)} hasta ${sanitizarHTML(pedido.destino)}`);
     
     // ✅ Opcional: cerrar popup después de 5 segundos
     setTimeout(() => {
@@ -411,7 +427,7 @@ async function marcarPaqueteRecogido(pedidoId) {
         
         if (error) throw error;
         
-        mostrarToast(`✅ ¡Paquete #${pedidoId} RECOGIDO! Ahora dirígete al destino.`);
+        mostrarToast(`✅ ¡Paquete #${sanitizarHTML(pedidoId)} RECOGIDO! Ahora dirígete al destino.`);
         vibrar(200);  // <-- AGREGAR
         
           // ✅ Forzar recarga para obtener el nuevo estado 'recogido'
@@ -425,7 +441,7 @@ async function marcarPaqueteRecogido(pedidoId) {
             
             // ✅ Mostrar popup con instrucciones
             if (userMarker) {
-                userMarker.bindPopup(`🏍️ <b>${currentUser.nombre}</b><br>📦 En camino a ENTREGAR`).openPopup();
+                userMarker.bindPopup(`🏍️ <b>${sanitizarHTML(currentUser.nombre)}</b><br>📦 En camino a ENTREGAR`).openPopup();
                 setTimeout(() => userMarker.closePopup(), 3000);
             }
         } else {
@@ -770,7 +786,7 @@ async function cargarPedidos(force = false) {
         }
         
         if (ahora - ultimaPeticionPedidos < tiempoEspera) {
-            console.log(`⏳ Throttling: cargarPedidos - demasiado rápido (${tiempoEspera/1000}s)`);
+            console.log(`⏳ Throttling: cargarPedidos - demasiado rápido (${sanitizarHTML(tiempoEspera/1000)}s)`);
             return;
         }
     }
@@ -853,7 +869,7 @@ async function cargarPedidos(force = false) {
         await actualizarColorMarcador();
         await actualizarBadgeEstado();
         
-        console.log(`📦 ${pedidosDisponibles.length} pedidos disponibles, ${misPedidosActivos.length} activos`);
+        console.log(`📦 ${sanitizarHTML(pedidosDisponibles.length)} pedidos disponibles, ${sanitizarHTML(misPedidosActivos.length)} activos`);
         
     } catch(e) {
         console.error('Error cargando pedidos:', e);
@@ -865,7 +881,7 @@ function seleccionarPedido(pedidoId) {
     limpiarRutasYMarcadores();
     dibujarRutaOptimaPedido(pedidoSeleccionado);
     actualizarListaPedidos();
-    mostrarToast(`📍 Pedido #${pedidoId} seleccionado - Ruta mostrada en mapa`);
+    mostrarToast(`📍 Pedido #${sanitizarHTML(pedidoId)} seleccionado - Ruta mostrada en mapa`);
 }
 
 async function dibujarRutaOptimaPedido(pedido) { limpiarRutasYMarcadores();
@@ -894,7 +910,7 @@ async function dibujarRutaOptimaPedido(pedido) { limpiarRutasYMarcadores();
             [pedido.destinoCoords.lat, pedido.destinoCoords.lng]
         ], { padding: [50, 50] });
         
-        mostrarToast(`📏 Distancia: ${pedido.distanciaReal} km • 💰 $${pedido.tarifa}`);
+        mostrarToast(`📏 Distancia: ${sanitizarHTML(pedido.distanciaReal)} km • 💰 $${sanitizarHTML(pedido.tarifa)}`);
     }
 }
 
@@ -920,11 +936,11 @@ async function agarrarPedido(pedidoId) {
         
         if (tienePedidoActivo) {
             const pedidoActivo = await getPedidoActivoDelDelivery(currentUser.id);
-            mostrarToast(`❌ Ya tienes un pedido activo (#${pedidoActivo?.id}). Complétalo primero.`, true);
+            mostrarToast(`❌ Ya tienes un pedido activo (#${sanitizarHTML(pedidoActivo?.id)}). Complétalo primero.`, true);
             
             // Resaltar el pedido activo en la lista
             if (pedidoActivo) {
-                const elementoActivo = document.querySelector(`[data-pedido-id="${pedidoActivo.id}"]`);
+                const elementoActivo = document.querySelector(`[data-pedido-id="${sanitizarHTML(pedidoActivo.id)}"]`);
                 if (elementoActivo) {
                     elementoActivo.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     elementoActivo.style.border = '2px solid #FF6200';
@@ -946,7 +962,7 @@ async function agarrarPedido(pedidoId) {
         if (errorPedido) throw errorPedido;
         
         if (pedidoActual.estado !== 'pendiente') {
-            mostrarToast(`❌ El pedido #${pedidoId} ya no está disponible (fue agarrado por otro delivery)`, true);
+            mostrarToast(`❌ El pedido #${sanitizarHTML(pedidoId)} ya no está disponible (fue agarrado por otro delivery)`, true);
             await cargarPedidos(true);   // ✅
             return;
         }
@@ -954,7 +970,7 @@ async function agarrarPedido(pedidoId) {
         // ✅ VERIFICACIÓN 3: Confirmar con modal personalizado
         const confirmado = await mostrarModalConfirmacionDelivery(
             "Confirmar pedido",
-            `¿Seguro que quieres AGARRAR el pedido #${pedidoId}?`,
+            `¿Seguro que quieres AGARRAR el pedido #${sanitizarHTML(pedidoId)}?`,
             () => {} // callback vacío, la función retorna Promise
         );
         
@@ -978,7 +994,7 @@ async function agarrarPedido(pedidoId) {
         
         if (error) throw error;
         
-        mostrarToast(`✅ Pedido #${pedidoId} AGARRADO! Dirígete al origen para recoger.`);
+        mostrarToast(`✅ Pedido #${sanitizarHTML(pedidoId)} AGARRADO! Dirígete al origen para recoger.`);
         vibrar(300);  // <-- AGREGAR
         
         // ✅ Limpiar selección y recargar
@@ -1030,7 +1046,7 @@ async function completarPedido(pedidoId) {
             .eq('id', pedidoId)
             .single();
         
-        mostrarToast(`✅ Pedido #${pedidoId} ENTREGADO! Ganaste $${pedido?.tarifa || 0} MXN`);
+        mostrarToast(`✅ Pedido #${sanitizarHTML(pedidoId)} ENTREGADO! Ganaste ${sanitizarHTML(pedido?.tarifa || 0)} MXN`);
         vibrar(200);  // <-- AGREGAR
 
          // ✅ AGREGAR: Actualizar estadísticas después de completar
@@ -1079,20 +1095,20 @@ function actualizarListaPedidos() {
         containerDisponibles.innerHTML = '<div class="text-center text-gray-400 py-8"><i class="fas fa-box-open text-4xl mb-2 block"></i>No hay pedidos disponibles</div>';
     } else {
         containerDisponibles.innerHTML = pedidosDisponibles.map(p => `
-            <div class="bg-white border rounded-xl p-4 shadow-sm pedido-card ${pedidoSeleccionado?.id === p.id ? 'pedido-seleccionado' : ''}" onclick="seleccionarPedido(${p.id})">
+            <div class="bg-white border rounded-xl p-4 shadow-sm pedido-card ${sanitizarHTML(pedidoSeleccionado?.id === p.id ? 'pedido-seleccionado' : '')}" onclick="seleccionarPedido(${sanitizarHTML(p.id)})">
                 <div class="flex justify-between items-start mb-2">
-                    <span class="font-bold text-[#FF6200]">#${p.id}</span>
+                    <span class="font-bold text-[#FF6200]">#${sanitizarHTML(p.id)}</span>
                     <span class="text-xs px-2 py-1 rounded-full bg-yellow-100 text-yellow-700">Pendiente</span>
-                </div>
-                <p class="text-sm"><i class="fas fa-circle text-[#FF6200] text-xs mr-1"></i> ${p.origen}</p>
-                <p class="text-sm mt-1"><i class="fas fa-square text-blue-600 text-xs mr-1"></i> ${p.destino}</p>
-                <p class="text-xs text-gray-500 mt-2">📏 ${p.distanciaReal} km • 💰 $${p.tarifa}</p>
-                <p class="text-xs text-gray-500">👤 Cliente: ${p.clienteNombre}</p>
+            </div>
+                <p class="text-sm"><i class="fas fa-circle text-[#FF6200] text-xs mr-1"></i> ${sanitizarHTML(p.origen)}</p>
+                <p class="text-sm mt-1"><i class="fas fa-square text-blue-600 text-xs mr-1"></i> ${sanitizarHTML(p.destino)}</p>
+                <p class="text-xs text-gray-500 mt-2">📏 ${sanitizarHTML(p.distanciaReal)} km • 💰 $${sanitizarHTML(p.tarifa)}</p>
+                <p class="text-xs text-gray-500">👤 Cliente: ${sanitizarHTML(p.clienteNombre)}</p>
                 ${tienePedidoActivo ? 
                     `<button disabled class="w-full mt-3 bg-gray-400 cursor-not-allowed text-white py-2 rounded-lg text-sm font-medium transition-all">
                         <i class="fas fa-lock mr-1"></i> Completar pedido actual primero
                     </button>` :
-                    `<button onclick="event.stopPropagation(); agarrarPedido(${p.id})" class="w-full mt-3 bg-green-500 hover:bg-green-600 text-white py-2 rounded-lg text-sm font-medium transition-all">
+                    `<button onclick="event.stopPropagation(); agarrarPedido(${sanitizarHTML(p.id)})" class="w-full mt-3 bg-green-500 hover:bg-green-600 text-white py-2 rounded-lg text-sm font-medium transition-all">
                         <i class="fas fa-hand-paper mr-1"></i> AGARRAR PEDIDO
                     </button>`
                 }
@@ -1110,17 +1126,17 @@ function actualizarListaPedidos() {
             const estaAsignado = p.estado === 'asignado';
             
             return `
-            <div class="bg-orange-50 border border-orange-200 rounded-xl p-4 shadow-sm" data-pedido-id="${p.id}">
+            <div class="bg-orange-50 border border-orange-200 rounded-xl p-4 shadow-sm" data-pedido-id="${sanitizarHTML(p.id)}">
                 <div class="flex justify-between items-start mb-2">
-                    <span class="font-bold text-[#FF6200]">#${p.id}</span>
+                    <span class="font-bold text-[#FF6200]">#${sanitizarHTML(p.id)}</span>
                     <span class="text-xs px-2 py-1 rounded-full ${esRecogido ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'}">
                         ${esRecogido ? '📦 Paquete recogido' : '🟡 En camino a recoger'}
                     </span>
                 </div>
-                <p class="text-sm"><i class="fas fa-circle text-green-500 text-xs mr-1"></i> <strong>Recoger en:</strong> ${p.origen}</p>
-                <p class="text-sm mt-1"><i class="fas fa-square text-blue-600 text-xs mr-1"></i> <strong>Entregar en:</strong> ${p.destino}</p>
-                <p class="text-xs text-gray-500 mt-2">📏 ${p.distanciaReal} km • 💰 $${p.tarifa}</p>
-                <p class="text-xs text-gray-500">👤 Cliente: ${p.clienteNombre}</p>
+                <p class="text-sm"><i class="fas fa-circle text-green-500 text-xs mr-1"></i> <strong>Recoger en:</strong> ${sanitizarHTML(p.origen)}</p>
+                <p class="text-sm mt-1"><i class="fas fa-square text-blue-600 text-xs mr-1"></i> <strong>Entregar en:</strong> ${sanitizarHTML(p.destino)}</p>
+                <p class="text-xs text-gray-500 mt-2">📏 ${sanitizarHTML(p.distanciaReal)} km • 💰 $${sanitizarHTML(p.tarifa)}</p>
+                <p class="text-xs text-gray-500">👤 Cliente: ${sanitizarHTML(p.clienteNombre)}</p>
                 <div class="mt-3 text-xs text-center text-gray-500">
                     <i class="fas fa-info-circle"></i> Debes completar este pedido antes de agarrar otro
                 </div>
@@ -1279,28 +1295,28 @@ async function verHistorial() {
                                 <div class="bg-gray-700 rounded-xl p-3">
                                     <div class="flex justify-between items-start mb-1">
                                         <div class="flex items-center gap-2">
-                                            <span class="font-mono text-orange-400 text-xs font-bold">#${p.id.toString().slice(-8)}</span>
+                                            <span class="font-mono text-orange-400 text-xs font-bold">#${sanitizarHTML(p.id.toString().slice(-8))}</span>
                                             <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-green-500/20 text-green-400">✅ Completo</span>
                                         </div>
-                                        <span class="text-[10px] text-gray-400">${new Date(p.fecha_completado || p.fecha).toLocaleDateString()}</span>
+                                        <span class="text-[10px] text-gray-400">${new Date(sanitizarHTML(p.fecha_completado) || sanitizarHTML(p.fecha)).toLocaleDateString()}</span>
                                     </div>
                                     
                                     <div class="flex items-start gap-1 my-1">
                                         <i class="fas fa-circle text-[8px] text-orange-500 mt-1"></i>
-                                        <span class="text-xs text-gray-300 flex-1 line-clamp-1">${p.origen || 'Origen'}</span>
+                                        <span class="text-xs text-gray-300 flex-1 line-clamp-1">${sanitizarHTML(p.origen || 'Origen')}</span>
                                     </div>
                                     
                                     <div class="flex items-start gap-1 mb-1">
                                         <i class="fas fa-square text-[8px] text-blue-500 mt-1"></i>
-                                        <span class="text-xs text-gray-300 flex-1 line-clamp-1">${p.destino || 'Destino'}</span>
+                                        <span class="text-xs text-gray-300 flex-1 line-clamp-1">${sanitizarHTML(p.destino || 'Destino')}</span>
                                     </div>
                                     
                                     <div class="flex justify-between items-center mt-2 pt-2 border-t border-gray-600">
                                         <div class="flex gap-3">
-                                            <span class="text-xs text-gray-400">📏 ${p.distancia_real} km</span>
-                                            <span class="text-xs text-gray-400">💰 $${p.tarifa}</span>
+                                            <span class="text-xs text-gray-400">📏 ${sanitizarHTML(p.distancia_real)} km</span>
+                                            <span class="text-xs text-gray-400">💰 $${sanitizarHTML(p.tarifa)}</span>
                                         </div>
-                                        <span class="text-[10px] text-gray-500 capitalize">${p.tipo || 'paquete'}</span>
+                                        <span class="text-[10px] text-gray-500 capitalize">${sanitizarHTML(p.tipo || 'paquete')}</span>
                                     </div>
                                 </div>
                             `).join('')}
@@ -1317,7 +1333,7 @@ async function verHistorial() {
                         </div>
                         <div class="text-right">
                             <span class="text-gray-400 text-xs">📦 Entregas</span>
-                            <div class="text-xl font-bold text-white">${completados?.length || 0}</div>
+                            <div class="text-xl font-bold text-white">${sanitizarHTML(completados?.length || 0)}</div>
                         </div>
                     </div>
                 </div>
@@ -1359,7 +1375,7 @@ function verPerfil() {
                     <i class="fas fa-user text-orange-500 w-5"></i>
                     <div class="flex-1">
                         <div class="text-xs text-gray-400">Nombre</div>
-                        <div class="text-white font-medium">${currentUser?.nombre || 'No disponible'}</div>
+                        <div class="text-white font-medium">${sanitizarHTML(currentUser?.nombre || 'No disponible')}</div>
                     </div>
                 </div>
                 
@@ -1367,7 +1383,7 @@ function verPerfil() {
                     <i class="fas fa-envelope text-orange-500 w-5"></i>
                     <div class="flex-1">
                         <div class="text-xs text-gray-400">Correo electrónico</div>
-                        <div class="text-white font-medium">${currentUser?.email || 'No disponible'}</div>
+                        <div class="text-white font-medium">${sanitizarHTML(currentUser?.email || 'No disponible')}</div>
                     </div>
                 </div>
                 
@@ -1436,15 +1452,15 @@ async function actualizarEstadisticas() {
         const totalGanadoEl = document.getElementById("totalGanado");
         
         if (totalEntregasEl) {
-            totalEntregasEl.innerText = totalEntregas;
-            console.log(`✅ Total entregas actualizado: ${totalEntregas}`);
+            totalEntregasEl.innerText = sanitizarHTML(totalEntregas);
+            console.log(`✅ Total entregas actualizado: ${sanitizarHTML(totalEntregas)}`);
         } else {
             console.warn("⚠️ Elemento totalEntregas no encontrado");
         }
         
         if (totalGanadoEl) {
-            totalGanadoEl.innerText = `$${totalGanado}`;
-            console.log(`✅ Total ganado actualizado: $${totalGanado}`);
+            totalGanadoEl.innerText = `${sanitizarHTML(totalGanado)}`;
+            console.log(`✅ Total ganado actualizado: ${sanitizarHTML(totalGanado)}`);
         } else {
             console.warn("⚠️ Elemento totalGanado no encontrado");
         }
@@ -1476,8 +1492,8 @@ function mostrarModalConfirmacionDelivery(titulo, mensaje) {
                 <div class="w-16 h-16 bg-orange-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
                     <i class="fas fa-motorcycle text-3xl text-orange-500"></i>
                 </div>
-                <h3 class="text-xl font-bold text-white mb-2">${titulo}</h3>
-                <p class="text-gray-400 text-sm mb-6">${mensaje}</p>
+                <h3 class="text-xl font-bold text-white mb-2">${sanitizarHTML(titulo)}</h3>
+                <p class="text-gray-400 text-sm mb-6">${sanitizarHTML(mensaje)}</p>
                 <div class="flex gap-3">
                     <button id="btnCancelarConfirm" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-3 rounded-xl transition-all font-medium">
                         Cancelar
@@ -1545,10 +1561,10 @@ async function actualizarColorMarcador() {
                     box-shadow: 0 1px 3px rgba(0,0,0,0.3);
                     border: 0.5px solid rgba(255,255,255,0.2);
                 ">
-                    ${nombreMostrar}
+                    ${sanitizarHTML(nombreMostrar)}
                 </div>
                 <div style="
-                    background: ${color};
+                    background: ${sanitizarHTML(color)};
                     width: 34px;
                     height: 34px;
                     border-radius: 50%;
@@ -1569,16 +1585,17 @@ async function actualizarColorMarcador() {
     });
     
     userMarker.setIcon(nuevoIcono);
-    userMarker.setPopupContent(`🏍️ <b>${currentUser.nombre}</b><br>${estadoTexto}`);
-    console.log(`🎨 Marcador actualizado: ${tienePedido ? 'NARANJA' : 'VERDE'} - ${nombreMostrar}`);
+    userMarker.setPopupContent(`🏍️ <b>${sanitizarHTML(currentUser.nombre)}</b><br>${estadoTexto}`);
+    console.log(`🎨 Marcador actualizado: ${sanitizarHTML(tienePedido ? 'NARANJA' : 'VERDE')} - ${sanitizarHTML(nombreMostrar)}`);
 }
 
 async function actualizarEstadoYColor() { await actualizarColorMarcador();}
 
 // ==================== LIMPIAR RECURSOS AL CERRAR PESTAÑA (DELIVERY) ====================
 function limpiarIntervalosDelivery() {
-    console.log("🧹 Limpiando intervalos de delivery...");
-    
+    console.log("🧹 Limpiando todos los recursos del delivery...");
+
+    // Limpiar intervalos
     if (ubicacionInterval) {
         clearInterval(ubicacionInterval);
         ubicacionInterval = null;
@@ -1588,127 +1605,89 @@ function limpiarIntervalosDelivery() {
         clearInterval(cargaPedidosInterval);
         cargaPedidosInterval = null;
     }
-    
+
+    // Limpiar geolocalización
     if (watchId) {
-        navigator.geolocation.clearWatch(watchId);
+        try {
+            navigator.geolocation.clearWatch(watchId);
+        } catch (e) {
+            console.warn("Error al limpiar watchPosition:", e);
+        }
         watchId = null;
     }
-    
-    // Limpiar rutas
+
+    // Limpiar rutas y marcadores del mapa
     limpiarRutasYMarcadores();
-    
-    // Actualizar estado offline en Supabase
-       if (currentUser && isOnline && supabaseClient) {
-        setDeliveryOnlineSupabase(currentUser.id, false).catch(console.error);
-        // ✅ Mejor verificar que userMarker existe
-        if (userMarker && userMarker.getLatLng) {
-            const coords = userMarker.getLatLng();
-            guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, coords.lat, coords.lng, false).catch(console.error);
+
+    // Actualizar estado offline en Supabase (solo si es necesario)
+    if (currentUser && supabaseClient) {
+        // Siempre marcar como offline al cerrar
+        setDeliveryOnlineSupabase(currentUser.id, false)
+            .catch(err => console.warn("No se pudo actualizar estado offline:", err));
+
+        // Guardar última ubicación como offline
+        if (userMarker && typeof userMarker.getLatLng === 'function') {
+            try {
+                const coords = userMarker.getLatLng();
+                if (coords) {
+                    guardarUbicacionEnSupabase(
+                        currentUser.id, 
+                        currentUser.nombre, 
+                        coords.lat, 
+                        coords.lng, 
+                        false
+                    ).catch(err => console.warn("Error guardando última ubicación:", err));
+                }
+            } catch (e) {
+                console.warn("Error obteniendo coords del marcador:", e);
+            }
         }
     }
-    
-    console.log("✅ Recursos de delivery liberados");
+
+    console.log("✅ Recursos de delivery liberados correctamente");
 }
 
-// Sobrescribir cerrarSesion
-const originalCerrarSesionDelivery = window.cerrarSesion;
-window.cerrarSesion = function() {
+// ==================== EVENTOS DE CIERRE DE PÁGINA ====================
+
+// Limpieza al intentar cerrar/recargar la pestaña
+window.addEventListener('beforeunload', function(e) {
+    console.log("🚪 Delivery: pestaña cerrando o recargando...");
     limpiarIntervalosDelivery();
-    if (originalCerrarSesionDelivery) {
-        originalCerrarSesionDelivery();
+});
+
+// Mejor alternativa moderna a 'unload'
+window.addEventListener('pagehide', function() {
+    console.log("💀 Delivery: página ocultada o descargada (pagehide)");
+    limpiarIntervalosDelivery();
+});
+
+// Opcional: Visibilidad de la página (muy útil)
+document.addEventListener('visibilitychange', function() {
+    if (document.hidden) {
+        console.log("📴 Delivery: pestaña en segundo plano");
+        // Aquí podrías pausar algunos intervalos menos críticos
+    } else {
+        console.log("🟢 Delivery: pestaña visible nuevamente");
+        if (isOnline) {
+            // Reactivar actualizaciones
+            cargarPedidos();
+        }
     }
-};
-
-// Eventos de cierre
-window.addEventListener('beforeunload', function() {console.log("🚪 Delivery: pestaña cerrando"); limpiarIntervalosDelivery();});
-window.addEventListener('unload', function() { console.log("💀 Delivery: página descargada");});
-
-function mostrarToast(msg, err = false) {
-    // ✅ Eliminar toasts anteriores
-    const toastsAnteriores = document.querySelectorAll('.toast-moderno');
-    toastsAnteriores.forEach(toast => toast.remove());
-    const toast = document.createElement('div');
-    toast.className = 'toast-moderno';
-    const isMobile = window.innerWidth < 768;
-    const paddingY = isMobile ? '12px' : '14px';
-    const paddingX = isMobile ? '20px' : '28px';
-    const fontSize = isMobile ? '13px' : '14px';
-    let icono = err ? 'fa-exclamation-triangle' : 'fa-check-circle';
-    let colorFondo = err 
-        ? 'linear-gradient(135deg, #dc2626, #b91c1c)' 
-        : 'linear-gradient(135deg, #10b981, #059669)';
-    
-    // Personalizar iconos según el contexto delivery
-    if (msg.includes('🏍️') || msg.includes('moto') || msg.includes('Delivery')) icono = 'fa-motorcycle';
-    else if (msg.includes('📦')) icono = 'fa-box';
-    else if (msg.includes('💰') || msg.includes('$') || msg.includes('ganaste')) icono = 'fa-coins';
-    else if (msg.includes('✅')) icono = 'fa-circle-check';
-    else if (msg.includes('❌')) icono = 'fa-circle-exclamation';
-    else if (msg.includes('📍')) icono = 'fa-location-dot';
-    else if (msg.includes('🔍')) icono = 'fa-magnifying-glass';
-    
-    toast.style.cssText = `
-        position: fixed;
-        bottom: ${isMobile ? '80px' : '20px'};
-        left: 50%;
-        transform: translateX(-50%) translateY(20px);
-        background: ${colorFondo};
-        color: white;
-        padding: ${paddingY} ${paddingX};
-        border-radius: ${isMobile ? '30px' : '50px'};
-        font-size: ${fontSize};
-        font-weight: 500;
-        z-index: 100000;
-        box-shadow: 0 10px 25px -5px rgba(0,0,0,0.2), 0 8px 10px -6px rgba(0,0,0,0.1);
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        opacity: 0;
-        transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        backdrop-filter: blur(4px);
-        border: 1px solid rgba(255,255,255,0.2);
-        max-width: ${isMobile ? '85%' : 'auto'};
-        white-space: ${isMobile ? 'normal' : 'nowrap'};
-        text-align: center;
-        line-height: 1.4;
-        word-break: break-word;
-    `;
-    
-    toast.innerHTML = `
-        <i class="fas ${icono}" style="font-size: ${isMobile ? '16px' : '18px'}; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.2));"></i>
-        <span>${msg}</span>
-    `;
-    
-    document.body.appendChild(toast);
-    
-    setTimeout(() => {
-        toast.style.transform = 'translateX(-50%) translateY(0)';
-        toast.style.opacity = '1';
-    }, 10);
-    
-    const duracion = err ? 3500 : (msg.length > 50 ? 3500 : 2500);
-    
-    setTimeout(() => {
-        toast.style.transform = 'translateX(-50%) translateY(20px)';
-        toast.style.opacity = '0';
-        setTimeout(() => toast.remove(), 400);
-    }, duracion);
-}
+});
 
 // ==================== ROTACIÓN DEL MAPA (2D) ====================
 function rotateMapLeft() {
     if (!map) return;
     mapRotationAngle = (mapRotationAngle - 45) % 360;
     applyMapRotationDelivery();
-    mostrarToast(`🧭 Mapa girado ${mapRotationAngle}°`);
+    mostrarToast(`🧭 Mapa girado ${sanitizarHTML(mapRotationAngle)}°`);
 }
 
 function rotateMapRight() {
     if (!map) return;
     mapRotationAngle = (mapRotationAngle + 45) % 360;
     applyMapRotationDelivery();
-    mostrarToast(`🧭 Mapa girado ${mapRotationAngle}°`);
+    mostrarToast(`🧭 Mapa girado ${sanitizarHTML(mapRotationAngle)}°`);
 }
 
 function resetMapRotation() {
@@ -1722,7 +1701,7 @@ function applyMapRotationDelivery() {
     const mapContainer = map.getContainer();
     const currentCenter = map.getCenter();
     
-    mapContainer.style.transform = `rotate(${mapRotationAngle}deg)`;
+    mapContainer.style.transform = `rotate(${sanitizarHTML(mapRotationAngle)}deg)`;
     mapContainer.style.transition = 'transform 0.4s ease';
     
     if (mapRotationAngle !== 0) {

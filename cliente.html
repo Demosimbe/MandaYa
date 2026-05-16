@@ -330,12 +330,16 @@
                     <div class="text-sm text-gray-400 mb-2">Total a pagar</div>
                     <div class="text-3xl font-bold text-orange-500 text-center" id="transferenciaTotal">$0</div>
                 </div>
-                <button onclick="enviarComprobanteWhatsApp()" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl transition-all">
-                    <i class="fab fa-whatsapp mr-2"></i> ENVIAR COMPROBANTE POR WHATSAPP
+
+                <!-- Botón principal: confirmar pago -->
+                <button onclick="confirmarPagoTransferenciaFinal()" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl transition-all">
+                        <i class="fas fa-check-circle mr-2"></i> CONFIRMAR PAGO (YA TRANSFERÍ)
                 </button>
             </div>
             <div class="px-5 pb-5">
-                <button onclick="cerrarModalTransferencia()" class="w-full text-gray-400 hover:text-white py-2 text-sm transition-all">Volver</button>
+                <button onclick="cerrarModalTransferencia()" class="w-full bg-transparent border border-gray-600 hover:border-orange-500 text-gray-400 hover:text-orange-500 font-medium py-2.5 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 text-sm">
+                     <i class="fas fa-chevron-left text-xs"></i> Regresar
+                </button>
             </div>
         </div>
     </div>
@@ -640,13 +644,27 @@
     }
     
     function solicitarEnvioMobile() {
+    // Prevenir múltiples clics
+    const btnMobile = document.querySelector('button[onclick="solicitarEnvioMobile()"]');
+    if (btnMobile && btnMobile.disabled) return;
+    
+    // Deshabilitar botón durante el proceso
+    if (btnMobile) btnMobile.disabled = true;
+    
+    // También deshabilitar el botón de escritorio por si acaso (sincronización)
+    const btnDesktop = document.querySelector('button[onclick="solicitarEnvio()"]');
+    if (btnDesktop) btnDesktop.disabled = true;
+    
+    try {
         const origenMobileVal = document.getElementById("origenMobile").value;
         const destinoMobileVal = document.getElementById("destinoMobile").value;
         const tipoMobileVal = document.getElementById("tipoEnvioMobile").value;
+        
         if (!origenMobileVal || !destinoMobileVal) {
             mostrarToast("❌ Selecciona origen y destino", true);
             return;
         }
+        
         if (!tipoMobileVal || tipoMobileVal === '') {
             mostrarToast("❌ Selecciona el tipo de envío", true);
             document.querySelectorAll('.tipo-mobile-btn').forEach(btn => {
@@ -655,18 +673,43 @@
             });
             return;
         }
+        
+        // Sincronizar con los campos de escritorio
         const origenDesktop = document.getElementById("origen");
         const destinoDesktop = document.getElementById("destino");
         const tipoDesktop = document.getElementById("tipoEnvio");
+        
         if (origenDesktop) origenDesktop.value = origenMobileVal;
         if (destinoDesktop) destinoDesktop.value = destinoMobileVal;
         if (tipoDesktop) tipoDesktop.value = tipoMobileVal;
-        if (typeof solicitarEnvio === 'function') solicitarEnvio();
+        
+        // Llamar a la función principal (ya tiene su propia protección contra doble clic)
+        if (typeof solicitarEnvio === 'function') {
+            solicitarEnvio().catch(err => {
+                console.error("Error en solicitarEnvio:", err);
+                mostrarToast("❌ Error al solicitar el envío", true);
+            });
+        } else {
+            mostrarToast("❌ Error interno: función no disponible", true);
+        }
+    } catch (error) {
+        console.error("Error en solicitarEnvioMobile:", error);
+        mostrarToast("❌ Ocurrió un error inesperado", true);
+    } finally {
+        // Reactivar botones después de un pequeño retraso 
+        // (solo si no se abrió el modal de pago o hubo error)
+        // En caso de que se abra el modal, los botones se reactivarán al cerrarlo.
+        // Aquí usamos setTimeout para permitir que el flujo de solicitarEnvio decida.
+        setTimeout(() => {
+            if (btnMobile && !document.getElementById("modalPago")?.classList.contains("flex")) {
+                btnMobile.disabled = false;
+            }
+            if (btnDesktop && !document.getElementById("modalPago")?.classList.contains("flex")) {
+                btnDesktop.disabled = false;
+            }
+        }, 500);
     }
-    
-    const styleShake = document.createElement('style');
-    styleShake.textContent = `@keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }`;
-    document.head.appendChild(styleShake);
+}
     
     function seleccionarTipoMobile(valor, texto) {
         const tipoDesktop = document.getElementById('tipoEnvio');

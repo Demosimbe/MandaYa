@@ -96,7 +96,7 @@ function cargarUsuarioSeguro() {
     document.getElementById("userInfo").innerHTML = `
         <div class="flex items-center gap-2">
             <i class="fas fa-user-circle text-[#FF6200] text-xl"></i>
-            <span class="font-medium">${currentUser.nombre}</span>
+            <span class="font-medium">${sanitizarHTML(currentUser.nombre)}</span>
             <span class="text-gray-400 text-xs">(Cliente)</span>
         </div>
     `;
@@ -941,81 +941,108 @@ function reverseGeocode(latlng, callback) {
 }
 
 async function solicitarEnvio() {
-    const origen = document.getElementById("origen").value;
-    const destino = document.getElementById("destino").value;
-    const tipo = document.getElementById("tipoEnvio").value;
+    // Prevenir doble clic
+    const btnDesktop = document.querySelector('button[onclick="solicitarEnvio()"]');
+    const btnMobile = document.querySelector('button[onclick="solicitarEnvioMobile()"]');
     
-    // ✅ OBTENER COORDENADAS USANDO LAS FUNCIONES (ÚNICA FUENTE DE VERDAD)
-    const origenCoord = getOriginCoords();
-    const destinoCoord = getDestCoords();
+    if (btnDesktop && btnDesktop.disabled) return;
+    if (btnDesktop) btnDesktop.disabled = true;
+    if (btnMobile) btnMobile.disabled = true;
     
-    // ✅ VALIDACIÓN UNIFICADA - Usar las coordenadas obtenidas, NO las variables antiguas
-    if (!origenCoord || !destinoCoord || !origenCoord.lat || !destinoCoord.lat) {
-        console.error("Coordenadas inválidas:", { origenCoord, destinoCoord });
-        mostrarToast("❌ Error: No se han seleccionado origen o destino válidos", true);
-        return;
-    }
-    
-    // ✅ VALIDACIÓN para tipo de envío
-    if (!tipo || tipo === '') {
-        mostrarToast("❌ Por favor, selecciona qué vas a enviar (Comida, Paquete, Mercancía o Farmacia)", true);
-        const selectTipo = document.getElementById("tipoEnvio");
-        selectTipo.style.border = "2px solid #dc2626";
-        setTimeout(() => {
-            selectTipo.style.border = "";
-        }, 2000);
-        return;
-    }
-    
-    // ✅ CALCULAR DISTANCIA usando las coordenadas obtenidas
-    let distancia = currentRouteData ? currentRouteData.distance : calcularDistanciaEntrePuntos(origenCoord, destinoCoord);
-    const rate = calculateShippingRate(distancia, tipo);
-    let tarifaBase = rate.total;
-    
-    // ✅ Verificar extras
-    let tarifaFinal = tarifaBase;
-    if (currentRouteData && currentRouteData.extras) {
-        tarifaFinal = tarifaBase;
-        if (currentRouteData.extras.lluvia) tarifaFinal += 10;
-        if (currentRouteData.extras.noche) tarifaFinal += 10;
-        if (currentRouteData.extras.espera) tarifaFinal += 10;
-    }
-    
-    // ✅ GUARDAR PEDIDO usando las coordenadas obtenidas
-    pedidoPendiente = {
-        id: Date.now(),
-        cliente_id: currentUser.id,
-        cliente_nombre: currentUser.nombre,
-        origen: origen,
-        destino: destino,
-        origen_lat: origenCoord.lat,      // ✅ Usar origenCoord
-        origen_lng: origenCoord.lng,      // ✅ Usar origenCoord
-        destino_lat: destinoCoord.lat,    // ✅ Usar destinoCoord
-        destino_lng: destinoCoord.lng,    // ✅ Usar destinoCoord
-        tipo: tipo,
-        distancia_real: distancia.toFixed(2),
-        tarifa: tarifaFinal,
-        extras: currentRouteData?.extras || { lluvia: false, noche: false, espera: false },
-        estado: 'pendiente',
-        fecha: new Date().toISOString()
+    // Guardar referencia para re-habilitar al final
+    const deshabilitarBtns = () => {
+        if (btnDesktop) btnDesktop.disabled = false;
+        if (btnMobile) btnMobile.disabled = false;
     };
     
-    console.log("✅ Pedido preparado:", {
-        id: pedidoPendiente.id,
-        origen: `${origenCoord.lat}, ${origenCoord.lng}`,
-        destino: `${destinoCoord.lat}, ${destinoCoord.lng}`,
-        tarifa: tarifaFinal
-    });
-    
-    // ✅ Ir al pago
-    const modalPago = document.getElementById("modalPago");
-    if (modalPago) {
-        modalPago.classList.remove("hidden");
-        modalPago.classList.add("flex");
-    } else {
-        console.error("❌ Modal de pago no encontrado");
-        mostrarToast("❌ Error al abrir el pago", true);
+    try {
+        const origen = document.getElementById("origen").value;
+        const destino = document.getElementById("destino").value;
+        const tipo = document.getElementById("tipoEnvio").value;
         
+        // Obtener coordenadas
+        const origenCoord = getOriginCoords();
+        const destinoCoord = getDestCoords();
+        
+        // Validaciones
+        if (!origenCoord || !destinoCoord || !origenCoord.lat || !destinoCoord.lat) {
+            console.error("Coordenadas inválidas:", { origenCoord, destinoCoord });
+            mostrarToast("❌ Error: No se han seleccionado origen o destino válidos", true);
+            return;
+        }
+        
+        if (!tipo || tipo === '') {
+            mostrarToast("❌ Por favor, selecciona qué vas a enviar (Comida, Paquete, Mercancía o Farmacia)", true);
+            const selectTipo = document.getElementById("tipoEnvio");
+            selectTipo.style.border = "2px solid #dc2626";
+            setTimeout(() => {
+                selectTipo.style.border = "";
+            }, 2000);
+            return;
+        }
+        
+        // Calcular distancia y tarifa
+        let distancia = currentRouteData ? currentRouteData.distance : calcularDistanciaEntrePuntos(origenCoord, destinoCoord);
+        const rate = calculateShippingRate(distancia, tipo);
+        let tarifaBase = rate.total;
+        
+        let tarifaFinal = tarifaBase;
+        if (currentRouteData && currentRouteData.extras) {
+            if (currentRouteData.extras.lluvia) tarifaFinal += 10;
+            if (currentRouteData.extras.noche) tarifaFinal += 10;
+            if (currentRouteData.extras.espera) tarifaFinal += 10;
+        }
+        
+        // Crear pedido pendiente
+        pedidoPendiente = {
+            id: Date.now(),
+            cliente_id: currentUser.id,
+            cliente_nombre: currentUser.nombre,
+            origen: origen,
+            destino: destino,
+            origen_lat: origenCoord.lat,
+            origen_lng: origenCoord.lng,
+            destino_lat: destinoCoord.lat,
+            destino_lng: destinoCoord.lng,
+            tipo: tipo,
+            distancia_real: distancia.toFixed(2),
+            tarifa: tarifaFinal,
+            extras: currentRouteData?.extras || { lluvia: false, noche: false, espera: false },
+            estado: 'pendiente',
+            fecha: new Date().toISOString()
+        };
+        
+        console.log("✅ Pedido preparado:", {
+            id: pedidoPendiente.id,
+            origen: `${origenCoord.lat}, ${origenCoord.lng}`,
+            destino: `${destinoCoord.lat}, ${destinoCoord.lng}`,
+            tarifa: tarifaFinal
+        });
+        
+        // Mostrar modal de pago
+        const modalPago = document.getElementById("modalPago");
+        if (modalPago) {
+            modalPago.classList.remove("hidden");
+            modalPago.classList.add("flex");
+        } else {
+            console.error("❌ Modal de pago no encontrado");
+            mostrarToast("❌ Error al abrir el pago", true);
+        }
+    } catch (error) {
+        console.error("Error en solicitarEnvio:", error);
+        mostrarToast("❌ Ocurrió un error inesperado", true);
+    } finally {
+        // Reactivar botones (solo si no se abrió el modal de pago correctamente o hubo error)
+        // Nota: si el modal se abre correctamente, los botones quedarán deshabilitados hasta
+        // que el usuario complete o cancele el pago. Para eso llamaremos a deshabilitarBtns
+        // solo en los casos de error o validación fallida. En flujo normal, se reactivarán
+        // después de guardar el pedido o al cancelar el pago.
+        // Por simplicidad, aquí no los reactivamos automáticamente porque el usuario podría
+        // seguir en el flujo de pago. En su lugar, reactivaremos en los callbacks de los modales.
+        // Solo reactivamos si hubo error de validación temprana.
+        if (!pedidoPendiente || !modalPago || !modalPago.classList.contains('flex')) {
+            deshabilitarBtns();
+        }
     }
 }
 
@@ -1113,29 +1140,33 @@ function actualizarEstadoPanel(estado, deliveryNombre = null) {
             if(estadoDetalleMobile) estadoDetalleMobile.innerText = "Esperando a que un delivery tome tu pedido...";
             break;
             
-        case 'asignado':
+        case 'asignado': {
+            const nombreSeguro = window.sanitizarHTML ? window.sanitizarHTML(deliveryNombre || 'Delivery') : (deliveryNombre || 'Delivery');
             if(estadoTexto) estadoTexto.innerText = "🚚 En camino a recoger";
             if(estadoIcono) estadoIcono.className = "fas fa-motorcycle text-orange-500";
-            if(estadoDetalle) estadoDetalle.innerHTML = `🏍️ <strong>${deliveryNombre || 'Delivery'}</strong> ya se dirige a recoger tu paquete.`;
+            if(estadoDetalle) estadoDetalle.innerHTML = `🏍️ <strong>${nombreSeguro}</strong> ya se dirige a recoger tu paquete.`;
             
             if(estadoTextoMobile) estadoTextoMobile.innerText = "🚚 En camino a recoger";
             if(estadoIconoMobile) estadoIconoMobile.className = "fas fa-motorcycle text-orange-500";
-            if(estadoDetalleMobile) estadoDetalleMobile.innerHTML = `🏍️ <strong>${deliveryNombre || 'Delivery'}</strong> ya se dirige a recoger tu paquete.`;
+            if(estadoDetalleMobile) estadoDetalleMobile.innerHTML = `🏍️ <strong>${nombreSeguro}</strong> ya se dirige a recoger tu paquete.`;
             break;
+        }
             
-        case 'recogido':
+        case 'recogido': {
+            const nombreSeguro = window.sanitizarHTML ? window.sanitizarHTML(deliveryNombre || 'Delivery') : (deliveryNombre || 'Delivery');
             if(estadoTexto) estadoTexto.innerText = "📦 Paquete recogido";
             if(estadoIcono) estadoIcono.className = "fas fa-box-open text-purple-500";
-            if(estadoDetalle) estadoDetalle.innerHTML = `🏍️ <strong>${deliveryNombre || 'Delivery'}</strong> ya recogió tu paquete y va en camino.`;
+            if(estadoDetalle) estadoDetalle.innerHTML = `🏍️ <strong>${nombreSeguro}</strong> ya recogió tu paquete y va en camino.`;
             
             if(estadoTextoMobile) estadoTextoMobile.innerText = "📦 Paquete recogido";
             if(estadoIconoMobile) estadoIconoMobile.className = "fas fa-box-open text-purple-500";
-            if(estadoDetalleMobile) estadoDetalleMobile.innerHTML = `🏍️ <strong>${deliveryNombre || 'Delivery'}</strong> ya recogió tu paquete y va en camino.`;
+            if(estadoDetalleMobile) estadoDetalleMobile.innerHTML = `🏍️ <strong>${nombreSeguro}</strong> ya recogió tu paquete y va en camino.`;
             break;
+        }
             
-       case 'completado':
-           console.log("🎉 Actualizando UI para pedido COMPLETADO");
-           
+        case 'completado':
+            console.log("🎉 Actualizando UI para pedido COMPLETADO");
+        
            // Ocultar el panel de estado
            const panel = document.getElementById("panelEstadoPedido");
            const panelMobile = document.getElementById("panelEstadoPedidoMobile");
@@ -1198,7 +1229,7 @@ async function cancelarPedido() {
     
     mostrarModalConfirmacion(
         "Cancelar pedido",
-        `¿Estás seguro de cancelar el pedido #${pedidoActual.id}? Esta acción no se puede deshacer.`,
+        `¿Estás seguro de cancelar el pedido #${sanitizarHTML(pedidoActual.id)}? Esta acción no se puede deshacer.`,
         async () => {
             const supabase = supabaseClient;
             if (!supabase) return;
@@ -1211,7 +1242,7 @@ async function cancelarPedido() {
                 
                 if (error) throw error;
                 
-                mostrarToast(`✅ Pedido #${pedidoActual.id} cancelado correctamente`);
+                mostrarToast(`✅ Pedido #${sanitizarHTML(pedidoActual.id)} cancelado correctamente`);
                 
                 // ✅ Reactivar UI antes de limpiar
                 bloquearUIporPedidoActivo(false);
@@ -1450,7 +1481,6 @@ function enviarComprobanteWhatsApp() {
     
     const total = pedidoPendiente.tarifa;
     const pedidoId = pedidoPendiente.id;
-    
     // ✅ MISMO NÚMERO que funciona en tu otro proyecto
     const numeroWhatsApp = '5219381083498';
     
@@ -1483,38 +1513,85 @@ function enviarComprobanteWhatsApp() {
     
     // ✅ MISMA FORMA de abrir que en tu otro proyecto
     window.open(whatsappUrl, '_blank');
+    mostrarToast("📱 Abriendo WhatsApp para enviar comprobante");
     
-    // Mostrar mensaje de confirmación
-    mostrarToast("📱 Abriendo WhatsApp...");
-    
-    // Confirmar pago después de enviar
-    confirmarPagoTransferencia();
 }
 
 
-async function confirmarPagoTransferencia() {
-    await guardarPedidoEnSupabase();
-    cerrarModalTransferencia();
-    mostrarToast("✅ ¡Pago registrado! Envía tu comprobante por WhatsApp para confirmar.");
+async function confirmarPagoTransferenciaFinal() {
+    // Verificar que haya un pedido pendiente
+    if (!pedidoPendiente) {
+        mostrarToast("❌ No hay información del pedido", true);
+        return;
+    }
+    
+    // Evitar doble clic / doble guardado
+    if (window.guardandoPedido) return;
+    window.guardandoPedido = true;
+    
+    // Mostrar loading
+    mostrarToast("💾 Guardando pedido...");
+    
+    try {
+        // Guardar en Supabase
+        await guardarPedidoEnSupabase();
+        
+        // Cerrar modal de transferencia
+        cerrarModalTransferencia();
+        
+        // Mostrar mensaje de éxito
+        mostrarToast("✅ Pedido registrado correctamente. El delivery lo recogerá pronto.");
+        
+        // Usamos setTimeout para no interferir con el cierre del modal
+        setTimeout(() => {
+        confirmarConModal(
+                "¿Deseas enviar el comprobante de pago por WhatsApp?",
+            () => enviarComprobanteWhatsApp(),
+            () => {} // no hacer nada si cancela
+     );
+    }, 500);
+        
+    } catch (error) {
+        console.error("Error al guardar pedido:", error);
+        mostrarToast("❌ Error al guardar el pedido. Intenta de nuevo.", true);
+    } finally {
+        window.guardandoPedido = false;
+    }
 }
 
 function cerrarModalPago() {
     const modal = document.getElementById("modalPago");
     modal.classList.add("hidden");
     modal.classList.remove("flex");
+    // Reactivar botones de solicitud
+    const btnDesktop = document.querySelector('button[onclick="solicitarEnvio()"]');
+    const btnMobile = document.querySelector('button[onclick="solicitarEnvioMobile()"]');
+    if (btnDesktop) btnDesktop.disabled = false;
+    if (btnMobile) btnMobile.disabled = false;
 }
 
 function cerrarModalEfectivo() {
     const modal = document.getElementById("modalEfectivo");
     modal.classList.add("hidden");
     modal.classList.remove("flex");
+    // Reactivar botones de solicitud
+    const btnDesktop = document.querySelector('button[onclick="solicitarEnvio()"]');
+    const btnMobile = document.querySelector('button[onclick="solicitarEnvioMobile()"]');
+    if (btnDesktop) btnDesktop.disabled = false;
+    if (btnMobile) btnMobile.disabled = false;
 }
 
 function cerrarModalTransferencia() {
     const modal = document.getElementById("modalTransferencia");
     modal.classList.add("hidden");
     modal.classList.remove("flex");
+    // Reactivar botones de solicitud
+    const btnDesktop = document.querySelector('button[onclick="solicitarEnvio()"]');
+    const btnMobile = document.querySelector('button[onclick="solicitarEnvioMobile()"]');
+    if (btnDesktop) btnDesktop.disabled = false;
+    if (btnMobile) btnMobile.disabled = false;
 }
+
 
 function copiarDatosBancarios() {
     const datos = `BBVA México\nCuenta: 1234 5678 9012 3456\nCLABE: 012 345 6789 01234567 8\nBeneficiario: MandaYa Servicios`;
@@ -1765,11 +1842,11 @@ function seguirUbicacionDelivery(deliveryId) {
                 // Actualizar popup según el estado
                 if (deliveryMarker) {
                     if (tipoRuta === 'recogida') {
-                        deliveryMarker.bindPopup(`<b>🏍️ ${deliveryNombre}</b><br>🟠 En camino a recoger tu paquete<br>📍 ${destinoFinalNombre}`);
+                        deliveryMarker.bindPopup(`<b>🏍️ ${sanitizarHTML(deliveryNombre)}</b><br>🟠 En camino a recoger tu paquete<br>📍 ${sanitizarHTML(destinoFinalNombre)}`);
                     } else {
-                        deliveryMarker.bindPopup(`<b>🏍️ ${deliveryNombre}</b><br>📦 En camino a entregar tu paquete<br>📍 ${destinoFinalNombre}`);
+                        deliveryMarker.bindPopup(`<b>🏍️ ${sanitizarHTML(deliveryNombre)}</b><br>📦 En camino a entregar tu paquete<br>📍 ${sanitizarHTML(destinoFinalNombre)}`);
                     }
-                }
+                }  
             }
             
             // ✅ 11. Actualizar información de distancia y ETA en la UI
@@ -1983,28 +2060,28 @@ async function mostrarHistorialCompleto() {
                 
                 <div class="overflow-y-auto max-h-[60vh] p-4 space-y-3">
                     ${misPedidos.map(p => `
-                        <div class="bg-gray-700 rounded-xl p-4 ${p.estado === 'completado' ? 'border-l-4 border-green-500' : p.estado === 'pendiente' ? 'border-l-4 border-yellow-500' : 'border-l-4 border-blue-500'}">
+                        <div class="bg-gray-700 rounded-xl p-4 ${sanitizarHTML(p.estado === 'completado' ? 'border-l-4 border-green-500' : p.estado === 'pendiente' ? 'border-l-4 border-yellow-500' : 'border-l-4 border-blue-500')}">
                             <div class="flex justify-between items-start mb-2">
                                 <div>
                                     <span class="font-bold text-orange-400">#${p.id}</span>
-                                    <span class="text-xs ml-2 px-2 py-0.5 rounded-full ${p.estado === 'completado' ? 'bg-green-500/20 text-green-400' : p.estado === 'pendiente' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-blue-500/20 text-blue-400'}">
-                                        ${p.estado === 'completado' ? '✅ Completado' : p.estado === 'pendiente' ? '⏳ Pendiente' : '🚚 En camino'}
+                                    <span class="text-xs ml-2 px-2 py-0.5 rounded-full ${sanitizarHTML(p.estado === 'completado' ? 'bg-green-500/20 text-green-400' : p.estado === 'pendiente' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-blue-500/20 text-blue-400')}">
+                                        ${sanitizarHTML(p.estado === 'completado' ? '✅ Completado' : p.estado === 'pendiente' ? '⏳ Pendiente' : '🚚 En camino')}
                                     </span>
                                 </div>
                                 <span class="text-xs text-gray-400">${new Date(p.fecha).toLocaleDateString()}</span>
                             </div>
-                            <p class="text-sm text-gray-300">
-                                <i class="fas fa-circle text-orange-500 text-xs mr-1"></i> ${p.origen}
-                            </p>
-                            <p class="text-sm text-gray-300 mt-1">
-                                <i class="fas fa-square text-blue-500 text-xs mr-1"></i> ${p.destino}
-                            </p>
+                           <p class="text-sm text-gray-300">
+                                <i class="fas fa-circle text-orange-500 text-xs mr-1"></i> ${sanitizarHTML(p.origen)}
+                           </p>
+                           <p class="text-sm text-gray-300 mt-1">
+                                 <i class="fas fa-square text-blue-500 text-xs mr-1"></i> ${sanitizarHTML(p.destino)}
+                           </p>
                             <div class="flex justify-between items-center mt-3 pt-2 border-t border-gray-600">
                                 <div class="text-sm">
-                                    <span class="text-gray-400">📏 ${p.distancia_real} km</span>
-                                    <span class="text-gray-400 ml-3">💰 $${p.tarifa}</span>
+                                    <span class="text-gray-400">📏 ${sanitizarHTML(p.distancia_real)} km</span>
+                                    <span class="text-gray-400 ml-3">💰 $${sanitizarHTML(p.tarifa)}</span>
                                 </div>
-                                <button onclick="eliminarEnvio(${p.id})" class="bg-red-500/20 hover:bg-red-500 text-red-400 hover:text-white px-3 py-1 rounded-lg text-sm transition-all">
+                                <button onclick="eliminarEnvio(${sanitizarHTML(p.id)})" class="bg-red-500/20 hover:bg-red-500 text-red-400 hover:text-white px-3 py-1 rounded-lg text-sm transition-all">
                                     <i class="fas fa-trash-alt mr-1"></i> Eliminar
                                 </button>
                             </div>
@@ -2099,8 +2176,8 @@ function mostrarModalConfirmacion(titulo, mensaje, onConfirm) {
             <div class="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
                 <i class="fas fa-exclamation-triangle text-3xl text-red-500"></i>
             </div>
-            <h3 class="text-xl font-bold text-white mb-2">${titulo}</h3>
-            <p class="text-gray-400 text-sm mb-6">${mensaje}</p>
+            <h3 class="text-xl font-bold text-white mb-2">${sanitizarHTML(titulo)}</h3>
+            <p class="text-gray-400 text-sm mb-6">${sanitizarHTML(mensaje)}</p>
             <div class="flex gap-3">
                 <button onclick="cerrarModalConfirmacion()" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-2 rounded-xl transition-all">
                     Cancelar
@@ -2149,7 +2226,7 @@ function verPerfil() {
                     <i class="fas fa-user text-orange-500 w-5"></i>
                     <div class="flex-1">
                         <div class="text-xs text-gray-400">Nombre</div>
-                        <div class="text-white font-medium">${currentUser?.nombre || 'No disponible'}</div>
+                        <div class="text-white font-medium">${sanitizarHTML(currentUser?.nombre || 'No disponible')}</div>
                     </div>
                 </div>
                 
@@ -2157,7 +2234,7 @@ function verPerfil() {
                     <i class="fas fa-envelope text-orange-500 w-5"></i>
                     <div class="flex-1">
                         <div class="text-xs text-gray-400">Correo electrónico</div>
-                        <div class="text-white font-medium">${currentUser?.email || 'No disponible'}</div>
+                        <div class="text-white font-medium">${sanitizarHTML(currentUser?.email || 'No disponible')}</div>
                     </div>
                 </div>
                 
@@ -2209,7 +2286,7 @@ async function mostrarDeliveryEnMapa(deliveryId, deliveryNombre = null) {
         
         if (nombreDelivery) {
             document.getElementById("deliveryInfo").classList.remove("hidden");
-            document.getElementById("deliveryNombre").innerHTML = `<i class="fas fa-motorcycle"></i> ${nombreDelivery}`;
+            document.getElementById("deliveryNombre").innerHTML = `<i class="fas fa-motorcycle"></i> ${sanitizarHTML(nombreDelivery)}`;
             
             // Limpiar ruta anterior
             limpiarRutaCliente();
@@ -2301,15 +2378,15 @@ function mostrarModalResumen(distancia, tiempo, tarifaBase, tipo) {
             <div class="p-3 space-y-2">
                 <div class="bg-gray-700 rounded-lg p-2 flex justify-between items-center">
                     <span class="text-gray-400 text-xs">📍 Distancia real</span>
-                    <span class="text-white font-bold text-sm">${distancia} km</span>
+                    <span class="text-white font-bold text-sm">${sanitizarHTML(distancia)} km</span>
                 </div>
                 <div class="bg-gray-700 rounded-lg p-2 flex justify-between items-center">
                     <span class="text-gray-400 text-xs">⏱️ Tiempo estimado</span>
-                    <span class="text-white font-bold text-sm">${tiempo}</span>
+                    <span class="text-white font-bold text-sm">${sanitizarHTML(tiempo)}</span>
                 </div>
                 <div class="bg-gray-700 rounded-lg p-2 flex justify-between items-center">
                     <span class="text-gray-400 text-xs">📦 Tipo de envío</span>
-                    <span class="text-white font-bold text-sm capitalize">${tipo}</span>
+                    <span class="text-white font-bold text-sm capitalize">${sanitizarHTML(tipo)}</span>
                 </div>
                 
                 <!-- Extras horizontales -->
@@ -2326,8 +2403,8 @@ function mostrarModalResumen(distancia, tiempo, tarifaBase, tipo) {
                             <i class="fas fa-cloud-rain text-blue-400 text-lg mb-0.5"></i>
                             <span class="text-white text-xs">Lluvia</span>
                             <span class="text-orange-400 text-xs">+$10</span>
-                            <div id="checkLluviaResumen" class="mt-1 w-4 h-4 rounded-full border-2 ${extrasGuardados.lluvia ? 'bg-orange-500 border-orange-500' : 'border-gray-400'} flex items-center justify-center">
-                                ${extrasGuardados.lluvia ? '<i class="fas fa-check text-white text-[8px]"></i>' : ''}
+                            <div id="checkLluviaResumen" class="mt-1 w-4 h-4 rounded-full border-2 ${sanitizarHTML(extrasGuardados.lluvia ? 'bg-orange-500 border-orange-500' : 'border-gray-400')} flex items-center justify-center">
+                                ${sanitizarHTML(extrasGuardados.lluvia ? '<i class="fas fa-check text-white text-[8px]"></i>' : '')}
                             </div>
                         </div>
                         
@@ -2337,8 +2414,8 @@ function mostrarModalResumen(distancia, tiempo, tarifaBase, tipo) {
                             <i class="fas fa-moon text-yellow-400 text-lg mb-0.5"></i>
                             <span class="text-white text-xs">Noche</span>
                             <span class="text-orange-400 text-xs">+$10</span>
-                            <div id="checkNocheResumen" class="mt-1 w-4 h-4 rounded-full border-2 ${extrasGuardados.noche ? 'bg-orange-500 border-orange-500' : 'border-gray-400'} flex items-center justify-center">
-                                ${extrasGuardados.noche ? '<i class="fas fa-check text-white text-[8px]"></i>' : ''}
+                            <div id="checkNocheResumen" class="mt-1 w-4 h-4 rounded-full border-2 ${sanitizarHTML(extrasGuardados.noche ? 'bg-orange-500 border-orange-500' : 'border-gray-400')} flex items-center justify-center">
+                                ${sanitizarHTML(extrasGuardados.noche ? '<i class="fas fa-check text-white text-[8px]"></i>' : '')}
                             </div>
                         </div>
                         
@@ -2348,8 +2425,8 @@ function mostrarModalResumen(distancia, tiempo, tarifaBase, tipo) {
                             <i class="fas fa-clock text-purple-400 text-lg mb-0.5"></i>
                             <span class="text-white text-xs">Espera</span>
                             <span class="text-orange-400 text-xs">+$10</span>
-                            <div id="checkEsperaResumen" class="mt-1 w-4 h-4 rounded-full border-2 ${extrasGuardados.espera ? 'bg-orange-500 border-orange-500' : 'border-gray-400'} flex items-center justify-center">
-                                ${extrasGuardados.espera ? '<i class="fas fa-check text-white text-[8px]"></i>' : ''}
+                            <div id="checkEsperaResumen" class="mt-1 w-4 h-4 rounded-full border-2 ${sanitizarHTML(extrasGuardados.espera ? 'bg-orange-500 border-orange-500' : 'border-gray-400')} flex items-center justify-center">
+                                ${sanitizarHTML(extrasGuardados.espera ? '<i class="fas fa-check text-white text-[8px]"></i>' : '')}
                             </div>
                         </div>
                     </div>
@@ -2684,17 +2761,24 @@ async function buscarDirecciones(query, tipo) {
             return;
         }
         
-        sugerenciasDiv.innerHTML = data.map(lugar => `
-            <div class="sugerencia-item p-3 hover:bg-gray-100 cursor-pointer border-b border-gray-100 flex items-start gap-2" 
-                 onclick="seleccionarDireccion('${tipo}', ${lugar.lat}, ${lugar.lon}, '${lugar.display_name.replace(/'/g, "\\'")}')">
-                <i class="fas fa-map-marker-alt text-gray-400 mt-0.5 text-xs"></i>
-                <div class="flex-1">
-                    <div class="text-sm font-medium text-gray-800">${lugar.display_name.split(',')[0]}</div>
-                    <div class="text-xs text-gray-500">${lugar.display_name.split(',').slice(1, 3).join(',')}</div>
-                </div>
-            </div>
-        `).join('');
-        
+      sugerenciasDiv.innerHTML = data.map(lugar => {
+          const nombreSanitizado = window.sanitizarHTML(lugar.display_name.split(',')[0]);
+          const direccionSanitizada = window.sanitizarHTML(
+              lugar.display_name.split(',').slice(1, 3).join(',')
+          );
+          const direccionCompletaSanitizada = window.sanitizarHTML(lugar.display_name);
+          return `
+              <div class="sugerencia-item p-3 hover:bg-gray-100 cursor-pointer border-b border-gray-100 flex items-start gap-2" 
+                   onclick="seleccionarDireccion('${tipo}', ${lugar.lat}, ${lugar.lon}, '${direccionCompletaSanitizada.replace(/'/g, "\\'")}')">
+                  <i class="fas fa-map-marker-alt text-gray-400 mt-0.5 text-xs"></i>
+                  <div class="flex-1">
+                      <div class="text-sm font-medium text-gray-800">${nombreSanitizado}</div>
+                      <div class="text-xs text-gray-500">${direccionSanitizada}</div>
+                  </div>
+              </div>
+          `;
+      }).join('');
+              
         sugerenciasDiv.classList.remove('hidden');
         
     } catch(e) {
@@ -2833,10 +2917,10 @@ async function cargarDeliverysEnLinea() {
             );
             
             marker.bindPopup(`
-                <b>🏍️ ${delivery.delivery_nombre}</b><br>
-                🟢 Disponible<br>
-                <small>Última actualización: ${new Date(delivery.updated_at).toLocaleTimeString()}</small>
-            `);
+                <b>🏍️ ${sanitizarHTML(delivery.delivery_nombre)}</b><br>
+               🟢 Disponible<br>
+               <small>Última actualización: ${new Date(delivery.updated_at).toLocaleTimeString()}</small>
+           `);
             
             marker.addTo(map);
             deliverysMarkers.push(marker);

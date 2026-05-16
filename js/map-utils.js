@@ -120,13 +120,12 @@ function crearMarcadorDelivery(lat, lng, nombre, color, tienePedido = null) {
         estadoTexto = tienePedido ? '🟠 En entrega' : '🟢 Disponible';
     }
     
-    // ✅ Obtener solo el primer nombre
     const nombreMostrar = obtenerPrimerNombre(nombre);
+    const nombreSanitizado = sanitizarHTML(nombreMostrar);
     
     const iconoConNombre = L.divIcon({
         html: `
             <div style="text-align: center;">
-                <!-- ✅ NOMBRE ARRIBA con mejor fondo -->
                 <div style="
                     background: rgba(0, 0, 0, 0.85);
                     color: white;
@@ -141,9 +140,8 @@ function crearMarcadorDelivery(lat, lng, nombre, color, tienePedido = null) {
                     box-shadow: 0 1px 3px rgba(0,0,0,0.3);
                     border: 0.5px solid rgba(255,255,255,0.2);
                 ">
-                    ${nombreMostrar}
+                    ${nombreSanitizado}
                 </div>
-                <!-- ✅ MOTO DEBAJO -->
                 <div style="
                     background: ${colorFinal};
                     width: 34px;
@@ -168,9 +166,9 @@ function crearMarcadorDelivery(lat, lng, nombre, color, tienePedido = null) {
     const marker = L.marker([lat, lng], { icon: iconoConNombre });
     
     if (estadoTexto) {
-        marker.bindPopup(`<b>🏍️ ${nombre}</b><br>${estadoTexto}`);
+        marker.bindPopup(`<b>🏍️ ${sanitizarHTML(nombre)}</b><br>${sanitizarHTML(estadoTexto)}`);
     } else {
-        marker.bindPopup(`<b>🏍️ ${nombre}</b>`);
+        marker.bindPopup(`<b>🏍️ ${sanitizarHTML(nombre)}</b>`);
     }
     
     return marker;

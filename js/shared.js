@@ -1,10 +1,60 @@
 // js/shared.js - Utilidades compartidas
 
+window.addEventListener('error', (e) => {
+    if (e.message && e.message.includes('message port closed')) {
+        e.preventDefault();
+        return true;
+    }
+});
+
 // Objeto Shared para utilidades adicionales
 const Shared = {
     // Puedes agregar más utilidades aquí si es necesario
     version: '1.0.0'
 };
+
+// Sanitiza texto para evitar inyección HTML
+function sanitizarHTML(texto) {
+    if (!texto) return '';
+    return texto
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function confirmarConModal(mensaje, onConfirm, onCancel) {
+    // Crear un modal simple similar al que ya usas
+    let modalExistente = document.getElementById("modalConfirmacionSimple");
+    if (modalExistente) modalExistente.remove();
+    
+    const modal = document.createElement('div');
+    modal.id = "modalConfirmacionSimple";
+    modal.className = "fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[10002] p-4";
+    modal.innerHTML = `
+        <div class="bg-gray-800 rounded-3xl max-w-sm w-full modal-uber text-center p-6">
+            <div class="w-16 h-16 bg-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                <i class="fas fa-question-circle text-3xl text-blue-500"></i>
+            </div>
+            <p class="text-gray-200 text-sm mb-6">${mensaje}</p>
+            <div class="flex gap-3">
+                <button id="btnCancelarSimple" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-2 rounded-xl transition-all">Cancelar</button>
+                <button id="btnAceptarSimple" class="flex-1 bg-orange-500 hover:bg-orange-600 text-white py-2 rounded-xl transition-all">Aceptar</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    
+    document.getElementById("btnAceptarSimple").onclick = () => {
+        modal.remove();
+        if (onConfirm) onConfirm();
+    };
+    document.getElementById("btnCancelarSimple").onclick = () => {
+        modal.remove();
+        if (onCancel) onCancel();
+    };
+}
 
 // Función global de toast (única y definitiva)
 window.mostrarToast = function(msg, err = false) {
@@ -64,7 +114,8 @@ window.mostrarToast = function(msg, err = false) {
         word-break: break-word;
     `;
     
-    toast.innerHTML = `<i class="fas ${icono}" style="font-size: ${isMobile ? '16px' : '18px'};"></i><span>${msg}</span>`;
+    const msgSanitizada = sanitizarHTML(msg);
+    toast.innerHTML = `<i class="fas ${icono}" style="font-size: ${isMobile ? '16px' : '18px'};"></i><span>${msgSanitizada}</span>`;
     document.body.appendChild(toast);
     
     // Animación de entrada
