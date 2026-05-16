@@ -1452,14 +1452,14 @@ async function actualizarEstadisticas() {
         const totalGanadoEl = document.getElementById("totalGanado");
         
         if (totalEntregasEl) {
-            totalEntregasEl.innerText = sanitizarHTML(totalEntregas);
+            totalEntregasEl.innerText = sanitizarHTML(String(totalEntregas));
             console.log(`✅ Total entregas actualizado: ${sanitizarHTML(totalEntregas)}`);
         } else {
             console.warn("⚠️ Elemento totalEntregas no encontrado");
         }
         
         if (totalGanadoEl) {
-            totalGanadoEl.innerText = `${sanitizarHTML(totalGanado)}`;
+            totalGanadoEl.innerText = sanitizarHTML(String(totalGanado));
             console.log(`✅ Total ganado actualizado: ${sanitizarHTML(totalGanado)}`);
         } else {
             console.warn("⚠️ Elemento totalGanado no encontrado");

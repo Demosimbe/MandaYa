@@ -15,7 +15,9 @@ const Shared = {
 
 // Sanitiza texto para evitar inyección HTML
 function sanitizarHTML(texto) {
-    if (!texto) return '';
+    if (texto === undefined || texto === null) return '';
+    // Convertir a string
+    texto = String(texto);
     return texto
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
