@@ -643,34 +643,43 @@
         }
     }
     
-    function solicitarEnvioMobile() {
+   function solicitarEnvioMobile() {
     // Prevenir múltiples clics
     const btnMobile = document.querySelector('button[onclick="solicitarEnvioMobile()"]');
+    const btnDesktop = document.querySelector('button[onclick="solicitarEnvio()"]');
+    
     if (btnMobile && btnMobile.disabled) return;
     
-    // Deshabilitar botón durante el proceso
-    if (btnMobile) btnMobile.disabled = true;
+    // Función auxiliar para reactivar botones (usada en errores)
+    const reenableButtons = () => {
+        if (btnMobile) btnMobile.disabled = false;
+        if (btnDesktop) btnDesktop.disabled = false;
+    };
     
-    // También deshabilitar el botón de escritorio por si acaso (sincronización)
-    const btnDesktop = document.querySelector('button[onclick="solicitarEnvio()"]');
+    // Deshabilitar botones durante el proceso
+    if (btnMobile) btnMobile.disabled = true;
     if (btnDesktop) btnDesktop.disabled = true;
     
     try {
-        const origenMobileVal = document.getElementById("origenMobile").value;
-        const destinoMobileVal = document.getElementById("destinoMobile").value;
-        const tipoMobileVal = document.getElementById("tipoEnvioMobile").value;
+        const origenMobileVal = document.getElementById("origenMobile")?.value || '';
+        const destinoMobileVal = document.getElementById("destinoMobile")?.value || '';
+        const tipoMobileVal = document.getElementById("tipoEnvioMobile")?.value || '';
         
+        // Validación 1: origen y destino
         if (!origenMobileVal || !destinoMobileVal) {
             mostrarToast("❌ Selecciona origen y destino", true);
+            reenableButtons();
             return;
         }
         
+        // Validación 2: tipo de envío
         if (!tipoMobileVal || tipoMobileVal === '') {
-            mostrarToast("❌ Selecciona el tipo de envío", true);
+            mostrarToast("❌ Selecciona el tipo de envío (Comida, Paquete, etc.)", true);
             document.querySelectorAll('.tipo-mobile-btn').forEach(btn => {
                 btn.style.animation = 'shake 0.5s ease';
                 setTimeout(() => { btn.style.animation = ''; }, 500);
             });
+            reenableButtons();
             return;
         }
         
@@ -683,34 +692,27 @@
         if (destinoDesktop) destinoDesktop.value = destinoMobileVal;
         if (tipoDesktop) tipoDesktop.value = tipoMobileVal;
         
-        // Llamar a la función principal (ya tiene su propia protección contra doble clic)
+        // Llamar a la función principal
         if (typeof solicitarEnvio === 'function') {
             solicitarEnvio().catch(err => {
                 console.error("Error en solicitarEnvio:", err);
                 mostrarToast("❌ Error al solicitar el envío", true);
+                // Si falla, reactivar botones
+                reenableButtons();
             });
+            // No reactivamos aquí porque el modal de pago puede abrirse
+            // Los botones se reactivarán al cerrar el modal (callbacks en cliente.js)
         } else {
             mostrarToast("❌ Error interno: función no disponible", true);
+            reenableButtons();
         }
     } catch (error) {
         console.error("Error en solicitarEnvioMobile:", error);
         mostrarToast("❌ Ocurrió un error inesperado", true);
-    } finally {
-        // Reactivar botones después de un pequeño retraso 
-        // (solo si no se abrió el modal de pago o hubo error)
-        // En caso de que se abra el modal, los botones se reactivarán al cerrarlo.
-        // Aquí usamos setTimeout para permitir que el flujo de solicitarEnvio decida.
-        setTimeout(() => {
-            if (btnMobile && !document.getElementById("modalPago")?.classList.contains("flex")) {
-                btnMobile.disabled = false;
-            }
-            if (btnDesktop && !document.getElementById("modalPago")?.classList.contains("flex")) {
-                btnDesktop.disabled = false;
-            }
-        }, 500);
+        reenableButtons();
     }
 }
-    
+ 
     function seleccionarTipoMobile(valor, texto) {
         const tipoDesktop = document.getElementById('tipoEnvio');
         const tipoMobile = document.getElementById('tipoEnvioMobile');

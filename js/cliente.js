@@ -1991,69 +1991,6 @@ function calcularETA(distanciaKm) {
     return `${horas}h ${mins}min`;
 }
 
-// ✅ Función para mostrar/ocultar botón centrar en delivery
-function mostrarBotonCentrarDelivery(mostrar) {
-    const btn = document.getElementById('btnCentrarDelivery');
-    if (btn) {
-        if (mostrar) {
-            btn.classList.remove('hidden');
-        } else {
-            btn.classList.add('hidden');
-        }
-    }
-}
-
-// ✅ Función para centrar el mapa en el delivery
-function centrarEnDelivery() {
-    if (deliveryMarker) {
-        const latLng = deliveryMarker.getLatLng();
-        map.setView([latLng.lat, latLng.lng], 16);
-        mostrarToast("📍 Centrando en la ubicación del delivery");
-        
-        // Abrir popup temporal
-        deliveryMarker.openPopup();
-        setTimeout(() => {
-            if (deliveryMarker) deliveryMarker.closePopup();
-        }, 3000);
-    } else {
-        mostrarToast("❌ No hay delivery activo para centrar", true);
-    }
-}
-
-// ✅ Función para ver ruta completa
-function verRutaCompleta() {
-    // ✅ Primero intentar mostrar la ruta del delivery si existe
-    if (clienteRouteControl && clienteRouteControl.getWaypoints) {
-        const waypoints = clienteRouteControl.getWaypoints();
-        if (waypoints && waypoints.length >= 2) {
-            const bounds = L.latLngBounds(waypoints);
-            map.fitBounds(bounds, { padding: [50, 50] });
-            mostrarToast("🗺️ Mostrando ruta completa del delivery");
-            return;
-        }
-    }
-    
-    // ✅ Si no hay ruta activa de delivery, mostrar origen y destino del cliente
-    const origenCoord = getOriginCoords();
-    const destinoCoord = getDestCoords();
-    
-    // ✅ Validar que ambas coordenadas existan
-    if (origenCoord && destinoCoord && origenCoord.lat && destinoCoord.lat) {
-        const bounds = L.latLngBounds([
-            [origenCoord.lat, origenCoord.lng],
-            [destinoCoord.lat, destinoCoord.lng]
-        ]);
-        map.fitBounds(bounds, { padding: [50, 50] });
-        mostrarToast("📍 Mostrando origen y destino de tu envío");
-    } else {
-        console.warn("No hay coordenadas disponibles:", { 
-            origen: origenCoord, 
-            destino: destinoCoord 
-        });
-        mostrarToast("❌ No hay ruta disponible. Selecciona origen y destino primero", true);
-    }
-}
-
 function ocultarDeliveryInfo() {
     document.getElementById("deliveryInfo").classList.add("hidden");
     if (deliveryMarker) map.removeLayer(deliveryMarker);
