@@ -713,31 +713,37 @@
     }
 }
  
-    function seleccionarTipoMobile(valor, texto) {
-        const tipoDesktop = document.getElementById('tipoEnvio');
-        const tipoMobile = document.getElementById('tipoEnvioMobile');
-        const mensajeDiv = document.getElementById('tipoSeleccionadoMobile');
-        if (tipoDesktop) tipoDesktop.value = valor;
-        if (tipoMobile) tipoMobile.value = valor;
-        if (mensajeDiv) {
-            mensajeDiv.innerHTML = `✅ ${texto} seleccionado`;
-            mensajeDiv.classList.remove('hidden');
-            setTimeout(() => mensajeDiv.classList.add('hidden'), 2000);
-        }
-        document.querySelectorAll('.tipo-mobile-btn').forEach(btn => {
-            btn.classList.remove('bg-orange-500', 'text-white');
-            btn.classList.add('bg-gray-100', 'text-gray-800');
-        });
-        const botones = document.querySelectorAll('.tipo-mobile-btn');
-        for (let btn of botones) {
-            if (btn.textContent.includes(texto.split(' ')[0])) {
-                btn.classList.remove('bg-gray-100', 'text-gray-800');
-                btn.classList.add('bg-orange-500', 'text-white');
-                break;
-            }
-        }
-        console.log(`✅ Tipo seleccionado: ${valor} - ${texto}`);
+  function seleccionarTipoMobile(valor, texto) {
+    const tipoDesktop = document.getElementById('tipoEnvio');
+    const tipoMobile = document.getElementById('tipoEnvioMobile');
+    const mensajeDiv = document.getElementById('tipoSeleccionadoMobile');
+    
+    if (tipoDesktop) tipoDesktop.value = valor;
+    if (tipoMobile) tipoMobile.value = valor;
+    
+    if (mensajeDiv) {
+        mensajeDiv.innerHTML = `✅ ${texto} seleccionado`;
+        mensajeDiv.classList.remove('hidden');
+        setTimeout(() => mensajeDiv.classList.add('hidden'), 2000);
     }
+    
+    // Buscar el botón que corresponda según el valor
+    document.querySelectorAll('.tipo-mobile-btn').forEach(btn => {
+        // Quitar clase naranja de todos
+        btn.classList.remove('bg-orange-500', 'text-white');
+        btn.classList.add('bg-gray-100', 'text-gray-800');
+        // Como no tenemos data-valor, usamos una comparación por el texto exacto
+        if ((valor === 'mercancia' && btn.textContent.includes('Mercancía')) ||
+            (valor === 'paquete' && btn.textContent.includes('Paquete') && !btn.textContent.includes('Mercancía')) ||
+            (valor === 'comida' && btn.textContent.includes('Comida')) ||
+            (valor === 'farmacia' && btn.textContent.includes('Farmacia'))) {
+            btn.classList.remove('bg-gray-100', 'text-gray-800');
+            btn.classList.add('bg-orange-500', 'text-white');
+        }
+    });
+    
+    console.log(`✅ Tipo seleccionado: ${valor} - ${texto}`);
+}
     
     let syncInterval = null;
     function ejecutarSincronizacion() {
