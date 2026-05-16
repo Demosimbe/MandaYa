@@ -215,13 +215,6 @@ function bloquearUIporPedidoActivo(bloquear) {
         // Deshabilitar click en el mapa para seleccionar ubicación
         if (map) { map._container.style.cursor = 'default'; }
         
-        // Ocultar/deshabilitar botón solicitar envío
-        const btnSolicitar = document.querySelector('button[onclick="solicitarEnvio()"], button[onclick="solicitarEnvioMobile()"]');
-        if (btnSolicitar) {
-            btnSolicitar.disabled = true;
-            btnSolicitar.classList.add('opacity-50', 'cursor-not-allowed');
-        }
-       
         // Mostrar mensaje en los inputs
         const origenInput = document.getElementById('origen');
         if (origenInput && !origenInput.placeholder.includes('(Bloqueado)')) {
@@ -946,30 +939,20 @@ function reverseGeocode(latlng, callback) {
 }
 
 async function solicitarEnvio() {
-    // Prevenir doble clic
-    const btnDesktop = document.querySelector('button[onclick="solicitarEnvio()"]');
-    const btnMobile = document.querySelector('button[onclick="solicitarEnvioMobile()"]');
-    
-    if (btnDesktop && btnDesktop.disabled) return;
-    if (btnDesktop) btnDesktop.disabled = true;
-    if (btnMobile) btnMobile.disabled = true;
-    
-    // Guardar referencia para re-habilitar al final
-    const deshabilitarBtns = () => {
-        if (btnDesktop) btnDesktop.disabled = false;
-        if (btnMobile) btnMobile.disabled = false;
-    };
-    
+    // Validar si ya hay un pedido activo (pendiente, asignado o recogido)
+    if (pedidoActual && ['pendiente', 'asignado', 'recogido'].includes(pedidoActual.estado)) {
+        mostrarToast(`❌ Ya tienes un pedido activo (#${pedidoActual.id}). Complétalo antes de solicitar otro.`, true);
+        return;
+    }
+
     try {
         const origen = document.getElementById("origen").value;
         const destino = document.getElementById("destino").value;
         const tipo = document.getElementById("tipoEnvio").value;
         
-        // Obtener coordenadas
         const origenCoord = getOriginCoords();
         const destinoCoord = getDestCoords();
         
-        // Validaciones
         if (!origenCoord || !destinoCoord || !origenCoord.lat || !destinoCoord.lat) {
             console.error("Coordenadas inválidas:", { origenCoord, destinoCoord });
             mostrarToast("❌ Error: No se han seleccionado origen o destino válidos", true);
@@ -986,7 +969,6 @@ async function solicitarEnvio() {
             return;
         }
         
-        // Calcular distancia y tarifa
         let distancia = currentRouteData ? currentRouteData.distance : calcularDistanciaEntrePuntos(origenCoord, destinoCoord);
         const rate = calculateShippingRate(distancia, tipo);
         let tarifaBase = rate.total;
@@ -998,7 +980,6 @@ async function solicitarEnvio() {
             if (currentRouteData.extras.espera) tarifaFinal += 10;
         }
         
-        // Crear pedido pendiente
         pedidoPendiente = {
             id: Date.now(),
             cliente_id: currentUser.id,
@@ -1024,7 +1005,6 @@ async function solicitarEnvio() {
             tarifa: tarifaFinal
         });
         
-        // Mostrar modal de pago
         const modalPago = document.getElementById("modalPago");
         if (modalPago) {
             modalPago.classList.remove("hidden");
@@ -1036,18 +1016,6 @@ async function solicitarEnvio() {
     } catch (error) {
         console.error("Error en solicitarEnvio:", error);
         mostrarToast("❌ Ocurrió un error inesperado", true);
-    } finally {
-        // Reactivar botones (solo si no se abrió el modal de pago correctamente o hubo error)
-        // Nota: si el modal se abre correctamente, los botones quedarán deshabilitados hasta
-        // que el usuario complete o cancele el pago. Para eso llamaremos a deshabilitarBtns
-        // solo en los casos de error o validación fallida. En flujo normal, se reactivarán
-        // después de guardar el pedido o al cancelar el pago.
-        // Por simplicidad, aquí no los reactivamos automáticamente porque el usuario podría
-        // seguir en el flujo de pago. En su lugar, reactivaremos en los callbacks de los modales.
-        // Solo reactivamos si hubo error de validación temprana.
-        if (!pedidoPendiente || !modalPago || !modalPago.classList.contains('flex')) {
-            deshabilitarBtns();
-        }
     }
 }
 
