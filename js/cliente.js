@@ -131,6 +131,12 @@ const destinoInput = document.getElementById('destino');
 const btnCancelarPedido = document.getElementById('btnCancelarPedido');
 
 if (btnCancelarPedido) { btnCancelarPedido.addEventListener('click', cancelarPedido); }
+
+const btnCancelarPedidoMobile = document.getElementById('btnCancelarPedidoMobile');
+if (btnCancelarPedidoMobile) {
+    btnCancelarPedidoMobile.addEventListener('click', cancelarPedido);
+}
+
 if (origenInput) {
     origenInput.addEventListener('input', (e) => {
         if (busquedaTimeout) clearTimeout(busquedaTimeout);
@@ -160,7 +166,6 @@ if (destinoInput) {
         }, 200);
     });
 }
-
 
 // ==================== BLOQUEAR/REACTIVAR UI CUANDO HAY PEDIDO ACTIVO ====================
 function bloquearUIporPedidoActivo(bloquear) {
@@ -216,7 +221,7 @@ function bloquearUIporPedidoActivo(bloquear) {
             btnSolicitar.disabled = true;
             btnSolicitar.classList.add('opacity-50', 'cursor-not-allowed');
         }
-        
+       
         // Mostrar mensaje en los inputs
         const origenInput = document.getElementById('origen');
         if (origenInput && !origenInput.placeholder.includes('(Bloqueado)')) {
@@ -1106,13 +1111,20 @@ function calcularTotalConExtras(tarifaBase) {
 // ==================== PANEL DE ESTADO DEL PEDIDO (NUEVO) ====================
 function mostrarPanelEstado(pedido) {
     const panel = document.getElementById("panelEstadoPedido");
+    const panelMobile = document.getElementById("panelEstadoPedidoMobile");
     if (!panel) return;
     
+    // Actualizar IDs
     document.getElementById("pedidoIdLabel").innerText = pedido.id;
-    actualizarEstadoPanel(pedido.estado);
-    panel.classList.remove("hidden");
+    if (panelMobile) document.getElementById("pedidoIdLabelMobile").innerText = pedido.id;
     
-    // ✅ BLOQUEAR UI cuando hay pedido activo
+    actualizarEstadoPanel(pedido.estado);
+    
+    // Mostrar ambos paneles
+    panel.classList.remove("hidden");
+    if (panelMobile) panelMobile.classList.remove("hidden");
+    
+    // Bloquear UI (ya afecta a ambos paneles)
     if (pedido && (pedido.estado === 'asignado' || pedido.estado === 'recogido' || pedido.estado === 'pendiente')) {
         bloquearUIporPedidoActivo(true);
     }
@@ -1285,6 +1297,16 @@ function limpiarYResetearUI() {
     if (tipoEnvio) tipoEnvio.value = "";
     if (tarifaContainer) tarifaContainer.classList.add("hidden");
     
+    // ✅ Limpiar tipo de envío en móvil (campo oculto)
+    const tipoEnvioMobile = document.getElementById("tipoEnvioMobile");
+    if (tipoEnvioMobile) tipoEnvioMobile.value = "";
+    
+    // ✅ Resetear botones de tipo móvil (visualmente)
+    document.querySelectorAll('.tipo-mobile-btn').forEach(btn => {
+        btn.classList.remove('bg-orange-500', 'text-white');
+        btn.classList.add('bg-gray-100', 'text-gray-800');
+    });
+    
     // ✅ También limpiar campos móviles si existen
     const origenMobile = document.getElementById("origenMobile");
     const destinoMobile = document.getElementById("destinoMobile");
@@ -1293,22 +1315,18 @@ function limpiarYResetearUI() {
     
     // Restablecer marcadores a posición por defecto
     if (originMarker && destMarker) {
-        // ✅ Coordenadas por defecto
         const defaultOrigen = { lat: 18.6456, lng: -91.8249 };
         const defaultDestino = { lat: 18.6556, lng: -91.8149 };
         
-        // ✅ Usar las funciones setter
         setOriginCoords(defaultOrigen);
         setDestCoords(defaultDestino);
         
-        // ✅ Usar getters para obtener las coordenadas (NO variables directas)
         const orig = getOriginCoords();
         const dest = getDestCoords();
         
         originMarker.setLatLng([orig.lat, orig.lng]);
         destMarker.setLatLng([dest.lat, dest.lng]);
         
-        // ✅ Actualizar los inputs con la dirección
         reverseGeocode(orig, (addr) => {
             if (origenDesktop) origenDesktop.value = addr;
             if (origenMobile) origenMobile.value = addr;
@@ -1557,6 +1575,30 @@ async function confirmarPagoTransferenciaFinal() {
     } finally {
         window.guardandoPedido = false;
     }
+}
+
+function confirmarConModal(mensaje, onConfirm, onCancel) {
+    let modalExistente = document.getElementById("modalConfirmacionSimple");
+    if (modalExistente) modalExistente.remove();
+    
+    const modal = document.createElement('div');
+    modal.id = "modalConfirmacionSimple";
+    modal.className = "fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[10002] p-4";
+    modal.innerHTML = `
+        <div class="bg-gray-800 rounded-3xl max-w-sm w-full modal-uber text-center p-6">
+            <div class="w-16 h-16 bg-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                <i class="fas fa-question-circle text-3xl text-blue-500"></i>
+            </div>
+            <p class="text-gray-200 text-sm mb-6">${mensaje}</p>
+            <div class="flex gap-3">
+                <button id="btnCancelarSimple" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-2 rounded-xl transition-all">Cancelar</button>
+                <button id="btnAceptarSimple" class="flex-1 bg-orange-500 hover:bg-orange-600 text-white py-2 rounded-xl transition-all">Aceptar</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    document.getElementById("btnAceptarSimple").onclick = () => { modal.remove(); if (onConfirm) onConfirm(); };
+    document.getElementById("btnCancelarSimple").onclick = () => { modal.remove(); if (onCancel) onCancel(); };
 }
 
 function cerrarModalPago() {
