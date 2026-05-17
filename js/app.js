@@ -1,3 +1,7 @@
+// app.js - Al principio
+import './shared.js';
+import './security.js';
+import './config.js';
 // ==================== VARIABLES GLOBALES ====================
 let rolSeleccionado = 'cliente';
 window.togglePassword = togglePassword;

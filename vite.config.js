@@ -28,33 +28,20 @@ export default defineConfig({
         cliente: resolve(__dirname, 'cliente.html'),
         delivery: resolve(__dirname, 'delivery.html')
       }
-    },
-    minify: 'esbuild',
-    closeBundle() {
-      console.log('📦 Copiando archivos estáticos a dist/...');
-      
-      if (existsSync('js')) {
-        copyFolderSync('js', 'dist/js');
-        console.log('✅ js/ copiada a dist/js/');
-      }
-      
-      if (existsSync('img')) {
-        copyFolderSync('img', 'dist/img');
-        console.log('✅ img/ copiada a dist/img/');
-      }
-      
-      console.log('✅ Build completado!');
     }
   },
   server: {
     port: 3000,
     open: true,
     cors: true
-  },
-  define: {
-    'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(process.env.VITE_SUPABASE_URL),
-    'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(process.env.VITE_SUPABASE_ANON_KEY),
-    'import.meta.env.VITE_OSRM_API_URL': JSON.stringify(process.env.VITE_OSRM_API_URL),
-    'import.meta.env.VITE_WHATSAPP_NUMBER': JSON.stringify(process.env.VITE_WHATSAPP_NUMBER)
   }
+});
+
+// Copiar assets después del build
+import { writeFileSync } from 'fs';
+process.on('exit', () => {
+  console.log('📦 Copiando archivos estáticos a dist/...');
+  if (existsSync('js')) copyFolderSync('js', 'dist/js');
+  if (existsSync('img')) copyFolderSync('img', 'dist/img');
+  console.log('✅ Build completado!');
 });

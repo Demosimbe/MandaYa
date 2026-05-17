@@ -1,3 +1,7 @@
+import './shared.js';
+import './security.js';
+import './config.js';
+import './map-utils.js'; 
 // ==================== CONSTANTES Y LÍMITES ====================
 const BOUNDS = { north: 18.70, south: 18.58, east: -91.75, west: -91.88 };
 
@@ -168,6 +172,11 @@ function cerrarSesion() {
         "Cerrar Sesión",
         "¿Estás seguro de que deseas cerrar sesión?",
         async () => {
+            // Detener sincronización mobile primero
+            if (typeof detenerSincronizacion === 'function') {
+                detenerSincronizacion();
+            }
+            
             // Limpiar intervalos
             if(seguimientoInterval) clearInterval(seguimientoInterval);
             if(ubicacionInterval) clearInterval(ubicacionInterval);
@@ -3262,18 +3271,18 @@ window.cerrarSesion = function() {
 };
 
 // Evento cuando la página se está cerrando (pestaña cerrada, navegador cerrado, refresh)
-window.addEventListener('beforeunload', function() {
-    console.log("🚪 Pestaña cerrando - Limpiando recursos...");
-    limpiarTodosLosIntervalos();
-});
+//window.addEventListener('beforeunload', function() {
+  //  console.log("🚪 Pestaña cerrando - Limpiando recursos...");
+//    limpiarTodosLosIntervalos();
+//});
 
 // Evento cuando la página se descarga completamente (último recurso)
-window.addEventListener('pagehide', function() {
-    console.log("💀 Página descargada - Recursos liberados");
-    if (currentUser && currentUser.rol === 'cliente' && supabaseClient) {
-        console.log("👋 Cliente desconectado");
-    }
-});
+//window.addEventListener('pagehide', function() {
+    //console.log("💀 Página descargada - Recursos liberados");
+  //  if (currentUser && currentUser.rol === 'cliente' && supabaseClient) {
+    //    console.log("👋 Cliente desconectado");
+  //  }
+//});
 
 // Esto ya está manejado con visibilitychange, pero reforzamos
 document.addEventListener('visibilitychange', function() {

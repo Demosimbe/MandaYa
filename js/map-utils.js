@@ -316,6 +316,14 @@ function limitarCoordenadasACarmen(lat, lng) {
     return { lat: nuevaLat, lng: nuevaLng };
 }
 
+// ==================== EXPORTAR FUNCIONES GLOBALMENTE ====================
+window.limitarMapaACarmen = limitarMapaACarmen;
 window.limitarCoordenadasACarmen = limitarCoordenadasACarmen;
 window.getRealDistanceAndTime = getRealDistanceAndTime;
 window.calcularDistanciaEntrePuntos = calcularDistanciaEntrePuntos;
+window.drawRealRoute = drawRealRoute;
+window.calculateShippingRate = calculateShippingRate;
+window.formatDuration = formatDuration;
+window.obtenerPrimerNombre = obtenerPrimerNombre;
+window.crearMarcadorDelivery = crearMarcadorDelivery;
+window.convertirPedidoDeSupabase = convertirPedidoDeSupabase;

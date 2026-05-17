@@ -1,3 +1,8 @@
+// delivery.js - Al principio
+import './shared.js';
+import './security.js';
+import './config.js';
+import './map-utils.js'; 
 // Constantes y variables globales
 const BOUNDS = { north: 18.70, south: 18.58, east: -91.75, west: -91.88 };
 

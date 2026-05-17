@@ -1,4 +1,5 @@
 // js/shared.js - Utilidades compartidas
+import './config.js';
 
 window.addEventListener('error', (e) => {
     if (e.message && e.message.includes('message port closed')) {
@@ -156,3 +157,8 @@ if (!document.querySelector('#toast-global-styles')) {
 }
 
 console.log("✅ shared.js cargado correctamente");
+
+// Al final de shared.js
+window.mostrarToast = mostrarToast;
+window.sanitizarHTML = sanitizarHTML;
+window.confirmarConModal = confirmarConModal;
