@@ -1779,46 +1779,6 @@ async function guardarPedidoEnSupabase() {
     }
 }
 
-function enviarComprobanteWhatsApp() {
-    if (!pedidoPendiente) {
-        mostrarToast("❌ No hay información del pedido", true);
-        return;
-    }
-    
-    const total = pedidoPendiente.tarifa;
-    const pedidoId = pedidoPendiente.id;
-    // ✅ MISMO NÚMERO que funciona en tu otro proyecto
-    const numeroWhatsApp = '5219381083498';
-    
-     // ✅ VERSIÓN SIN ESPACIOS EXTRA - MÁXIMO ANCHO
-    let mensaje = `🛵 *MANDAYA-NUEVO PEDIDO* 🛵\n`;
-    mensaje += `─────────────────────\n`;
-    mensaje += `🎫 Pedido: #${pedidoId}\n`;
-    mensaje += `👤 Cliente: ${pedidoPendiente.cliente_nombre}\n`;
-    mensaje += `─────────────────────\n`;
-    mensaje += `📍 Origen:\n${pedidoPendiente.origen}\n`;
-    mensaje += `─────────────────────\n`;
-    mensaje += `🏁 Destino:\n${pedidoPendiente.destino}\n`;
-    mensaje += `─────────────────────\n`;
-    mensaje += `📏 ${pedidoPendiente.distancia_real} km | 📦 ${pedidoPendiente.tipo}\n`;
-    mensaje += `💰 Total: $${total} MXN\n`;
-    mensaje += `─────────────────────\n`;
-    mensaje += `✅ Comprobante adjunto\n`;
-    mensaje += `🙏 Gracias por usar MandaYa!`;
-    
-    // ✅ MISMA URL que funciona en tu otro proyecto
-    const mensajeCodificado = encodeURIComponent(mensaje);
-    const whatsappUrl = `https://api.whatsapp.com/send?phone=${numeroWhatsApp}&text=${mensajeCodificado}`;
-    
-    console.log("📱 Abriendo WhatsApp con URL:", whatsappUrl);
-    
-    // ✅ MISMA FORMA de abrir que en tu otro proyecto
-    window.open(whatsappUrl, '_blank');
-    mostrarToast("📱 Abriendo WhatsApp para enviar comprobante");
-    
-}
-
-
 async function confirmarPagoTransferenciaFinal() {
     // Verificar que haya un pedido pendiente
     if (!pedidoPendiente) {

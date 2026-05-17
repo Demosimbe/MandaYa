@@ -1,6 +1,23 @@
-// Configuración de Supabase
-const SUPABASE_URL = 'https://ewjljddexyajxuzzzssp.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3amxqZGRleHlhanh1enp6c3NwIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3ODAyMDExOSwiZXhwIjoyMDkzNTk2MTE5fQ.Xcb3vGH7a7Q0RA9-RlnZ1wUrWNXAV7YxEWiTPGsOMPU';
+// js/config.js - Versión optimizada con Vite
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+// Configuración de la app
+const APP_CONFIG = {
+    supabaseUrl: SUPABASE_URL,
+    supabaseAnonKey: SUPABASE_ANON_KEY,
+    osrmApiUrl: import.meta.env.VITE_OSRM_API_URL || 'https://router.project-osrm.org',
+    whatsappNumber: import.meta.env.VITE_WHATSAPP_NUMBER || '5219381083498',
+    isDev: import.meta.env.DEV,
+    isProd: import.meta.env.PROD,
+    appVersion: '1.0.0'
+};
+
+// Validar que las variables existen (solo en desarrollo)
+if (APP_CONFIG.isDev) {
+    if (!SUPABASE_URL) console.warn('⚠️ VITE_SUPABASE_URL no está definida');
+    if (!SUPABASE_ANON_KEY) console.warn('⚠️ VITE_SUPABASE_ANON_KEY no está definida');
+}
 
 let supabaseClient = null;
 

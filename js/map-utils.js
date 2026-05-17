@@ -7,11 +7,17 @@ function getMotoIcon() {
     });
 }
 
+// map-utils.js - Usar OSRM configurado
 async function drawRealRoute(map, origin, dest, color, weight) {
     if (!map || !origin || !dest) return null;
     
+    const osrmUrl = window.getOSRMUrl ? 
+        window.getOSRMUrl() : 'https://router.project-osrm.org';
+    
     try {
-        const response = await fetch(`https://router.project-osrm.org/route/v1/driving/${origin.lng},${origin.lat};${dest.lng},${dest.lat}?overview=full&geometries=geojson`);
+        const response = await fetch(
+            `${osrmUrl}/route/v1/driving/${origin.lng},${origin.lat};${dest.lng},${dest.lat}?overview=full&geometries=geojson`
+        );
         const data = await response.json();
         
         if (data.routes && data.routes[0]) {
@@ -21,10 +27,7 @@ async function drawRealRoute(map, origin, dest, color, weight) {
             }).addTo(map);
             
             const bounds = L.latLngBounds([origin, dest]);
-            map.fitBounds(bounds, {
-            padding: [50, 50],
-            maxZoom: 16
-        });
+            map.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
             
             return {
                 line: line,
