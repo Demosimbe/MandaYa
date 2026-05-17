@@ -1,5 +1,6 @@
 // ==================== VARIABLES GLOBALES ====================
 let rolSeleccionado = 'cliente';
+window.togglePassword = togglePassword;
 
 // ==================== FUNCIONES DE UTILIDAD ====================
 // Fallback por si shared.js no carga

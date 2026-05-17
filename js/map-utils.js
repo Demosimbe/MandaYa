@@ -9,25 +9,70 @@ function getMotoIcon() {
 
 // map-utils.js - Usar OSRM configurado
 async function drawRealRoute(map, origin, dest, color, weight) {
-    if (!map || !origin || !dest) return null;
+    // Validaciones mejoradas
+    if (!map) {
+        console.error('drawRealRoute: mapa no disponible');
+        return null;
+    }
+    if (!origin || !dest) {
+        console.error('drawRealRoute: origen o destino no disponibles', { origin, dest });
+        return null;
+    }
+    if (typeof origin.lat === 'undefined' || typeof origin.lng === 'undefined') {
+        console.error('drawRealRoute: coordenadas de origen inválidas', origin);
+        return null;
+    }
+    if (typeof dest.lat === 'undefined' || typeof dest.lng === 'undefined') {
+        console.error('drawRealRoute: coordenadas de destino inválidas', dest);
+        return null;
+    }
     
     const osrmUrl = window.getOSRMUrl ? 
         window.getOSRMUrl() : 'https://router.project-osrm.org';
     
     try {
-        const response = await fetch(
-            `${osrmUrl}/route/v1/driving/${origin.lng},${origin.lat};${dest.lng},${dest.lat}?overview=full&geometries=geojson`
-        );
+        // Agregar timeout de 10 segundos
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        
+        const url = `${osrmUrl}/route/v1/driving/${origin.lng},${origin.lat};${dest.lng},${dest.lat}?overview=full&geometries=geojson`;
+        
+        const response = await fetch(url, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
         const data = await response.json();
         
-        if (data.routes && data.routes[0]) {
+        if (data.code === 'NoRoute') {
+            console.warn('No se encontró ruta entre los puntos');
+            return null;
+        }
+        
+        if (data.routes && data.routes.length > 0) {
             const route = data.routes[0];
+            
+            // Limpiar ruta anterior si existe
+            if (window.currentRouteLine && typeof window.currentRouteLine.remove === 'function') {
+                window.currentRouteLine.remove();
+            }
+            
             const line = L.geoJSON(route.geometry, {
                 style: { color: color, weight: weight, opacity: 0.8 }
             }).addTo(map);
             
-            const bounds = L.latLngBounds([origin, dest]);
-            map.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
+            // Guardar referencia para limpiar después
+            window.currentRouteLine = line;
+            
+            // Ajustar vista solo si es necesario
+            try {
+                const bounds = L.latLngBounds([origin, dest]);
+                map.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
+            } catch(e) {
+                console.warn('Error ajustando bounds:', e);
+            }
             
             return {
                 line: line,
@@ -36,11 +81,19 @@ async function drawRealRoute(map, origin, dest, color, weight) {
                     duration: route.duration / 60
                 }
             };
+        } else {
+            console.warn('OSRM no devolvió rutas:', data);
+            return null;
         }
+        
     } catch(e) {
-        console.error('Error dibujando ruta:', e);
+        if (e.name === 'AbortError') {
+            console.error('Timeout: La petición a OSRM tomó más de 10 segundos');
+        } else {
+            console.error('Error dibujando ruta:', e.message);
+        }
+        return null;
     }
-    return null;
 }
 
 async function getRealDistanceAndTime(origin, dest) {

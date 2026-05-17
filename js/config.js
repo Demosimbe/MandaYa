@@ -460,13 +460,31 @@ async function inicializarSeguridad() {
     }
 }
 
+// Al final de config.js - EXPORTAR FUNCIONES GLOBALMENTE
+window.loginSupabase = loginSupabase;
+window.registrarUsuarioSupabase = registrarUsuarioSupabase;
+window.verificarYProtegerSesion = verificarYProtegerSesion;
+window.getDeliverysOnlineSupabase = getDeliverysOnlineSupabase;
+window.setDeliveryOnlineSupabase = setDeliveryOnlineSupabase;
+window.getAllUsuariosSupabase = getAllUsuariosSupabase;
+window.deliveryTienePedidoActivo = deliveryTienePedidoActivo;
+window.getPedidoActivoDelDelivery = getPedidoActivoDelDelivery;
+window.eliminarUsuarioSupabase = eliminarUsuarioSupabase;
+window.guardarUbicacionEnSupabase = guardarUbicacionEnSupabase;
+window.obtenerUbicacionDeSupabase = obtenerUbicacionDeSupabase;
+window.sincronizarBloqueoMobile = sincronizarBloqueoMobile;
+window.crearPedidoEnSupabase = crearPedidoEnSupabase;
+window.agarrarPedidoEnSupabase = agarrarPedidoEnSupabase;
+window.completarPedidoEnSupabase = completarPedidoEnSupabase;
+window.initSupabase = initSupabase;
+
+// ==================== INICIALIZACIÓN ====================
 // Ejecutar después de initSupabase
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', inicializarSeguridad);
 } else {
     inicializarSeguridad();
 }
-
 
 // Inicializar
 initSupabase();
