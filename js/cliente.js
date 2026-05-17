@@ -109,6 +109,57 @@ function cargarUsuarioSeguro() {
     if (userInfoMobile) {
         userInfoMobile.innerHTML = document.getElementById("userInfo").innerHTML;
     }
+    
+    // ✅ Cargar pedido activo desde la base de datos
+    cargarPedidoActivoDesdeDB();
+}
+
+// ==================== CARGAR PEDIDO ACTIVO DESDE BD ====================
+async function cargarPedidoActivoDesdeDB() {
+    const supabase = supabaseClient;
+    if (!supabase || !currentUser) return;
+    
+    try {
+        // Buscar pedidos activos (pendiente, asignado, recogido)
+        const { data: pedidoActivo, error } = await supabase
+            .from('pedidos')
+            .select('*')
+            .eq('cliente_id', currentUser.id)
+            .in('estado', ['pendiente', 'asignado', 'recogido'])
+            .order('fecha', { ascending: false })
+            .limit(1);
+        
+        if (error) throw error;
+        
+        if (pedidoActivo && pedidoActivo.length > 0) {
+            pedidoActual = convertirPedidoDeSupabase(pedidoActivo[0]);
+            console.log("🔄 Pedido activo recuperado de BD:", pedidoActual.id, "- Estado:", pedidoActual.estado);
+            
+            // Mostrar panel de estado
+            mostrarPanelEstado(pedidoActual);
+            
+            // Mostrar tarjeta de progreso
+            actualizarTarjetaProgreso();
+            
+            // Si el pedido está asignado o recogido, iniciar seguimiento
+            if (pedidoActual.estado === 'asignado' || pedidoActual.estado === 'recogido') {
+                if (pedidoActual.delivery_id) {
+                    mostrarDeliveryEnMapa(pedidoActual.delivery_id, pedidoActual.delivery_nombre);
+                    seguirUbicacionDelivery(pedidoActual.delivery_id);
+                }
+                iniciarSeguimientoDelivery();
+            }
+            
+            // Bloquear UI
+            bloquearUIporPedidoActivo(true);
+            
+        } else {
+            console.log("📭 No hay pedidos activos");
+            bloquearUIporPedidoActivo(false);
+        }
+    } catch(e) {
+        console.error('Error cargando pedido activo:', e);
+    }
 }
 
 // ==================== CERRAR SESIÓN CORREGIDO (SOLO UNA VEZ) ====================
