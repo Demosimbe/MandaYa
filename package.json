@@ -1,0 +1,29 @@
+{
+ "name": "mandaya",
+  "version": "1.0.0",
+  "description": "Plataforma de envíos MandaYa",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "vercel-build": "vite build",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Demosimbe/MandaYa.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Demosimbe/MandaYa/issues"
+  },
+  "homepage": "https://github.com/Demosimbe/MandaYa#readme",
+  "devDependencies": {
+    "dotenv": "^17.4.2",
+    "vite": "^8.0.13"
+  }
+}
