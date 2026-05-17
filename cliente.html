@@ -131,6 +131,17 @@
             width: 44px;
             height: 44px;
         }
+
+        @keyframes confettiFall {
+    0% { 
+        transform: translateY(-20px) rotate(0deg); 
+        opacity: 1; 
+    }
+    100% { 
+        transform: translateY(100vh) rotate(360deg); 
+        opacity: 0; 
+    }
+}
         
         .map-btn:hover { background: #f3f4f6; transform: scale(1.05); }
         .map-btn i { font-size: 18px; }
@@ -347,7 +358,30 @@
     <!-- ==================== MAPA Y BOTONES ==================== -->
     <div class="flex-1 relative h-full w-full">
         <div id="map" class="h-full w-full"></div>
-        
+
+        <!-- Tarjeta de progreso del delivery (estados: buscando, asignado, enCamino, entregado) -->
+        <div id="progressCard" class="hidden fixed left-1/2 transform -translate-x-1/2 top-20 md:top-24 bg-white rounded-xl shadow-lg z-[1000] w-72 md:w-96 p-3 transition-all duration-300">
+            <div class="flex items-center justify-between mb-2">
+                <span id="progressEstado" class="text-xs font-semibold">Buscando delivery...</span>
+                <span id="progressDistancia" class="text-xs font-bold">- km</span>
+            </div>
+            <div class="flex justify-between items-center text-sm mb-1" id="progressPuntos">
+                <i class="fas fa-circle text-[10px] text-gray-300"></i>
+                <i class="fas fa-circle text-[10px] text-gray-300"></i>
+                <i class="fas fa-circle text-[10px] text-gray-300"></i>
+                <i class="fas fa-circle-notch text-[10px] text-gray-300"></i>
+            </div>
+            <div class="w-full bg-gray-200 rounded-full h-1.5 mb-2">
+                <div id="progressBar" class="h-1.5 rounded-full transition-all duration-500" style="width: 0%"></div>
+            </div>
+            <div id="progressMensaje" class="text-center text-[10px] text-gray-400">Esperando a que un delivery tome tu pedido...</div>
+            <div id="calificarContainer" class="hidden mt-3 text-center">
+                <button onclick="calificarServicio()" class="bg-orange-500 text-white px-4 py-2 rounded-full text-sm flex items-center gap-2 mx-auto hover:bg-orange-600 transition-all">
+                    <i class="fas fa-star"></i> Calificar servicio
+                </button>
+            </div>
+        </div>
+         
         <!-- Selector Origen/Destino centrado -->
         <div class="select-mode-badge">
             <div id="btnOrigen" class="mode-btn active" onclick="setSelectMode('origen')">

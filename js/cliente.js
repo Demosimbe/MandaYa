@@ -12,6 +12,7 @@ let clienteRouteControl = null;
 // ==================== COORDENADAS (SOLO UNA DECLARACIÓN) ====================
 window.originCoords = null;
 window.destCoords = null;    // ✅ Única variable de destino
+window.confetiLanzado = false;
 
 // ==================== USUARIOS Y PEDIDOS ====================
 let currentUser = null;
@@ -30,6 +31,8 @@ let rutaActualTipo = null;          // 'recogida' o 'entrega'
 let rutaDestinoActual = null;       // Guardar destino para comparar
 let rutaYaDibujada = false;
 let ultimoEstadoPedido = null;
+let estadoActualProgreso = null; // 'buscando', 'asignado', 'enCamino', 'entregado'
+let ultimaDistanciaLlegada = null;   // Control de vibración/zoom por llegada
 
 // ==================== DELIVERYS EN LÍNEA ====================
 let deliverysMarkers = [];           // Marcadores de deliverys disponibles
@@ -487,6 +490,270 @@ function initMap() {
         origen: getOriginCoords(),
         destino: getDestCoords()
     });
+}
+
+function actualizarTarjetaProgreso(distanciaKm, estado, destinoTexto) {
+    const card = document.getElementById('progressCard');
+    if (!card) return;
+
+    // Mostrar la tarjeta si está oculta
+    if (card.classList.contains('hidden')) {
+        card.classList.remove('hidden');
+    }
+    
+    const estadoElem = document.getElementById('progressEstado');
+    const barra = document.getElementById('progressBar');
+    const distanciaElem = document.getElementById('progressDistancia');
+    const mensajeElem = document.getElementById('progressMensaje');
+    const puntosContainer = document.getElementById('progressPuntos');
+    const calificarContainer = document.getElementById('calificarContainer');
+    
+    // Determinar estado general (buscando, asignado, enCamino, entregado)
+    let estadoGeneral = 'buscando';
+    let colorBarra = '#fbbf24'; // amarillo
+    let puntosActivos = 0;
+    
+    // Colores para la tarjeta (background y border-left)
+    let cardBg = '';
+    let cardBorderLeft = '';
+    
+    if (!pedidoActual) {
+        estadoGeneral = 'buscando';
+        puntosActivos = 0;
+        cardBg = '#fef9e6';
+        cardBorderLeft = '#fbbf24';
+    } else if (pedidoActual.estado === 'pendiente') {
+        estadoGeneral = 'buscando';
+        puntosActivos = 1;
+        cardBg = '#fef9e6';
+        cardBorderLeft = '#fbbf24';
+    } else if (pedidoActual.estado === 'asignado') {
+        estadoGeneral = 'asignado';
+        colorBarra = '#3b82f6';
+        puntosActivos = 2;
+        cardBg = '#e6f0ff';
+        cardBorderLeft = '#3b82f6';
+    } else if (pedidoActual.estado === 'recogido') {
+        estadoGeneral = 'enCamino';
+        colorBarra = '#f97316';
+        puntosActivos = 3;
+        cardBg = '#fff7ed';
+        cardBorderLeft = '#f97316';
+    } else if (pedidoActual.estado === 'completado') {
+        estadoGeneral = 'entregado';
+        colorBarra = '#10b981';
+        puntosActivos = 4;
+        cardBg = '#ecfdf5';
+        cardBorderLeft = '#10b981';
+        // Mostrar botón calificar
+        if (calificarContainer) calificarContainer.classList.remove('hidden');
+    }
+    
+    // ✅ APLICAR COLORES DIRECTAMENTE CON JAVASCRIPT
+    card.style.background = cardBg;
+    card.style.borderLeft = `4px solid ${cardBorderLeft}`;
+    
+    // Actualizar puntos visuales
+    const puntos = puntosContainer.querySelectorAll('i');
+    puntos.forEach((punto, idx) => {
+        punto.classList.remove('punto-activo');
+        if (idx < puntosActivos) {
+            punto.style.color = colorBarra;
+            if (idx === puntosActivos - 1 && estadoGeneral !== 'entregado') {
+                punto.classList.add('punto-activo');
+            }
+        } else {
+            punto.style.color = '#d1d5db';
+        }
+    });
+    
+    // Actualizar barra de progreso (0% a 100% según puntos)
+    const porcentaje = (puntosActivos / 4) * 100;
+    barra.style.width = `${porcentaje}%`;
+    barra.style.backgroundColor = colorBarra;
+    
+    // Textos según estado y distancia
+    if (estadoGeneral === 'buscando') {
+        estadoElem.innerText = '⏳ Buscando delivery...';
+        distanciaElem.innerText = '';
+        mensajeElem.innerText = 'Estamos buscando un delivery disponible. En breve alguien tomará tu pedido.';
+    } else if (estadoGeneral === 'asignado') {
+        estadoElem.innerText = '🚚 Delivery asignado';
+        if (distanciaKm !== undefined) {
+            let distanciaTexto = distanciaKm < 0.1 ? '< 100 m' : `${distanciaKm.toFixed(1)} km`;
+            distanciaElem.innerText = distanciaTexto;
+            if (distanciaKm < 0.15) {
+                estadoElem.innerText = '🚚 LLEGANDO A RECOGER';
+                mensajeElem.innerText = '¡El delivery está llegando al origen!';
+                // Vibración y zoom (si no se ha hecho)
+                if (ultimaDistanciaLlegada !== 'llegando') {
+                    if (window.navigator.vibrate) window.navigator.vibrate(500);
+                    mostrarToast('🔔 ¡El delivery está llegando!', false);
+                    ultimaDistanciaLlegada = 'llegando';
+                    if (deliveryMarker) map.setView(deliveryMarker.getLatLng(), 17);
+                }
+            } else if (distanciaKm < 0.5) {
+                estadoElem.innerText = '🟡 Muy cerca del origen';
+                mensajeElem.innerText = 'El delivery está por llegar al punto de recogida';
+            } else {
+                mensajeElem.innerText = 'El delivery se dirige a recoger tu paquete';
+            }
+        } else {
+            mensajeElem.innerText = 'Delivery en camino al origen';
+        }
+    } else if (estadoGeneral === 'enCamino') {
+        estadoElem.innerText = '📦 En camino a entregar';
+        if (distanciaKm !== undefined) {
+            let distanciaTexto = distanciaKm < 0.1 ? '< 100 m' : `${distanciaKm.toFixed(1)} km`;
+            distanciaElem.innerText = distanciaTexto;
+            if (distanciaKm < 0.15) {
+                estadoElem.innerText = '🎉 LLEGANDO A DESTINO';
+                mensajeElem.innerText = '¡Tu paquete está por llegar!';
+                if (ultimaDistanciaLlegada !== 'llegando') {
+                    if (window.navigator.vibrate) window.navigator.vibrate(500);
+                    mostrarToast('🔔 ¡Tu paquete está por llegar!', false);
+                    ultimaDistanciaLlegada = 'llegando';
+                    if (deliveryMarker) map.setView(deliveryMarker.getLatLng(), 17);
+                }
+            } else if (distanciaKm < 0.5) {
+                estadoElem.innerText = '🟡 Muy cerca del destino';
+                mensajeElem.innerText = 'El delivery está cerca de entregar';
+            } else {
+                mensajeElem.innerText = 'El delivery se dirige a tu destino';
+            }
+        } else {
+            mensajeElem.innerText = 'Delivery en camino a tu destino';
+        }
+    } else if (estadoGeneral === 'entregado') {
+        estadoElem.innerText = '✅ Entregado';
+        distanciaElem.innerText = '';
+        mensajeElem.innerText = '¡Envío completado! Gracias por usar MandaYa.';
+        // Lanzar confeti solo una vez
+        if (window.confetiLanzado !== true) {
+            window.confetiLanzado = true;
+            lanzarConfeti();
+        }
+        setTimeout(() => {
+            ocultarTarjetaProgreso();
+            pedidoActual = null;
+            window.confetiLanzado = false; // Reset para futuros pedidos
+        }, 8000);
+    }
+}
+
+function lanzarConfeti() {
+    console.log("🎉 Lanzando confeti!");
+    const colors = ['#fbbf24', '#3b82f6', '#f97316', '#10b981', '#ef4444', '#8b5cf6', '#ff6b6b', '#4ecdc4', '#f43f5e', '#06b6d4'];
+    
+    for (let i = 0; i < 150; i++) {
+        const confetti = document.createElement('div');
+        confetti.classList.add('confetti');
+        confetti.style.left = Math.random() * 100 + '%';
+        confetti.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+        confetti.style.width = Math.random() * 10 + 5 + 'px';
+        confetti.style.height = confetti.style.width;
+        confetti.style.position = 'fixed';
+        confetti.style.top = '-20px';
+        confetti.style.borderRadius = '50%';
+        confetti.style.zIndex = '10001';
+        confetti.style.pointerEvents = 'none';
+        
+        const duration = Math.random() * 3 + 2;
+        const delay = Math.random() * 2;
+        
+        confetti.style.animation = `confettiFall ${duration}s linear forwards`;
+        confetti.style.animationDelay = `${delay}s`;
+        
+        document.body.appendChild(confetti);
+        
+        setTimeout(() => {
+            if (confetti && confetti.remove) confetti.remove();
+        }, (duration + delay) * 1000);
+    }
+}
+
+function calificarServicio() {
+    mostrarModalCalificacion();
+}
+
+function mostrarModalCalificacion() {
+    // Crear modal simple para calificar
+    const modal = document.createElement('div');
+    modal.className = 'fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[10002] p-4';
+    modal.innerHTML = `
+        <div class="bg-gray-800 rounded-2xl max-w-sm w-full p-6 text-center">
+            <h3 class="text-white text-lg font-bold mb-4">Califica el servicio</h3>
+            <div class="flex justify-center gap-3 mb-4" id="estrellasCalificacion">
+                ${[1,2,3,4,5].map(i => `<i class="fas fa-star text-3xl text-gray-500 cursor-pointer hover:text-yellow-400 transition-all" data-puntuacion="${i}"></i>`).join('')}
+            </div>
+            <textarea id="comentarioCalificacion" class="w-full bg-gray-700 text-white rounded-lg p-2 text-sm" rows="2" placeholder="Opcional: deja un comentario"></textarea>
+            <button id="enviarCalificacion" class="mt-4 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-xl w-full">Enviar calificación</button>
+            <button onclick="this.parentElement.parentElement.remove()" class="mt-2 text-gray-400 text-sm">Cerrar</button>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    
+    let puntuacion = 0;
+    const stars = modal.querySelectorAll('#estrellasCalificacion i');
+    
+    stars.forEach(star => {
+        star.addEventListener('click', () => {
+            puntuacion = parseInt(star.dataset.puntuacion);
+            stars.forEach(s => {
+                const val = parseInt(s.dataset.puntuacion);
+                if (val <= puntuacion) {
+                    s.classList.remove('text-gray-500');
+                    s.classList.add('text-yellow-400');
+                } else {
+                    s.classList.remove('text-yellow-400');
+                    s.classList.add('text-gray-500');
+                }
+            });
+        });
+    });
+    
+    modal.querySelector('#enviarCalificacion').onclick = async () => {
+        if (puntuacion === 0) {
+            mostrarToast('❌ Selecciona una puntuación', true);
+            return;
+        }
+        
+        const comentario = modal.querySelector('#comentarioCalificacion').value;
+        const supabase = supabaseClient;
+        
+        if (supabase && pedidoActual) {
+            await supabase.from('calificaciones').insert({
+                pedido_id: pedidoActual.id,
+                delivery_id: pedidoActual.delivery_id,
+                cliente_id: currentUser.id,
+                puntuacion: puntuacion,
+                comentario: comentario,
+                fecha: new Date().toISOString()
+            });
+        }
+        
+        // ✅ Mostrar mensaje de agradecimiento
+        mostrarToast(`✅ ¡Gracias por tu calificación de ${puntuacion} estrellas! 🌟`);
+        
+        // ✅ Cambiar el contenido del modal a un mensaje de agradecimiento
+        modal.innerHTML = `
+            <div class="bg-gray-800 rounded-2xl max-w-sm w-full p-6 text-center">
+                <div class="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <i class="fas fa-heart text-3xl text-green-500"></i>
+                </div>
+                <h3 class="text-white text-xl font-bold mb-2">¡Gracias por calificar!</h3>
+                <p class="text-gray-400 text-sm">Tu opinión nos ayuda a mejorar el servicio.</p>
+                <div class="mt-4 flex justify-center gap-1 text-yellow-400 text-xl">
+                    ${'★'.repeat(puntuacion)}${'☆'.repeat(5 - puntuacion)}
+                </div>
+            </div>
+        `;
+        
+        // ✅ Cerrar el modal automáticamente después de 2 segundos
+        setTimeout(() => {
+            modal.remove();
+        }, 2000);
+    };
 }
     
 function centrarMapa() {
@@ -1082,17 +1349,17 @@ function mostrarPanelEstado(pedido) {
     const panelMobile = document.getElementById("panelEstadoPedidoMobile");
     if (!panel) return;
     
-    // Actualizar IDs
     document.getElementById("pedidoIdLabel").innerText = pedido.id;
     if (panelMobile) document.getElementById("pedidoIdLabelMobile").innerText = pedido.id;
     
     actualizarEstadoPanel(pedido.estado);
     
-    // Mostrar ambos paneles
     panel.classList.remove("hidden");
     if (panelMobile) panelMobile.classList.remove("hidden");
     
-    // Bloquear UI (ya afecta a ambos paneles)
+    // ✅ MOSTRAR TARJETA DE PROGRESO TAMBIÉN AL CARGAR UN PEDIDO EXISTENTE
+    actualizarTarjetaProgreso();
+    
     if (pedido && (pedido.estado === 'asignado' || pedido.estado === 'recogido' || pedido.estado === 'pendiente')) {
         bloquearUIporPedidoActivo(true);
     }
@@ -1430,7 +1697,6 @@ async function guardarPedidoEnSupabase() {
     }
     
     try {
-        // ✅ Asegurar que extras sea un objeto válido
         const pedidoAGuardar = {
             ...pedidoPendiente,
             extras: pedidoPendiente.extras || { lluvia: false, noche: false, espera: false }
@@ -1449,6 +1715,9 @@ async function guardarPedidoEnSupabase() {
         cerrarModalTransferencia();
         
         mostrarPanelEstado(pedidoActual);
+        
+        // ✅ MOSTRAR LA TARJETA DE PROGRESO INMEDIATAMENTE
+        actualizarTarjetaProgreso(); // Estado pendiente → amarillo "Buscando delivery..."
         
         mostrarToast(`✅ ¡Envío solicitado! ID: #${pedidoActual.id} - Esperando delivery`);
         iniciarSeguimientoDelivery();
@@ -1470,26 +1739,21 @@ function enviarComprobanteWhatsApp() {
     // ✅ MISMO NÚMERO que funciona en tu otro proyecto
     const numeroWhatsApp = '5219381083498';
     
-    // ✅ MISMO FORMATO de mensaje (como en tu ejemplo)
-    let mensaje = `🍔 *MANDAYA - NUEVO PEDIDO* 🍔\n\n`;
-    
-    mensaje += `🎫 *PEDIDO:* #${pedidoId}\n`;
-    mensaje += `👤 *CLIENTE:* ${pedidoPendiente.cliente_nombre}\n`;
-    
-    mensaje += `\n━━━━━━━━━━━━━━━\n`;
-    mensaje += `📦 *DETALLES DEL ENVÍO:*\n`;
-    mensaje += `\n📍 *ORIGEN:* ${pedidoPendiente.origen}\n`;
-    mensaje += `🏁 *DESTINO:* ${pedidoPendiente.destino}\n`;
-    mensaje += `📏 *DISTANCIA:* ${pedidoPendiente.distancia_real} km\n`;
-    mensaje += `📦 *TIPO:* ${pedidoPendiente.tipo}\n`;
-    
-    mensaje += `\n━━━━━━━━━━━━━━━\n`;
-    mensaje += `💰 *TOTAL A PAGAR:* $${total} MXN\n`;
-    
-    mensaje += `\n━━━━━━━━━━━━━━━\n`;
-    mensaje += `✅ *Comprobante de pago adjunto*\n`;
-    
-    mensaje += `\n🙏 *¡Gracias por usar MandaYa!*`;
+     // ✅ VERSIÓN SIN ESPACIOS EXTRA - MÁXIMO ANCHO
+    let mensaje = `🛵 *MANDAYA-NUEVO PEDIDO* 🛵\n`;
+    mensaje += `─────────────────────\n`;
+    mensaje += `🎫 Pedido: #${pedidoId}\n`;
+    mensaje += `👤 Cliente: ${pedidoPendiente.cliente_nombre}\n`;
+    mensaje += `─────────────────────\n`;
+    mensaje += `📍 Origen:\n${pedidoPendiente.origen}\n`;
+    mensaje += `─────────────────────\n`;
+    mensaje += `🏁 Destino:\n${pedidoPendiente.destino}\n`;
+    mensaje += `─────────────────────\n`;
+    mensaje += `📏 ${pedidoPendiente.distancia_real} km | 📦 ${pedidoPendiente.tipo}\n`;
+    mensaje += `💰 Total: $${total} MXN\n`;
+    mensaje += `─────────────────────\n`;
+    mensaje += `✅ Comprobante adjunto\n`;
+    mensaje += `🙏 Gracias por usar MandaYa!`;
     
     // ✅ MISMA URL que funciona en tu otro proyecto
     const mensajeCodificado = encodeURIComponent(mensaje);
@@ -1625,6 +1889,16 @@ function iniciarSeguimientoDelivery() {
     mostrarToast("🟢 Buscando delivery disponible...");
 
     seguimientoInterval = setInterval(async () => {
+        // ✅ Verificar si el pedido aún existe
+        if (!pedidoActual || !pedidoActual.id) {
+            console.warn("⏹️ Pedido actual nulo, deteniendo seguimiento...");
+            if (seguimientoInterval) {
+                clearInterval(seguimientoInterval);
+                seguimientoInterval = null;
+            }
+            return;
+        }
+
         const supabase = supabaseClient;
         if (!supabase) return;
         
@@ -1636,7 +1910,6 @@ function iniciarSeguimientoDelivery() {
                 .single();
             
             if (error) throw error;
-            
             if (!pedidoActualizado) return;
             
             const estadoAnterior = pedidoActual.estado;
@@ -1646,7 +1919,7 @@ function iniciarSeguimientoDelivery() {
             if (pedidoActualizado.estado === 'completado') {
                 console.log("🎉 Pedido completado detectado! Limpiando UI...");
                 
-                // Limpiar intervalos
+                // Detener intervalos
                 if (seguimientoInterval) {
                     clearInterval(seguimientoInterval);
                     seguimientoInterval = null;
@@ -1656,13 +1929,11 @@ function iniciarSeguimientoDelivery() {
                     ubicacionInterval = null;
                 }
                 
-                // Limpiar marcador de delivery
+                // Limpiar marcadores y rutas
                 if (deliveryMarker) {
                     try { map.removeLayer(deliveryMarker); } catch(e) {}
                     deliveryMarker = null;
                 }
-                
-                // Limpiar rutas
                 limpiarRutaCliente();
                 
                 // Ocultar paneles de estado
@@ -1671,14 +1942,11 @@ function iniciarSeguimientoDelivery() {
                 if (panel) panel.classList.add("hidden");
                 if (panelMobile) panelMobile.classList.add("hidden");
                 
-                // Ocultar botón centrar delivery
+                // Ocultar botón centrar delivery e info
                 mostrarBotonCentrarDelivery(false);
+                ocultarDeliveryInfo();
                 
-                // Ocultar info del delivery
-                const deliveryInfo = document.getElementById("deliveryInfo");
-                if (deliveryInfo) deliveryInfo.classList.add("hidden");
-                
-                // Resetear variables de control
+                // Resetear variables de control de rutas
                 rutaYaDibujada = false;
                 ultimoEstadoPedido = null;
                 rutaDestinoActual = null;
@@ -1686,29 +1954,25 @@ function iniciarSeguimientoDelivery() {
                 // Reactivar UI
                 bloquearUIporPedidoActivo(false);
                 
-                // Limpiar pedido actual
-                pedidoActual = null;
+                // ✅ FORZAR ACTUALIZACIÓN DE LA TARJETA DE PROGRESO A "ENTREGADO"
+                actualizarTarjetaProgreso();
                 
-                // Recargar deliverys (ahora mostrará todos nuevamente)
+                // Recargar deliverys
                 cargarDeliverysEnLinea();
-                
-                // Mostrar mensaje final
                 mostrarToast("🎉 ¡Envío completado! Gracias por usar MandaYa");
                 
-                return; // Salir del intervalo (importante)
+                return; // Salir del intervalo
             }
-            
+                        
             // ========== 2. ACTUALIZAR PANEL DE ESTADO ==========
             if (pedidoActualizado.estado === 'asignado' && pedidoActualizado.delivery_nombre) {
                 actualizarEstadoPanel('asignado', pedidoActualizado.delivery_nombre);
             } 
             else if (pedidoActualizado.estado === 'recogido' && pedidoActualizado.delivery_nombre) {
                 actualizarEstadoPanel('recogido', pedidoActualizado.delivery_nombre);
-                
-                // Notificar al cliente que el paquete fue recogido
                 if (estadoAnterior === 'asignado') {
                     mostrarToast(`📦 ¡El delivery ${pedidoActualizado.delivery_nombre} ya recogió tu paquete!`);
-                    vibrar(200); // Si tienes función vibrar
+                    vibrar(200);
                 }
             } 
             else if (pedidoActualizado.estado === 'pendiente') {
@@ -1716,9 +1980,7 @@ function iniciarSeguimientoDelivery() {
             }
             
             // ========== 3. INICIAR SEGUIMIENTO DE UBICACIÓN ==========
-            // Solo si el pedido está activo y aún no tenemos intervalo de ubicación
             const estadoActivo = (pedidoActualizado.estado === 'asignado' || pedidoActualizado.estado === 'recogido');
-            
             if (estadoActivo && pedidoActualizado.delivery_id && !ubicacionInterval) {
                 mostrarToast(`✅ Delivery asignado: ${pedidoActualizado.delivery_nombre || 'Delivery'}`);
                 mostrarDeliveryEnMapa(pedidoActualizado.delivery_id, pedidoActualizado.delivery_nombre);
@@ -1728,7 +1990,7 @@ function iniciarSeguimientoDelivery() {
         } catch(e) {
             console.error('❌ Error en seguimiento:', e);
         }
-    }, 3000); // ✅ Cambiado de 3s a 5s para mejor rendimiento
+    }, 3000);
 }
 
 function vibrar(duracion = 200) {
@@ -1826,6 +2088,9 @@ function seguirUbicacionDelivery(deliveryId) {
             if (destinoCoords) {
                 distanciaActual = calcularDistanciaEntrePuntos(ubicacion, destinoCoords);
             }
+
+            // Dentro de seguirUbicacionDelivery, después de calcular distanciaActual:
+            actualizarTarjetaProgreso(distanciaActual, tipoRuta, destinoFinalNombre);
             
             // ✅ 9. Determinar si necesita recálculo (mejorado)
             const estadoActual = pedidoActual?.estado;
@@ -1962,6 +2227,16 @@ function calcularETA(distanciaKm) {
 function ocultarDeliveryInfo() {
     document.getElementById("deliveryInfo").classList.add("hidden");
     if (deliveryMarker) map.removeLayer(deliveryMarker);
+}
+
+function mostrarTarjetaProgreso() {
+    const card = document.getElementById('progressCard');
+    if (card) card.classList.remove('hidden');
+}
+
+function ocultarTarjetaProgreso() {
+    const card = document.getElementById('progressCard');
+    if (card) card.classList.add('hidden');
 }
 
 // ==================== HISTORIAL Y PERFIL ====================
