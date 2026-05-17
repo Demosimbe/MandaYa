@@ -1,5 +1,5 @@
 {
- "name": "mandaya",
+  "name": "mandaya",
   "version": "1.0.0",
   "description": "Plataforma de envíos MandaYa",
   "main": "index.js",
@@ -17,13 +17,13 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
+  "type": "module",
   "bugs": {
     "url": "https://github.com/Demosimbe/MandaYa/issues"
   },
   "homepage": "https://github.com/Demosimbe/MandaYa#readme",
   "devDependencies": {
-    "dotenv": "^17.4.2",
-    "vite": "^8.0.13"
+    "esbuild": "^0.21.5",
+    "vite": "^5.4.11"
   }
 }
