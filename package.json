@@ -1,5 +1,13 @@
 {
   "name": "mandaya",
   "version": "1.0.0",
-  "description": "Plataforma de envíos MandaYa"
+  "scripts": {
+    "build": "vite build && node copy-assets.js",
+    "vercel-build": "vite build && node copy-assets.js"
+  },
+  "devDependencies": {
+    "vite": "^5.4.11",
+    "esbuild": "^0.21.5"
+  },
+  "type": "module"
 }
