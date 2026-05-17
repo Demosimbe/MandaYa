@@ -1747,3 +1747,20 @@ function actualizarRotacionMarcadores() {
         destinoMarker.setRotationAngle(mapRotationAngle);
     }
 }
+
+// ==================== EXPORTAR FUNCIONES GLOBALMENTE ====================
+window.centrarMapa = centrarMapa;
+window.rotateMapLeft = rotateMapLeft;
+window.rotateMapRight = rotateMapRight;
+window.resetMapRotation = resetMapRotation;
+window.toggleOnline = toggleOnline;
+window.verHistorial = verHistorial;
+window.verPerfil = verPerfil;
+window.cerrarSesion = cerrarSesion;
+window.seleccionarPedido = seleccionarPedido;
+window.agarrarPedido = agarrarPedido;
+window.marcarPaqueteRecogido = marcarPaqueteRecogido;
+window.completarPedido = completarPedido;
+window.cerrarModalHistorialDelivery = cerrarModalHistorialDelivery;
+window.mostrarModalConfirmacionDelivery = mostrarModalConfirmacionDelivery;
+window.cerrarModalPerfilDelivery = cerrarModalPerfilDelivery;

@@ -805,20 +805,7 @@
     iniciarSincronizacion();
     window.addEventListener('beforeunload', function() { detenerSincronizacion(); });
     
-   const originalCerrarSesion = window.cerrarSesion;
-   window.cerrarSesion = function() {
-    // Detener sincronización ANTES de limpiar
-    if (typeof detenerSincronizacion === 'function') {
-        detenerSincronizacion();
-    }
-    // Limpiar intervalos globales
-    if (typeof limpiarTodosLosIntervalos === 'function') {
-        limpiarTodosLosIntervalos();
-    }
-    if (originalCerrarSesion) {
-        originalCerrarSesion();
-    }
-};
+
     </script>
 </body>
 </html>

@@ -166,24 +166,28 @@ async function cargarPedidoActivoDesdeDB() {
     }
 }
 
-// ==================== CERRAR SESIÓN CORREGIDO (SOLO UNA VEZ) ====================
+// ==================== CERRAR SESIÓN CON MODAL ORIGINAL ====================
 function cerrarSesion() { 
     mostrarModalConfirmacion(
         "Cerrar Sesión",
         "¿Estás seguro de que deseas cerrar sesión?",
         async () => {
-            // Detener sincronización mobile primero
+            // Detener sincronización mobile
             if (typeof detenerSincronizacion === 'function') {
                 detenerSincronizacion();
             }
             
             // Limpiar intervalos
-            if(seguimientoInterval) clearInterval(seguimientoInterval);
-            if(ubicacionInterval) clearInterval(ubicacionInterval);
-            if(deliverysInterval) clearInterval(deliverysInterval);
+            if (seguimientoInterval) clearInterval(seguimientoInterval);
+            if (ubicacionInterval) clearInterval(ubicacionInterval);
+            if (deliverysInterval) clearInterval(deliverysInterval);
             
-            // Usar securityManager para cerrar sesión
-            await securityManager.cerrarSesion();
+            // Limpiar localStorage y redirigir
+            localStorage.clear();
+            sessionStorage.clear();
+            
+            // Redirigir al login
+            window.location.href = "index.html";
         }
     );
 }
@@ -3270,19 +3274,19 @@ window.cerrarSesion = function() {
     }
 };
 
-// Evento cuando la página se está cerrando (pestaña cerrada, navegador cerrado, refresh)
-//window.addEventListener('beforeunload', function() {
-  //  console.log("🚪 Pestaña cerrando - Limpiando recursos...");
-//    limpiarTodosLosIntervalos();
-//});
+ //Evento cuando la página se está cerrando (pestaña cerrada, navegador cerrado, refresh)
+window.addEventListener('beforeunload', function() {
+ console.log("🚪 Pestaña cerrando - Limpiando recursos...");
+   limpiarTodosLosIntervalos();
+});
 
-// Evento cuando la página se descarga completamente (último recurso)
-//window.addEventListener('pagehide', function() {
-    //console.log("💀 Página descargada - Recursos liberados");
-  //  if (currentUser && currentUser.rol === 'cliente' && supabaseClient) {
-    //    console.log("👋 Cliente desconectado");
-  //  }
-//});
+ //Evento cuando la página se descarga completamente (último recurso)
+window.addEventListener('pagehide', function() {
+console.log("💀 Página descargada - Recursos liberados");
+  if (currentUser && currentUser.rol === 'cliente' && supabaseClient) {
+   console.log("👋 Cliente desconectado");
+  }
+});
 
 // Esto ya está manejado con visibilitychange, pero reforzamos
 document.addEventListener('visibilitychange', function() {
@@ -3296,3 +3300,37 @@ document.addEventListener('visibilitychange', function() {
         console.log("🟢 Pestaña visible - Reanudando actividad normal");
     }
 });
+
+// ==================== EXPORTAR FUNCIONES GLOBALMENTE ====================
+window.verHistorial = verHistorial;
+window.mostrarResumenRuta = mostrarResumenRuta;
+window.centrarMapa = centrarMapa;
+window.setSelectMode = setSelectMode;
+window.centrarEnDelivery = centrarEnDelivery;
+window.verRutaCompleta = verRutaCompleta;
+window.rotateMapLeft = rotateMapLeft;
+window.rotateMapRight = rotateMapRight;
+window.resetMapRotation = resetMapRotation;
+window.solicitarEnvio = solicitarEnvio;
+window.seleccionarPago = seleccionarPago;
+window.calcularCambio = calcularCambio;
+window.confirmarPagoEfectivo = confirmarPagoEfectivo;
+window.cerrarModalPago = cerrarModalPago;
+window.cerrarModalEfectivo = cerrarModalEfectivo;
+window.cerrarModalTransferencia = cerrarModalTransferencia;
+window.copiarDatosBancarios = copiarDatosBancarios;
+window.calcularETA = calcularETA;
+window.mostrarTarjetaProgreso = mostrarTarjetaProgreso;
+window.ocultarTarjetaProgreso = ocultarTarjetaProgreso;
+window.verPerfil = verPerfil;
+window.cancelarPedido = cancelarPedido;
+window.calificarServicio = calificarServicio;
+window.toggleExtraEnResumen = toggleExtraEnResumen;
+window.confirmarExtrasDesdeResumen = confirmarExtrasDesdeResumen;
+window.cerrarModalResumen = cerrarModalResumen;
+window.cerrarSesion = cerrarSesion;
+// ✅ AGREGAR ESTAS:
+window.cerrarModalHistorial = cerrarModalHistorial;
+window.eliminarEnvio = eliminarEnvio;
+window.mostrarModalConfirmacion = mostrarModalConfirmacion;
+window.cerrarModalConfirmacion = cerrarModalConfirmacion;

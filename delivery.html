@@ -300,6 +300,11 @@
     
     <script>
         let mobileSidebarOpen = true;
+
+         function cerrarModalHistorialDelivery() {
+        const modal = document.getElementById("modalHistorialDelivery");
+        if (modal) modal.remove();
+    }
         
         function toggleMobileSidebar() {
             const sidebar = document.getElementById('mobileSidebar');

@@ -203,9 +203,8 @@ function enviarComprobanteWhatsApp() {
     const total = pedidoPendiente.tarifa;
     const pedidoId = pedidoPendiente.id;
     
-    // ✅ Usar config centralizada
-    const numeroWhatsApp = window.getWhatsAppNumber ? 
-        window.getWhatsAppNumber() : '5219381083498';
+     // ✅ Usar config centralizada (simplificado)
+    const numeroWhatsApp = window.getWhatsAppNumber();
     
     let mensaje = `🛵 *MANDAYA-NUEVO PEDIDO* 🛵\n`;
     mensaje += `─────────────────────\n`;
