@@ -3,6 +3,11 @@ import './shared.js';
 import './security.js';
 import './config.js';
 import './map-utils.js'; 
+
+// ==================== PRECARGAR SONIDO DE NOTIFICACIÓN ====================
+const audioNotificacion = new Audio('/sounds/notification.mp3');
+audioNotificacion.load(); // Precargar el sonido
+
 // Constantes y variables globales
 const BOUNDS = { north: 18.70, south: 18.58, east: -91.75, west: -91.88 };
 
@@ -33,6 +38,46 @@ let mapRotationAngle = 0;   // ← Mover aquí arriba
 function vibrar(duracion = 200) {
     if (window.navigator.vibrate) {
         window.navigator.vibrate(duracion);
+    }
+}
+
+// ==================== NOTIFICACIÓN DE NUEVO PEDIDO ====================
+function notificarNuevoPedido() {
+    // ✅ Vibrar si el dispositivo lo soporta
+    if (window.navigator && window.navigator.vibrate) {
+        window.navigator.vibrate([300, 100, 300, 100, 300]);
+        console.log("📳 Vibración activada");
+    }
+    
+    // ✅ Reproducir sonido MP3
+    try {
+        const audio = new Audio('/sounds/notification.mp3');
+        audio.volume = 0.8; // Ajusta el volumen (0.0 a 1.0)
+        audio.play().catch(e => console.log("Error reproduciendo sonido:", e));
+        console.log("🔔 Sonido de notificación reproducido");
+    } catch(e) {
+        console.log("Error al reproducir sonido MP3:", e);
+        
+        // Fallback: sonido con Web Audio API si el MP3 falla
+        try {
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            oscillator.frequency.value = 880;
+            gainNode.gain.value = 0.5;
+            
+            oscillator.start();
+            gainNode.gain.exponentialRampToValueAtTime(0.00001, audioContext.currentTime + 0.5);
+            oscillator.stop(audioContext.currentTime + 0.5);
+            
+            setTimeout(() => audioContext.close(), 1000);
+        } catch(err) {
+            console.log("Fallback también falló:", err);
+        }
     }
 }
 
@@ -823,6 +868,9 @@ async function cargarPedidos(force = false) {
         
         if (errorAsignados) throw errorAsignados;
         
+        // ✅ Guardar cantidad anterior de pedidos disponibles para notificación
+        const pedidosAnteriores = pedidosDisponibles.length;
+        
         // ✅ Convertir pedidos
         const nuevosDisponibles = (pedidosPendientes || []).map(p => convertirPedidoDeSupabase(p));
         const nuevosActivos = (pedidosAsignados || []).map(p => convertirPedidoDeSupabase(p));
@@ -832,6 +880,13 @@ async function cargarPedidos(force = false) {
         
         pedidosDisponibles = nuevosDisponibles;
         misPedidosActivos = nuevosActivos;
+        
+        // ✅ NOTIFICAR SI HAY NUEVOS PEDIDOS (y no hay pedido activo)
+        if (!misPedidosActivos.length && pedidosDisponibles.length > pedidosAnteriores && pedidosDisponibles.length > 0) {
+            console.log("🔔 ¡Nuevo pedido disponible!");
+            notificarNuevoPedido();
+            mostrarToast("🔔 ¡Nuevo pedido disponible! Revísalo", false);
+        }
         
         // ✅ Actualizar UI
         actualizarListaPedidos();
@@ -878,6 +933,42 @@ async function cargarPedidos(force = false) {
         
     } catch(e) {
         console.error('Error cargando pedidos:', e);
+    }
+}
+
+// ==================== NOTIFICACIÓN DE NUEVO PEDIDO ====================
+function notificarNuevoPedido() {
+    // ✅ Vibrar si el dispositivo lo soporta
+    if (window.navigator && window.navigator.vibrate) {
+        window.navigator.vibrate([200, 100, 200]); // Patrón: vibra 200ms, pausa 100ms, vibra 200ms
+        console.log("📳 Vibración activada");
+    }
+    
+    // ✅ Reproducir sonido
+    try {
+        // Usar un sonido de notificación simple (Web Audio API)
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        oscillator.frequency.value = 880; // Nota La5
+        gainNode.gain.value = 0.7; // Volumen bajo
+        
+        oscillator.start();
+        gainNode.gain.exponentialRampToValueAtTime(0.00001, audioContext.currentTime + 0.5);
+        oscillator.stop(audioContext.currentTime + 0.5);
+        
+        // Cerrar el contexto después de 1 segundo
+        setTimeout(() => {
+            audioContext.close();
+        }, 1000);
+        
+        console.log("🔔 Sonido de notificación reproducido");
+    } catch(e) {
+        console.log("No se pudo reproducir sonido:", e);
     }
 }
 

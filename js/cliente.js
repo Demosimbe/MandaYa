@@ -3293,5 +3293,6 @@ window.eliminarEnvio = eliminarEnvio;
 window.mostrarModalConfirmacion = mostrarModalConfirmacion;
 window.cerrarModalConfirmacion = cerrarModalConfirmacion;
 window.limpiarTodosLosIntervalos = limpiarTodosLosIntervalos;
+window.confirmarPagoTransferenciaFinal = confirmarPagoTransferenciaFinal;
 
 console.log("✅ Cliente inicializado - Sistema de modales unificado activo");
