@@ -2185,19 +2185,40 @@ function seguirUbicacionDelivery(deliveryId) {
                 ultimoEstadoPedido = null;
                 rutaDestinoActual = null;
                 
+                // ✅ ACTUALIZAR pedidoActual con el estado completado ANTES de llamar a actualizarTarjetaProgreso
+                pedidoActual.estado = 'completado';
+                
+                // ✅ FORZAR ACTUALIZACIÓN DE LA TARJETA DE PROGRESO (esto mostrará confeti y botón calificar)
+                actualizarTarjetaProgreso();
+                
+                // ✅ LANZAR CONFETI DIRECTAMENTE POR SI ACASO
+                if (!window.confetiLanzado) {
+                    window.confetiLanzado = true;
+                    lanzarConfeti();
+                }
+                
+                // ✅ MOSTRAR BOTÓN CALIFICAR DIRECTAMENTE
+                const calificarContainer = document.getElementById("calificarContainer");
+                if (calificarContainer) {
+                    calificarContainer.classList.remove("hidden");
+                }
+                
                 // REACTIVAR UI
                 bloquearUIporPedidoActivo(false);
-                
-                // Limpiar pedido actual
-                pedidoActual = null;
                 
                 // Recargar deliverys (ahora mostrará todos nuevamente)
                 cargarDeliverysEnLinea();
                 
                 mostrarToast("🎉 ¡Envío completado! Gracias por usar MandaYa");
+                
+                // Limpiar pedido actual después de un tiempo (para que el confeti se vea)
+                setTimeout(() => {
+                    pedidoActual = null;
+                    window.confetiLanzado = false;
+                }, 5000);
             }
         }
-    }, 3000); // ✅ Cambiado a 3 segundos para mejor rendimiento
+    }, 3000);
 }
 
 // ✅ Función para calcular ETA (tiempo estimado)
