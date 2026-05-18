@@ -1791,7 +1791,8 @@ function enviarComprobanteWhatsApp() {
     const total = pedidoPendiente.tarifa;
     const pedidoId = pedidoPendiente.id;
     
-    const numeroWhatsApp = APP_CONFIG.whatsappNumber || "521234567890";
+    // ✅ TU NÚMERO
+    const numeroWhatsApp = "5219381083498";
     
     let mensaje = `🛵 *MANDAYA - NUEVO PEDIDO* 🛵\n`;
     mensaje += `─────────────────────\n`;
@@ -1810,21 +1811,17 @@ function enviarComprobanteWhatsApp() {
     
     const mensajeCodificado = encodeURIComponent(mensaje);
     
-    // ✅ DETECTAR DISPOSITIVO
+    // Detectar dispositivo
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
     
     let whatsappUrl;
     if (isMobile) {
-        // Celular: usar api.whatsapp.com (abre la app)
         whatsappUrl = `https://api.whatsapp.com/send?phone=${numeroWhatsApp}&text=${mensajeCodificado}`;
-        console.log("📱 Dispositivo móvil - Abriendo WhatsApp app");
     } else {
-        // PC: usar web.whatsapp.com (abre WhatsApp Web)
         whatsappUrl = `https://web.whatsapp.com/send?phone=${numeroWhatsApp}&text=${mensajeCodificado}`;
-        console.log("💻 PC - Abriendo WhatsApp Web");
     }
     
-    console.log("📱 URL:", whatsappUrl);
+    console.log("📱 Abriendo WhatsApp con número:", numeroWhatsApp);
     window.open(whatsappUrl, '_blank');
     mostrarToast("📱 Abriendo WhatsApp...");
 }
