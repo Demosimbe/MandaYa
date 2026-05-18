@@ -1782,7 +1782,7 @@ async function guardarPedidoEnSupabase() {
     }
 }
 
-// Actualizar función de WhatsApp - USANDO APP_CONFIG
+// Actualizar función de WhatsApp - CON URL CORRECTA
 function enviarComprobanteWhatsApp() {
     if (!pedidoPendiente) {
         mostrarToast("❌ No hay información del pedido", true);
@@ -1792,7 +1792,7 @@ function enviarComprobanteWhatsApp() {
     const total = pedidoPendiente.tarifa;
     const pedidoId = pedidoPendiente.id;
     
-    // ✅ TOMAR EL NÚMERO DESDE APP_CONFIG (config.js)
+    // ✅ TOMAR EL NÚMERO DESDE APP_CONFIG
     const numeroWhatsApp = APP_CONFIG.whatsappNumber || "521234567890";
     
     let mensaje = `🛵 *MANDAYA - NUEVO PEDIDO* 🛵\n`;
@@ -1811,7 +1811,9 @@ function enviarComprobanteWhatsApp() {
     mensaje += `🙏 Gracias por usar MandaYa!`;
     
     const mensajeCodificado = encodeURIComponent(mensaje);
-    const whatsappUrl = `https://wa.me/${numeroWhatsApp}?text=${mensajeCodificado}`;
+    
+    // ✅ CAMBIAR URL - Usar api.whatsapp.com en lugar de wa.me
+    const whatsappUrl = `https://api.whatsapp.com/send?phone=${numeroWhatsApp}&text=${mensajeCodificado}`;
     
     console.log("📱 Abriendo WhatsApp con URL:", whatsappUrl);
     console.log("📱 Número configurado:", numeroWhatsApp);
