@@ -1782,7 +1782,7 @@ async function guardarPedidoEnSupabase() {
     }
 }
 
-// Actualizar función de WhatsApp
+// Actualizar función de WhatsApp - USANDO APP_CONFIG
 function enviarComprobanteWhatsApp() {
     if (!pedidoPendiente) {
         mostrarToast("❌ No hay información del pedido", true);
@@ -1792,10 +1792,10 @@ function enviarComprobanteWhatsApp() {
     const total = pedidoPendiente.tarifa;
     const pedidoId = pedidoPendiente.id;
     
-    // ✅ Usar config centralizada (simplificado)
-    const numeroWhatsApp = window.getWhatsAppNumber ? window.getWhatsAppNumber() : '521234567890';
+    // ✅ TOMAR EL NÚMERO DESDE APP_CONFIG (config.js)
+    const numeroWhatsApp = APP_CONFIG.whatsappNumber || "521234567890";
     
-    let mensaje = `🛵 *MANDAYA-NUEVO PEDIDO* 🛵\n`;
+    let mensaje = `🛵 *MANDAYA - NUEVO PEDIDO* 🛵\n`;
     mensaje += `─────────────────────\n`;
     mensaje += `🎫 Pedido: #${pedidoId}\n`;
     mensaje += `👤 Cliente: ${pedidoPendiente.cliente_nombre}\n`;
@@ -1807,15 +1807,17 @@ function enviarComprobanteWhatsApp() {
     mensaje += `📏 ${pedidoPendiente.distancia_real} km | 📦 ${pedidoPendiente.tipo}\n`;
     mensaje += `💰 Total: $${total} MXN\n`;
     mensaje += `─────────────────────\n`;
-    mensaje += `✅ Comprobante adjunto\n`;
+    mensaje += `✅ Comprobante de pago adjunto\n`;
     mensaje += `🙏 Gracias por usar MandaYa!`;
     
     const mensajeCodificado = encodeURIComponent(mensaje);
-    const whatsappUrl = `https://api.whatsapp.com/send?phone=${numeroWhatsApp}&text=${mensajeCodificado}`;
+    const whatsappUrl = `https://wa.me/${numeroWhatsApp}?text=${mensajeCodificado}`;
     
     console.log("📱 Abriendo WhatsApp con URL:", whatsappUrl);
+    console.log("📱 Número configurado:", numeroWhatsApp);
+    
     window.open(whatsappUrl, '_blank');
-    mostrarToast("📱 Abriendo WhatsApp para enviar comprobante");
+    mostrarToast("📱 Abriendo WhatsApp...");
 }
 
 async function confirmarPagoTransferenciaFinal() {

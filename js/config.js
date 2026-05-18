@@ -478,6 +478,11 @@ window.agarrarPedidoEnSupabase = agarrarPedidoEnSupabase;
 window.completarPedidoEnSupabase = completarPedidoEnSupabase;
 window.initSupabase = initSupabase;
 
+// ✅ AGREGAR ESTAS LÍNEAS
+window.APP_CONFIG = APP_CONFIG;
+window.getWhatsAppNumber = function() {
+    return APP_CONFIG.whatsappNumber || "521234567890";
+};
 // ==================== INICIALIZACIÓN ====================
 // Ejecutar después de initSupabase
 if (document.readyState === 'loading') {
