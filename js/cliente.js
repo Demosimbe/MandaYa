@@ -1782,7 +1782,6 @@ async function guardarPedidoEnSupabase() {
     }
 }
 
-// Actualizar función de WhatsApp - CON URL CORRECTA
 function enviarComprobanteWhatsApp() {
     if (!pedidoPendiente) {
         mostrarToast("❌ No hay información del pedido", true);
@@ -1792,7 +1791,6 @@ function enviarComprobanteWhatsApp() {
     const total = pedidoPendiente.tarifa;
     const pedidoId = pedidoPendiente.id;
     
-    // ✅ TOMAR EL NÚMERO DESDE APP_CONFIG
     const numeroWhatsApp = APP_CONFIG.whatsappNumber || "521234567890";
     
     let mensaje = `🛵 *MANDAYA - NUEVO PEDIDO* 🛵\n`;
@@ -1812,12 +1810,21 @@ function enviarComprobanteWhatsApp() {
     
     const mensajeCodificado = encodeURIComponent(mensaje);
     
-    // ✅ CAMBIAR URL - Usar api.whatsapp.com en lugar de wa.me
-    const whatsappUrl = `https://api.whatsapp.com/send?phone=${numeroWhatsApp}&text=${mensajeCodificado}`;
+    // ✅ DETECTAR DISPOSITIVO
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
     
-    console.log("📱 Abriendo WhatsApp con URL:", whatsappUrl);
-    console.log("📱 Número configurado:", numeroWhatsApp);
+    let whatsappUrl;
+    if (isMobile) {
+        // Celular: usar api.whatsapp.com (abre la app)
+        whatsappUrl = `https://api.whatsapp.com/send?phone=${numeroWhatsApp}&text=${mensajeCodificado}`;
+        console.log("📱 Dispositivo móvil - Abriendo WhatsApp app");
+    } else {
+        // PC: usar web.whatsapp.com (abre WhatsApp Web)
+        whatsappUrl = `https://web.whatsapp.com/send?phone=${numeroWhatsApp}&text=${mensajeCodificado}`;
+        console.log("💻 PC - Abriendo WhatsApp Web");
+    }
     
+    console.log("📱 URL:", whatsappUrl);
     window.open(whatsappUrl, '_blank');
     mostrarToast("📱 Abriendo WhatsApp...");
 }
