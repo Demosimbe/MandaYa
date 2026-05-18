@@ -12,6 +12,9 @@ let destMarker = null;
 let routeLine = null;
 let deliveryMarker = null;
 let clienteRouteControl = null;
+// ✅ NUEVAS VARIABLES PARA AUTO-FOLLOW DEL DELIVERY
+let autoFollowDelivery = true;      // Seguir al delivery automáticamente
+let followZoomLevel = 16;           // Nivel de zoom al seguir el delivery
 
 // ==================== COORDENADAS (SOLO UNA DECLARACIÓN) ====================
 window.originCoords = null;
@@ -2204,6 +2207,13 @@ function seguirUbicacionDelivery(deliveryId) {
             );
             deliveryMarker.addTo(map);
             
+            // ✅ NUEVO: AUTO-FOLLOW DEL DELIVERY (cliente puede activar/desactivar)
+            if (typeof autoFollowDelivery !== 'undefined' && autoFollowDelivery) {
+                const zoom = typeof followZoomLevel !== 'undefined' ? followZoomLevel : 16;
+                map.setView([ubicacion.lat, ubicacion.lng], zoom);
+                console.log("📍 Auto-follow: centrando en delivery");
+            }
+            
             // ✅ 7. Determinar destino según estado
             let destinoCoords = null;
             let tipoRuta = null;
@@ -2239,7 +2249,7 @@ function seguirUbicacionDelivery(deliveryId) {
             const tiempoAhora = Date.now();
             const tiempoDesdeUltimoRecalculo = tiempoAhora - ultimoRecalculoTime;
             const distanciaCambioSignificativo = ultimaDistanciaRecalculo !== 0 && 
-                Math.abs(distanciaActual - ultimaDistanciaRecalculo) > 0.2; // 200 metros
+                Math.abs(distanciaActual - ultimaDistanciaRecalculo) > 0.2; // 200 метров
             
             const necesitaRedibujar = !rutaYaDibujada || 
                                       ultimoEstadoPedido !== estadoActual ||
@@ -3414,6 +3424,35 @@ function applyMapRotation() {
     }, 100);
 }
 
+// ==================== AUTO-FOLLOW DEL DELIVERY ====================
+function toggleAutoFollowDelivery() {
+    autoFollowDelivery = !autoFollowDelivery;
+    const btn = document.getElementById("btnAutoFollowDelivery");
+    
+    if (autoFollowDelivery) {
+        mostrarToast("🚗 Seguimiento del delivery ACTIVADO - El mapa seguirá al repartidor", false);
+        if (btn) {
+            btn.classList.add("active");
+            btn.style.background = "#FF6200";
+            const icon = btn.querySelector("i");
+            if (icon) icon.style.color = "white";
+        }
+        // Centrar inmediatamente si hay delivery
+        if (deliveryMarker) {
+            const latLng = deliveryMarker.getLatLng();
+            map.setView([latLng.lat, latLng.lng], followZoomLevel);
+        }
+    } else {
+        mostrarToast("📍 Seguimiento DESACTIVADO - Puedes mover el mapa libremente", false);
+        if (btn) {
+            btn.classList.remove("active");
+            btn.style.background = "white";
+            const icon = btn.querySelector("i");
+            if (icon) icon.style.color = "#FF6200";
+        }
+    }
+}
+
 // ==================== LIMPIAR RECURSOS AL CERRAR PESTAÑA ====================
 function limpiarTodosLosIntervalos() {
     console.log("🧹 Limpiando intervalos y recursos...");
@@ -3500,5 +3539,6 @@ window.limpiarTodosLosIntervalos = limpiarTodosLosIntervalos;
 window.confirmarPagoTransferenciaFinal = confirmarPagoTransferenciaFinal;
 window.enviarComprobanteWhatsApp = enviarComprobanteWhatsApp;  // ← AGREGAR ESTA LÍNEA
 window.eliminarEnvioConCierre = eliminarEnvioConCierre;
+window.toggleAutoFollowDelivery = toggleAutoFollowDelivery;
 
 console.log("✅ Cliente inicializado - Sistema de modales unificado activo");
