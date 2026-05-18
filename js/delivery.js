@@ -20,6 +20,12 @@ let ubicacionInterval = null;
 let cargaPedidosInterval = null;
 let ultimaUbicacionEnviada = null;
 
+// ✅ NUEVAS VARIABLES PARA BACKUP Y AUTO-FOLLOW
+let backupIntervalId = null;      // Intervalo de respaldo para pantalla bloqueada
+let autoFollow = true;            // Seguir la moto automáticamente
+let zoomDinamico = true;          // Zoom dinámico al seguir
+let ultimoTimestampUbicacion = 0; // Para throttle
+
 // Variables para rutas
 let currentRoutingControl = null;
 let recogidaMarker = null;
@@ -517,34 +523,90 @@ async function marcarPaqueteRecogido(pedidoId) {
     }
 }
 
+// ==================== START LOCATION TRACKING (VERSIÓN CORREGIDA) ====================
 function startLocationTracking() {
-    if(!("geolocation" in navigator)) {
+    if (!("geolocation" in navigator)) {
         mostrarToast("⚠️ Tu navegador no soporta geolocalización", true);
         return;
     }
     
-    // ✅ Evitar múltiples instancias
+    // Evitar múltiples instancias
     if (window.iniciandoLocalizacion) {
         console.log("⏳ Ya se está iniciando la localización");
         return;
     }
     
-    // ✅ Verificar que el usuario es delivery
+    // Verificar que el usuario es delivery
     if (!currentUser || currentUser.rol !== 'delivery') {
         console.log("❌ No se puede iniciar localización: usuario no es delivery");
         return;
     }
     
     window.iniciandoLocalizacion = true;
-    mostrarToast("📍 Obteniendo ubicación...");
+    mostrarToast("📍 Iniciando seguimiento de ubicación...");
     
-    const options = {
-        enableHighAccuracy: true,
-        maximumAge: 5000,
-        timeout: 10000
+    // ========== FUNCIÓN REUTILIZABLE PARA PROCESAR UBICACIÓN ==========
+    const procesarYGuardarUbicacion = async (coords, esBackup = false) => {
+        // Validar límites de Ciudad del Carmen
+        if (coords.lat < 18.58 || coords.lat > 18.70 || 
+            coords.lng < -91.88 || coords.lng > -91.75) {
+            console.log("📍 Ubicación fuera de zona:", coords.lat, coords.lng);
+            return false;
+        }
+        
+        // Throttle: máximo cada 3 segundos
+        const ahora = Date.now();
+        if (ahora - ultimoTimestampUbicacion < 3000) {
+            return false;
+        }
+        ultimoTimestampUbicacion = ahora;
+        
+        // Guardar ubicación con timestamp
+        const ubicacionConTimestamp = { 
+            lat: coords.lat, 
+            lng: coords.lng, 
+            timestamp: ahora 
+        };
+        ultimaUbicacionEnviada = ubicacionConTimestamp;
+        
+        // Crear o actualizar marcador
+        if (!userMarker) {
+            userMarker = crearMarcadorDelivery(
+                coords.lat, 
+                coords.lng, 
+                currentUser.nombre, 
+                isOnline ? '#10B981' : '#9CA3AF'
+            );
+            userMarker.addTo(map);
+        } else {
+            userMarker.setLatLng([coords.lat, coords.lng]);
+        }
+        
+        // Auto-follow: centrar mapa en la moto (si está activado)
+        if (autoFollow && userMarker) {
+            const zoom = zoomDinamico ? (map.getZoom() < 15 ? 16 : map.getZoom()) : 16;
+            map.setView([coords.lat, coords.lng], zoom);
+        }
+        
+        // Guardar en Supabase
+        if (currentUser && isOnline && supabaseClient) {
+            await guardarUbicacionConThrottle(
+                currentUser.id, 
+                currentUser.nombre, 
+                coords.lat, 
+                coords.lng, 
+                true
+            );
+        }
+        
+        if (esBackup) {
+            console.log("🔄 Backup: ubicación actualizada", coords.lat.toFixed(4), coords.lng.toFixed(4));
+        }
+        
+        return true;
     };
     
-    // ✅ PRIMERO: Obtener ubicación rápida con getCurrentPosition
+    // ========== MÉTODO 1: GET CURRENT POSITION (UBICACIÓN INICIAL) ==========
     navigator.geolocation.getCurrentPosition(
         async (pos) => {
             try {
@@ -553,82 +615,46 @@ function startLocationTracking() {
                     lng: pos.coords.longitude 
                 };
                 
-                console.log("📍 Ubicación inicial obtenida en:", new Date().toISOString());
+                console.log("📍 Ubicación inicial obtenida:", coords.lat.toFixed(4), coords.lng.toFixed(4));
                 
-                // ✅ Validar límites
-                if (coords.lat < 18.58 || coords.lat > 18.70 || 
-                    coords.lng < -91.88 || coords.lng > -91.75) {
-                    mostrarToast("⚠️ Estás fuera de Ciudad del Carmen. Acércate a la zona de servicio", true);
-                    window.iniciandoLocalizacion = false;
-                    return;
-                }
-                
-                // Guardar inmediatamente
-                ultimaUbicacionEnviada = coords;
-                
-                // Crear marcador si no existe
-                if(!userMarker) {
-                    userMarker = crearMarcadorDelivery(
-                        coords.lat, 
-                        coords.lng, 
-                        currentUser.nombre, 
-                        isOnline ? '#10B981' : '#9CA3AF'
-                    );
-                    userMarker.addTo(map);
-                } else {
-                    userMarker.setLatLng(coords);
-                }
-                
-                // Centrar mapa inmediatamente
-                map.setView([coords.lat, coords.lng], 15);
-                
-                // ✅ Guardar en Supabase SOLO si está online
-                if(currentUser && isOnline && supabaseClient) {
-                    await guardarUbicacionEnSupabase(
-                        currentUser.id,
-                        currentUser.nombre,
-                        coords.lat,
-                        coords.lng,
-                        true
-                    );
-                    console.log("✅ Ubicación guardada en Supabase");
-                }
-                
+                await procesarYGuardarUbicacion(coords, false);
                 mostrarToast("✅ Ubicación detectada");
-                window.iniciandoLocalizacion = false;
                 
             } catch (error) {
                 console.error("❌ Error procesando ubicación inicial:", error);
+                mostrarToast("⚠️ Error al procesar ubicación", true);
+            } finally {
                 window.iniciandoLocalizacion = false;
-                // ✅ Segundo intento después de 2 segundos
-                setTimeout(() => {
-                    if (!ultimaUbicacionEnviada && isOnline) {
-                        obtenerUbicacionAlternativa();
-                    }
-                }, 2000);
             }
         },
         (err) => {
             console.error("Error en ubicación inicial:", err);
             window.iniciandoLocalizacion = false;
             
-            if(err.code === 1) {
-                mostrarToast("❌ Permite el acceso a tu ubicación en la configuración del navegador", true);
+            if (err.code === 1) {
+                mostrarToast("❌ Permite el acceso a tu ubicación en la configuración", true);
             } else {
-                mostrarToast("⚠️ No se pudo obtener ubicación. Intentando de nuevo...", true);
-                // ✅ Segundo intento después de 2 segundos
+                mostrarToast("⚠️ No se pudo obtener ubicación. Reintentando...", true);
+                // Reintentar después de 3 segundos
                 setTimeout(() => {
                     if (!ultimaUbicacionEnviada && isOnline) {
                         obtenerUbicacionAlternativa();
                     }
-                }, 2000);
+                }, 3000);
             }
         },
-        options
+        { 
+            enableHighAccuracy: true, 
+            timeout: 10000,
+            maximumAge: 0
+        }
     );
     
-    // ✅ DESPUÉS: Iniciar watch para seguimiento continuo
-    if(watchId) navigator.geolocation.clearWatch(watchId);
+    // ========== MÉTODO 2: WATCH POSITION (CUANDO LA APP ESTÁ VISIBLE) ==========
+    if (watchId) {
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+    }
     
     watchId = navigator.geolocation.watchPosition(
         async (pos) => {
@@ -637,46 +663,114 @@ function startLocationTracking() {
                 lng: pos.coords.longitude 
             };
             
-            // ✅ Validar límites
-            if (coords.lat < 18.58 || coords.lat > 18.70 || 
-                coords.lng < -91.88 || coords.lng > -91.75) {
-                return; // No actualizar si está fuera de zona
-            }
-            
-            // ✅ Reducir frecuencia: solo actualizar si movió más de 20 metros
+            // Solo actualizar si movió más de 15 metros (para ahorrar batería)
             if (ultimaUbicacionEnviada) {
                 const distancia = calcularDistanciaMetros(ultimaUbicacionEnviada, coords);
-                if (distancia < 20) {
-                    return; // No actualizar si movió menos de 20 metros
+                if (distancia < 15) {
+                    return; // No actualizar si movió menos de 15 metros
                 }
             }
             
-            ultimaUbicacionEnviada = coords;
-            
-            if(userMarker) {
-                userMarker.setLatLng(coords);
-            }
-            
-            // ✅ Guardar en Supabase con throttling
-            if(currentUser && isOnline && supabaseClient) {
-                await guardarUbicacionConThrottle(
-                    currentUser.id, 
-                    currentUser.nombre, 
-                    coords.lat, 
-                    coords.lng, 
-                    true
-                );
-            }
+            await procesarYGuardarUbicacion(coords, false);
         },
         (err) => {
-            console.error("Error en watchPosition:", err);
+            console.error("Error en watchPosition:", err.message);
+            // No mostrar toast aquí para no molestar
         },
         { 
             enableHighAccuracy: true, 
-            maximumAge: 5000,
+            maximumAge: 3000,
             timeout: 10000
         }
     );
+    
+    console.log("📍 WatchPosition iniciado");
+    
+    // ========== MÉTODO 3: BACKUP INTERVAL (FUNCIONA CON PANTALLA BLOQUEADA) ==========
+    // Este es el MÁS IMPORTANTE - sigue funcionando aunque la pantalla esté bloqueada
+    if (backupIntervalId) {
+        clearInterval(backupIntervalId);
+        backupIntervalId = null;
+    }
+    
+    backupIntervalId = setInterval(() => {
+        // Solo ejecutar si no hay ubicación reciente (más de 6 segundos sin actualizar)
+        const ahora = Date.now();
+        const necesitaBackup = !ultimaUbicacionEnviada || 
+                               (ahora - (ultimaUbicacionEnviada.timestamp || 0)) > 6000;
+        
+        if (necesitaBackup && isOnline) {
+            console.log("🔄 Backup: obteniendo ubicación por intervalo (pantalla posiblemente bloqueada)");
+            
+            navigator.geolocation.getCurrentPosition(
+                async (pos) => {
+                    const coords = { 
+                        lat: pos.coords.latitude, 
+                        lng: pos.coords.longitude 
+                    };
+                    await procesarYGuardarUbicacion(coords, true);
+                },
+                (err) => {
+                    // Silencioso - no molestar al usuario
+                    console.log("Backup: no se pudo obtener ubicación", err.message);
+                },
+                { 
+                    enableHighAccuracy: true, 
+                    timeout: 8000, 
+                    maximumAge: 5000
+                }
+            );
+        }
+    }, 6000); // Cada 6 SEGUNDOS
+    
+    console.log("⏰ Backup interval iniciado (cada 6s, funciona con pantalla bloqueada)");
+    
+    // ========== DETECTAR CUANDO LA PANTALLA SE DESBLOQUEA ==========
+    const handleVisibilityChange = () => {
+        if (!document.hidden) {
+            console.log("🟢 Pantalla desbloqueada - Forzando actualización inmediata");
+            // Forzar una actualización inmediata al desbloquear
+            setTimeout(() => {
+                navigator.geolocation.getCurrentPosition(
+                    async (pos) => {
+                        const coords = { 
+                            lat: pos.coords.latitude, 
+                            lng: pos.coords.longitude 
+                        };
+                        await procesarYGuardarUbicacion(coords, false);
+                        mostrarToast("📍 Ubicación actualizada");
+                    },
+                    (err) => console.log("Error al desbloquear:", err.message),
+                    { enableHighAccuracy: true, timeout: 5000 }
+                );
+            }, 500);
+        } else {
+            console.log("🔴 Pantalla bloqueada - Usando backup interval");
+        }
+    };
+    
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+}
+
+// ==================== AUTO-FOLLOW Y CONTROL DE MAPA ====================
+function toggleAutoFollow() {
+    autoFollow = !autoFollow;
+    mostrarToast(autoFollow ? "🚗 Seguimiento automático activado" : "📍 Control manual del mapa");
+}
+
+function toggleZoomDinamico() {
+    zoomDinamico = !zoomDinamico;
+    mostrarToast(zoomDinamico ? "🔍 Zoom dinámico activado" : "🔍 Zoom fijo");
+}
+
+function centrarEnMiUbicacion() {
+    if (ultimaUbicacionEnviada) {
+        map.setView([ultimaUbicacionEnviada.lat, ultimaUbicacionEnviada.lng], 16);
+        mostrarToast("📍 Centrando en tu ubicación");
+    } else {
+        mostrarToast("❌ No hay ubicación disponible aún", true);
+    }
 }
 
 // ✅ Función auxiliar: calcular distancia en metros
@@ -1421,29 +1515,35 @@ async function verHistorial() {
                                 <div class="bg-gray-700 rounded-xl p-3">
                                     <div class="flex justify-between items-start mb-1">
                                         <div class="flex items-center gap-2">
-                                            <span class="font-mono text-orange-400 text-xs font-bold">#${sanitizarHTML(p.id.toString().slice(-8))}</span>
+                                            <span class="font-mono text-orange-400 text-xs font-bold">#${p.id.toString().slice(-8)}</span>
                                             <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-green-500/20 text-green-400">✅ Completo</span>
                                         </div>
-                                        <span class="text-[10px] text-gray-400">${new Date(sanitizarHTML(p.fecha_completado) || sanitizarHTML(p.fecha)).toLocaleDateString()}</span>
+                                        <span class="text-[10px] text-gray-400">${new Date(p.fecha_completado || p.fecha).toLocaleDateString()}</span>
                                     </div>
                                     
                                     <div class="flex items-start gap-1 my-1">
                                         <i class="fas fa-circle text-[8px] text-orange-500 mt-1"></i>
-                                        <span class="text-xs text-gray-300 flex-1 line-clamp-1">${sanitizarHTML(p.origen || 'Origen')}</span>
+                                        <span class="text-xs text-gray-300 flex-1 line-clamp-1">${p.origen || 'Origen'}</span>
                                     </div>
                                     
                                     <div class="flex items-start gap-1 mb-1">
                                         <i class="fas fa-square text-[8px] text-blue-500 mt-1"></i>
-                                        <span class="text-xs text-gray-300 flex-1 line-clamp-1">${sanitizarHTML(p.destino || 'Destino')}</span>
+                                        <span class="text-xs text-gray-300 flex-1 line-clamp-1">${p.destino || 'Destino'}</span>
                                     </div>
                                     
                                     <div class="flex justify-between items-center mt-2 pt-2 border-t border-gray-600">
                                         <div class="flex gap-3">
-                                            <span class="text-xs text-gray-400">📏 ${sanitizarHTML(p.distancia_real)} km</span>
-                                            <span class="text-xs text-gray-400">💰 $${sanitizarHTML(p.tarifa)}</span>
+                                            <span class="text-xs text-gray-400">📏 ${p.distancia_real} km</span>
+                                            <span class="text-xs text-gray-400">💰 $${p.tarifa}</span>
                                         </div>
-                                        <span class="text-[10px] text-gray-500 capitalize">${sanitizarHTML(p.tipo || 'paquete')}</span>
+                                        <span class="text-[10px] text-gray-500 capitalize">${p.tipo || 'paquete'}</span>
                                     </div>
+                                    
+                                    <!-- ✅ BOTÓN ELIMINAR -->
+                                    <button onclick="eliminarPedidoHistorial(${p.id})" 
+                                        class="bg-red-500/20 hover:bg-red-500 text-red-400 hover:text-white px-2 py-1 rounded text-xs transition-all mt-2 w-full">
+                                        <i class="fas fa-trash-alt mr-1"></i> Eliminar del historial
+                                    </button>
                                 </div>
                             `).join('')}
                         </div>
@@ -1459,7 +1559,7 @@ async function verHistorial() {
                         </div>
                         <div class="text-right">
                             <span class="text-gray-400 text-xs">📦 Entregas</span>
-                            <div class="text-xl font-bold text-white">${sanitizarHTML(completados?.length || 0)}</div>
+                            <div class="text-xl font-bold text-white">${completados?.length || 0}</div>
                         </div>
                     </div>
                 </div>
@@ -1472,6 +1572,99 @@ async function verHistorial() {
         console.error('Error cargando historial:', e);
         mostrarToast("Error al cargar historial", true);
     }
+}
+
+// ==================== ELIMINAR PEDIDO DEL HISTORIAL (DELIVERY) ====================
+async function eliminarPedidoHistorial(pedidoId) {
+    const supabase = supabaseClient;
+    if (!supabase) {
+        mostrarToast("Error de conexión", true);
+        return;
+    }
+    
+    // ✅ 1. CERRAR MODAL DE HISTORIAL PRIMERO
+    const modalHistorial = document.getElementById("modalHistorialDelivery");
+    if (modalHistorial) {
+        modalHistorial.remove();
+    }
+    
+    // ✅ 2. Limpiar cualquier modal de confirmación existente
+    const modalConfirmExistente = document.getElementById("modalConfirmacionEliminarDelivery");
+    if (modalConfirmExistente) modalConfirmExistente.remove();
+    
+    // ✅ 3. Mensaje de confirmación
+    const mensaje = `¿Estás seguro de que quieres eliminar el pedido #${pedidoId} del historial?\n\nEsta acción no afecta tus ganancias totales, solo elimina el registro.`;
+    
+    // ✅ 4. Crear modal de confirmación con z-index ALTÍSIMO
+    const modalConfirm = document.createElement('div');
+    modalConfirm.id = "modalConfirmacionEliminarDelivery";
+    modalConfirm.className = "fixed inset-0 bg-black bg-opacity-95 flex items-center justify-center z-[100000] p-4";
+    modalConfirm.style.zIndex = "100000";
+    
+    modalConfirm.innerHTML = `
+        <div class="bg-gray-800 rounded-3xl max-w-sm w-full text-center p-6 modal-uber" style="z-index: 100001;">
+            <div class="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                <i class="fas fa-trash-alt text-3xl text-red-500"></i>
+            </div>
+            <p class="text-gray-200 text-sm mb-6">${sanitizarHTML(mensaje)}</p>
+            <div class="flex gap-3">
+                <button id="btnCancelarEliminarDelivery" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-3 rounded-xl transition-all font-medium">
+                    Cancelar
+                </button>
+                <button id="btnConfirmarEliminarDelivery" class="flex-1 bg-red-500 hover:bg-red-600 text-white py-3 rounded-xl transition-all font-medium">
+                    <i class="fas fa-trash-alt mr-2"></i> Eliminar
+                </button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modalConfirm);
+    
+    // ✅ 5. Evento para confirmar eliminación
+    document.getElementById("btnConfirmarEliminarDelivery").onclick = async () => {
+        modalConfirm.remove();
+        
+        try {
+            const { error } = await supabase
+                .from('pedidos')
+                .delete()
+                .eq('id', pedidoId);
+            
+            if (error) throw error;
+            
+            mostrarToast(`🗑️ Pedido #${pedidoId} eliminado del historial`);
+            
+            // ✅ 6. Volver a abrir historial actualizado
+            setTimeout(() => {
+                verHistorial();
+            }, 300);
+            
+        } catch(e) {
+            console.error('Error eliminando:', e);
+            mostrarToast("Error al eliminar el pedido", true);
+            setTimeout(() => {
+                verHistorial();
+            }, 500);
+        }
+    };
+    
+    // ✅ 7. Evento para cancelar
+    document.getElementById("btnCancelarEliminarDelivery").onclick = () => {
+        modalConfirm.remove();
+        setTimeout(() => {
+            verHistorial();
+        }, 100);
+    };
+    
+    // ✅ 8. Cerrar si se hace clic fuera
+    modalConfirm.addEventListener('click', (e) => {
+        if (e.target === modalConfirm) {
+            modalConfirm.remove();
+            setTimeout(() => {
+                verHistorial();
+            }, 100);
+        }
+    });
 }
 
 function cerrarModalHistorialDelivery() {
@@ -1693,7 +1886,7 @@ async function actualizarColorMarcador() {
                     ${sanitizarHTML(nombreMostrar)}
                 </div>
                 <div style="
-                    background: ${sanitizarHTML(color)};
+                    background: ${color};
                     width: 34px;
                     height: 34px;
                     border-radius: 50%;
@@ -1724,21 +1917,31 @@ async function actualizarEstadoYColor() { await actualizarColorMarcador();}
 function limpiarIntervalosDelivery() {
     console.log("🧹 Limpiando todos los recursos del delivery...");
 
-    // Limpiar intervalos
+    // Limpiar intervalos principales
     if (ubicacionInterval) {
         clearInterval(ubicacionInterval);
         ubicacionInterval = null;
+        console.log("✅ ubicacionInterval limpiado");
     }
     
     if (cargaPedidosInterval) {
         clearInterval(cargaPedidosInterval);
         cargaPedidosInterval = null;
+        console.log("✅ cargaPedidosInterval limpiado");
     }
 
-    // Limpiar geolocalización
+    // ✅ NUEVO: Limpiar backup interval (para pantalla bloqueada)
+    if (backupIntervalId) {
+        clearInterval(backupIntervalId);
+        backupIntervalId = null;
+        console.log("✅ backupIntervalId limpiado");
+    }
+
+    // Limpiar geolocalización (watchPosition)
     if (watchId) {
         try {
             navigator.geolocation.clearWatch(watchId);
+            console.log("✅ watchId limpiado");
         } catch (e) {
             console.warn("Error al limpiar watchPosition:", e);
         }
@@ -1748,9 +1951,9 @@ function limpiarIntervalosDelivery() {
     // Limpiar rutas y marcadores del mapa
     limpiarRutasYMarcadores();
 
-    // Actualizar estado offline en Supabase (solo si es necesario)
+    // Actualizar estado offline en Supabase
     if (currentUser && supabaseClient) {
-        // Siempre marcar como offline al cerrar
+        // Marcar como offline al cerrar
         setDeliveryOnlineSupabase(currentUser.id, false)
             .catch(err => console.warn("No se pudo actualizar estado offline:", err));
 
@@ -1773,7 +1976,7 @@ function limpiarIntervalosDelivery() {
         }
     }
 
-    console.log("✅ Recursos de delivery liberados correctamente");
+    console.log("✅ Todos los recursos de delivery liberados correctamente");
 }
 
 // ==================== EVENTOS DE CIERRE DE PÁGINA ====================
@@ -1890,3 +2093,8 @@ window.mostrarModalConfirmacionDelivery = mostrarModalConfirmacionDelivery; // �
 window.cerrarModalPerfilDelivery = cerrarModalPerfilDelivery;
 window.limpiarIntervalosDelivery = limpiarIntervalosDelivery;
 window.notificarNuevoPedido = notificarNuevoPedido;
+// Exportar funciones
+window.toggleAutoFollow = toggleAutoFollow;
+window.toggleZoomDinamico = toggleZoomDinamico;
+window.centrarEnMiUbicacion = centrarEnMiUbicacion;
+window.eliminarPedidoHistorial = eliminarPedidoHistorial;

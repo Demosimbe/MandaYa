@@ -46,6 +46,7 @@ let selectMode = 'origen';           // 'origen' o 'destino'
 let mapRotationAngle = 0;            // Ángulo de rotación del mapa
 
 // ==================== CONTROL DE PETICIONES (THROTTLING) ====================
+let debounceTimer = null;
 let ultimaPeticionTime = 0;          // Para throttling general
 let ultimaPeticionDeliverys = 0;     // Para throttling de deliverys
 let paginaVisible = true;            // Estado de visibilidad de la pestaña
@@ -87,6 +88,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 // ==================== FUNCIÓN CARGAR USUARIO (SOLO UNA VEZ) ====================
 function cargarUsuarioSeguro() {
+    // Verificar que securityManager existe
+    if (typeof securityManager === 'undefined' || !securityManager) {
+        console.error("❌ securityManager no disponible");
+        window.location.href = "index.html";
+        return;
+    }
+    
     const usuario = securityManager.obtenerUsuarioActual();
     if (!usuario) { 
         window.location.href = "index.html"; 
@@ -108,13 +116,11 @@ function cargarUsuarioSeguro() {
         </div>
     `;
     
-    // También actualizar mobile si existe
     const userInfoMobile = document.getElementById("userInfoMobile");
     if (userInfoMobile) {
         userInfoMobile.innerHTML = document.getElementById("userInfo").innerHTML;
     }
     
-    // ✅ Cargar pedido activo desde la base de datos
     cargarPedidoActivoDesdeDB();
 }
 
@@ -249,15 +255,17 @@ if (destinoInput) {
 function bloquearUIporPedidoActivo(bloquear) {
     const elementos = {
         inputs: ['origen', 'destino'],
-        inputsMobile: ['origenMobile', 'destinoMobile'],  // ✅ NUEVO: inputs móviles
+        inputsMobile: ['origenMobile', 'destinoMobile'],
         select: 'tipoEnvio',
-        selectMobile: 'tipoEnvioMobile',  // ✅ NUEVO: select móvil
+        selectMobile: 'tipoEnvioMobile',
         botones: ['btnOrigen', 'btnDestino'],
         botonSolicitar: 'solicitarEnvio'
     };
     
     if (bloquear) {
-        // Bloquear inputs de origen y destino (DESKTOP)
+        // ========== BLOQUEAR UI ==========
+        
+        // Bloquear inputs (DESKTOP y MOBILE)
         elementos.inputs.forEach(id => {
             const input = document.getElementById(id);
             if (input) {
@@ -266,7 +274,6 @@ function bloquearUIporPedidoActivo(bloquear) {
             }
         });
         
-        // ✅ Bloquear inputs móviles
         elementos.inputsMobile.forEach(id => {
             const input = document.getElementById(id);
             if (input) {
@@ -275,21 +282,20 @@ function bloquearUIporPedidoActivo(bloquear) {
             }
         });
         
-        // Bloquear select de tipo de envío (DESKTOP)
+        // Bloquear selects
         const select = document.getElementById(elementos.select);
         if (select) {
             select.disabled = true;
             select.classList.add('bg-gray-100', 'cursor-not-allowed', 'opacity-70');
         }
         
-        // ✅ Bloquear select móvil
         const selectMobile = document.getElementById(elementos.selectMobile);
         if (selectMobile) {
             selectMobile.disabled = true;
             selectMobile.classList.add('bg-gray-100', 'cursor-not-allowed', 'opacity-70');
         }
         
-        // Bloquear botones de modo (Origen/Destino)
+        // Bloquear botones de modo
         elementos.botones.forEach(id => {
             const btn = document.getElementById(id);
             if (btn) {
@@ -298,20 +304,23 @@ function bloquearUIporPedidoActivo(bloquear) {
             }
         });
         
-        // Deshabilitar marcadores arrastrables
-        if (originMarker && originMarker.dragging) {
+        // ✅ NUEVO: OCULTAR COMPLETAMENTE los marcadores de origen y destino
+        if (originMarker) {
             originMarker.dragging.disable();
-            originMarker.setOpacity(0.6);
+            originMarker.setOpacity(0);  // ← Completamente invisible
+            // Opcional: remover del mapa temporalmente
+            // originMarker.removeFrom(map);
         }
-        if (destMarker && destMarker.dragging) {
+        if (destMarker) {
             destMarker.dragging.disable();
-            destMarker.setOpacity(0.6);
+            destMarker.setOpacity(0);    // ← Completamente invisible
+            // destMarker.removeFrom(map);
         }
         
-        // Deshabilitar click en el mapa para seleccionar ubicación
+        // Deshabilitar click en el mapa
         if (map) { map._container.style.cursor = 'default'; }
         
-        // Mostrar mensaje en los inputs (DESKTOP)
+        // Cambiar placeholders
         const origenInput = document.getElementById('origen');
         if (origenInput && !origenInput.placeholder.includes('(Bloqueado)')) {
             origenInput.placeholder = '📍 Origen (bloqueado - pedido en curso)';
@@ -321,7 +330,6 @@ function bloquearUIporPedidoActivo(bloquear) {
             destinoInput.placeholder = '🏁 Destino (bloqueado - pedido en curso)';
         }
         
-        // ✅ Mostrar mensaje en inputs móviles
         const origenMobileInput = document.getElementById('origenMobile');
         if (origenMobileInput && !origenMobileInput.placeholder.includes('(Bloqueado)')) {
             origenMobileInput.placeholder = '📍 Origen (bloqueado - pedido en curso)';
@@ -331,43 +339,41 @@ function bloquearUIporPedidoActivo(bloquear) {
             destinoMobileInput.placeholder = '🏁 Destino (bloqueado - pedido en curso)';
         }
 
-        // ✅ SINCRONIZAR BLOQUEO CON MÓVIL
-        if (typeof sincronizarBloqueoMobile === 'function') { 
-            sincronizarBloqueoMobile(true); 
+        // Sincronizar bloqueo con móvil
+        if (typeof window.sincronizarBloqueoMobile === 'function') { 
+            window.sincronizarBloqueoMobile(true); 
         }
-        console.log("🔒 UI bloqueada - Pedido activo en curso");
+        console.log("🔒 UI bloqueada - Marcadores de origen/destino ocultos");
         
     } else {
-        // Reactivar todo (DESKTOP)
+        // ========== REACTIVAR UI ==========
+        
+        // Reactivar inputs
         elementos.inputs.forEach(id => {
             const input = document.getElementById(id);
             if (input) {
                 input.disabled = false;
                 input.classList.remove('bg-gray-100', 'cursor-not-allowed', 'opacity-70');
-                // ✅ Restaurar mensaje original
                 input.placeholder = 'Buscar dirección o arrastra el marcador';
             }
         });
         
-        // ✅ Reactivar inputs móviles
         elementos.inputsMobile.forEach(id => {
             const input = document.getElementById(id);
             if (input) {
                 input.disabled = false;
                 input.classList.remove('bg-gray-100', 'cursor-not-allowed', 'opacity-70');
-                // ✅ Restaurar mensaje original
                 input.placeholder = 'Buscar dirección...';
             }
         });
         
-        // Reactivar select (DESKTOP)
+        // Reactivar selects
         const select = document.getElementById(elementos.select);
         if (select) {
             select.disabled = false;
             select.classList.remove('bg-gray-100', 'cursor-not-allowed', 'opacity-70');
         }
         
-        // ✅ Reactivar select móvil
         const selectMobile = document.getElementById(elementos.selectMobile);
         if (selectMobile) {
             selectMobile.disabled = false;
@@ -383,14 +389,14 @@ function bloquearUIporPedidoActivo(bloquear) {
             }
         });
         
-        // Reactivar marcadores arrastrables
-        if (originMarker && originMarker.dragging) {
+        // ✅ NUEVO: MOSTRAR Y REACTIVAR marcadores
+        if (originMarker) {
             originMarker.dragging.enable();
-            originMarker.setOpacity(1);
+            originMarker.setOpacity(1);  // ← Volver visible
         }
-        if (destMarker && destMarker.dragging) {
+        if (destMarker) {
             destMarker.dragging.enable();
-            destMarker.setOpacity(1);
+            destMarker.setOpacity(1);    // ← Volver visible
         }
         
         // Reactivar click en el mapa
@@ -403,26 +409,13 @@ function bloquearUIporPedidoActivo(bloquear) {
             btnSolicitar.classList.remove('opacity-50', 'cursor-not-allowed');
         }
 
-        // ✅ SINCRONIZAR REACTIVACIÓN CON MÓVIL
-        if (typeof sincronizarBloqueoMobile === 'function') { 
-            sincronizarBloqueoMobile(false); 
+        // Sincronizar reactivación con móvil
+        if (typeof window.sincronizarBloqueoMobile === 'function') { 
+            window.sincronizarBloqueoMobile(false); 
         }
-        console.log("🔓 UI reactivada - Sin pedido activo");
+        console.log("🔓 UI reactivada - Marcadores de origen/destino visibles nuevamente");
     }
 }
-
-// Detectar cuando la pestaña está visible
-document.addEventListener('visibilitychange', () => {
-    paginaVisible = !document.hidden;
-    if (paginaVisible) {
-        console.log("🟢 Página visible - Reactivando actualizaciones");
-        // Forzar una actualización al volver
-        if (typeof cargarPedidos === 'function') cargarPedidos();
-        if (typeof cargarDeliverysEnLinea === 'function') cargarDeliverysEnLinea();
-    } else {
-        console.log("🔴 Página oculta - Reduciendo actualizaciones");
-    }
-});
 
 // ==================== INICIALIZACIÓN ====================
 function initMap() {
@@ -452,6 +445,17 @@ function initMap() {
     function limitarCoord(lat, lng) {
         return limitarCoordenadasACarmen(lat, lng);
     }
+
+    // ==================== FUNCIONES DE UTILIDAD ====================
+function actualizarRutaYTarifaDebounced() {
+    if (debounceTimer) {
+        clearTimeout(debounceTimer);
+    }
+    debounceTimer = setTimeout(() => {
+        actualizarRutaYTarifa();
+        debounceTimer = null;
+    }, 500);
+}
 
    // ==================== ICONOS ====================
    const originIcon = L.divIcon({
@@ -538,7 +542,7 @@ destMarker.on('mouseout', function() {
             if (origenMobile) origenMobile.value = addr;
         });
         
-        actualizarRutaYTarifa();
+        actualizarRutaYTarifaDebounced();
         mostrarToast("📍 Origen actualizado");
     });
 
@@ -566,7 +570,7 @@ destMarker.on('mouseout', function() {
             if (destinoMobile) destinoMobile.value = addr;
         });
         
-        actualizarRutaYTarifa();
+        actualizarRutaYTarifaDebounced();
         mostrarToast("🏁 Destino actualizado");
     });
 
@@ -594,7 +598,7 @@ destMarker.on('mouseout', function() {
             });
         }
 
-        actualizarRutaYTarifa();
+        actualizarRutaYTarifaDebounced();
         mostrarToast(selectMode === 'origen' ? "📍 Origen actualizado" : "🏁 Destino actualizado");
     });
 
@@ -630,7 +634,7 @@ destMarker.on('mouseout', function() {
 
     // ✅ Pequeño delay para asegurar que el mapa está listo
     setTimeout(() => {
-        actualizarRutaYTarifa();
+        actualizarRutaYTarifaDebounced();
         map.invalidateSize(); // Forzar resize por si acaso
     }, 500);
 
@@ -1586,17 +1590,17 @@ function limpiarYResetearUI() {
     if (tipoEnvio) tipoEnvio.value = "";
     if (tarifaContainer) tarifaContainer.classList.add("hidden");
     
-    // ✅ Limpiar tipo de envío en móvil (campo oculto)
+    // Limpiar tipo de envío en móvil (campo oculto)
     const tipoEnvioMobile = document.getElementById("tipoEnvioMobile");
     if (tipoEnvioMobile) tipoEnvioMobile.value = "";
     
-    // ✅ Resetear botones de tipo móvil (visualmente)
+    // Resetear botones de tipo móvil (visualmente)
     document.querySelectorAll('.tipo-mobile-btn').forEach(btn => {
         btn.classList.remove('bg-orange-500', 'text-white');
         btn.classList.add('bg-gray-100', 'text-gray-800');
     });
     
-    // ✅ También limpiar campos móviles si existen
+    // También limpiar campos móviles si existen
     const origenMobile = document.getElementById("origenMobile");
     const destinoMobile = document.getElementById("destinoMobile");
     if (origenMobile) origenMobile.value = "";
@@ -1615,6 +1619,14 @@ function limpiarYResetearUI() {
         
         originMarker.setLatLng([orig.lat, orig.lng]);
         destMarker.setLatLng([dest.lat, dest.lng]);
+        
+        // ✅ FORZAR QUE LOS MARCADORES SEAN VISIBLES NUEVAMENTE
+        originMarker.setOpacity(1);
+        destMarker.setOpacity(1);
+        
+        // ✅ ASEGURAR QUE SEAN ARRASTRABLES
+        if (originMarker.dragging) originMarker.dragging.enable();
+        if (destMarker.dragging) destMarker.dragging.enable();
         
         reverseGeocode(orig, (addr) => {
             if (origenDesktop) origenDesktop.value = addr;
@@ -1691,6 +1703,11 @@ function limpiarYResetearUI() {
     // Forzar actualización de la tarifa (para resetear)
     if (typeof actualizarRutaYTarifa === 'function') {
         setTimeout(() => actualizarRutaYTarifa(), 100);
+    }
+    
+    // ✅ FORZAR ACTUALIZACIÓN DEL MAPA (evita artifacts visuales)
+    if (map && typeof map.invalidateSize === 'function') {
+        setTimeout(() => map.invalidateSize(), 150);
     }
     
     mostrarToast("🔄 Todo listo. Puedes hacer un nuevo envío.");
@@ -2483,52 +2500,109 @@ async function eliminarEnvio(pedidoId) {
         return;
     }
     
-    const { data: pedido } = await supabase
+    // ✅ 1. CERRAR MODAL DE HISTORIAL PRIMERO
+    const modalHistorial = document.getElementById("modalHistorial");
+    if (modalHistorial) {
+        modalHistorial.remove();
+    }
+    
+    // ✅ 2. Limpiar cualquier modal de confirmación existente
+    const modalConfirmExistente = document.getElementById("modalConfirmacionEliminar");
+    if (modalConfirmExistente) modalConfirmExistente.remove();
+    
+    // ✅ 3. Obtener datos del pedido
+    const { data: pedido, error: pedidoError } = await supabase
         .from('pedidos')
         .select('*')
         .eq('id', pedidoId)
         .single();
     
-    if (!pedido) {
+    if (pedidoError || !pedido) {
         mostrarToast("Envío no encontrado", true);
         return;
     }
     
+    // ✅ 4. Mensaje según estado
     let mensaje = "";
     if (pedido.estado === 'completado') {
         mensaje = "Este envío ya está completado. ¿Seguro que quieres eliminarlo del historial?";
-    } else if (pedido.estado === 'asignado') {
+    } else if (pedido.estado === 'asignado' || pedido.estado === 'recogido') {
         mensaje = "⚠️ Este envío está en camino. Si lo eliminas, el delivery ya no lo verá. ¿Estás seguro?";
     } else {
         mensaje = "¿Estás seguro de que quieres eliminar este envío? Esta acción no se puede deshacer.";
     }
     
-    const confirmado = await confirmarConModal(
-        mensaje,
-        null,
-        null,
-        "Eliminar envío"
-    );
+    // ✅ 5. Crear modal de confirmación con z-index ALTÍSIMO
+    const modalConfirm = document.createElement('div');
+    modalConfirm.id = "modalConfirmacionEliminar";
+    modalConfirm.className = "fixed inset-0 bg-black bg-opacity-95 flex items-center justify-center z-[100000] p-4";
+    modalConfirm.style.zIndex = "100000";
     
-    if (!confirmado) return;
+    modalConfirm.innerHTML = `
+        <div class="bg-gray-800 rounded-3xl max-w-sm w-full text-center p-6 modal-uber" style="z-index: 100001;">
+            <div class="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                <i class="fas fa-trash-alt text-3xl text-red-500"></i>
+            </div>
+            <p class="text-gray-200 text-sm mb-6">${sanitizarHTML(mensaje)}</p>
+            <div class="flex gap-3">
+                <button id="btnCancelarEliminar" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-3 rounded-xl transition-all font-medium">
+                    Cancelar
+                </button>
+                <button id="btnConfirmarEliminar" class="flex-1 bg-red-500 hover:bg-red-600 text-white py-3 rounded-xl transition-all font-medium">
+                    <i class="fas fa-trash-alt mr-2"></i> Eliminar
+                </button>
+            </div>
+        </div>
+    `;
     
-    try {
-        const { error } = await supabase
-            .from('pedidos')
-            .delete()
-            .eq('id', pedidoId);
+    document.body.appendChild(modalConfirm);
+    
+    // ✅ 6. Evento para confirmar eliminación
+    document.getElementById("btnConfirmarEliminar").onclick = async () => {
+        modalConfirm.remove();
         
-        if (error) throw error;
-        
-        mostrarToast(`🗑️ Envío #${pedidoId} eliminado correctamente`);
-        
-        if (document.getElementById("modalHistorial")) {
-            mostrarHistorialCompleto();
+        try {
+            const { error } = await supabase
+                .from('pedidos')
+                .delete()
+                .eq('id', pedidoId);
+            
+            if (error) throw error;
+            
+            mostrarToast(`🗑️ Envío #${pedidoId} eliminado correctamente`);
+            
+            // ✅ 7. Volver a abrir historial actualizado
+            setTimeout(() => {
+                mostrarHistorialCompleto();
+            }, 300);
+            
+        } catch(e) {
+            console.error('Error eliminando:', e);
+            mostrarToast("Error al eliminar el envío", true);
+            setTimeout(() => {
+                mostrarHistorialCompleto();
+            }, 500);
         }
-    } catch(e) {
-        console.error('Error eliminando:', e);
-        mostrarToast("Error al eliminar el envío", true);
-    }
+    };
+    
+    // ✅ 8. Evento para cancelar
+    document.getElementById("btnCancelarEliminar").onclick = () => {
+        modalConfirm.remove();
+        // Reabrir historial si canceló
+        setTimeout(() => {
+            mostrarHistorialCompleto();
+        }, 100);
+    };
+    
+    // ✅ 9. Cerrar si se hace clic fuera
+    modalConfirm.addEventListener('click', (e) => {
+        if (e.target === modalConfirm) {
+            modalConfirm.remove();
+            setTimeout(() => {
+                mostrarHistorialCompleto();
+            }, 100);
+        }
+    });
 }
 
 // Modal de confirmación unificado (usando shared.js)
@@ -3146,7 +3220,7 @@ function seleccionarDireccion(tipo, lat, lng, direccion) {
     }
     
     document.getElementById(`${tipo}Sugerencias`).classList.add('hidden');
-    actualizarRutaYTarifa();
+    actualizarRutaYTarifaDebounced();
     mostrarToast(`📍 ${tipo === 'origen' ? 'Origen' : 'Destino'} actualizado`);
 }
 
@@ -3372,16 +3446,16 @@ console.log("💀 Página descargada - Recursos liberados");
   }
 });
 
-// Esto ya está manejado con visibilitychange, pero reforzamos
-document.addEventListener('visibilitychange', function() {
-    if (document.hidden) {
-        console.log("📱 Pestaña oculta - Reduciendo actividad");
-        // Opcional: pausar intervalos menos críticos
-        if (deliverysInterval) {
-            // No lo cancelamos, solo reducimos frecuencia (ya está en 15 segundos)
-        }
+// Detectar cuando la pestaña está visible
+document.addEventListener('visibilitychange', () => {
+    paginaVisible = !document.hidden;
+    if (paginaVisible) {
+        console.log("🟢 Página visible - Reactivando actualizaciones");
+        // ✅ CORREGIDO: cliente.js NO tiene cargarPedidos()
+        if (typeof cargarDeliverysEnLinea === 'function') cargarDeliverysEnLinea();
+        if (typeof cargarPedidoActivoDesdeDB === 'function') cargarPedidoActivoDesdeDB();
     } else {
-        console.log("🟢 Pestaña visible - Reanudando actividad normal");
+        console.log("🔴 Página oculta - Reduciendo actualizaciones");
     }
 });
 
@@ -3421,5 +3495,6 @@ window.cerrarModalConfirmacion = cerrarModalConfirmacion;
 window.limpiarTodosLosIntervalos = limpiarTodosLosIntervalos;
 window.confirmarPagoTransferenciaFinal = confirmarPagoTransferenciaFinal;
 window.enviarComprobanteWhatsApp = enviarComprobanteWhatsApp;  // ← AGREGAR ESTA LÍNEA
+window.eliminarEnvioConCierre = eliminarEnvioConCierre;
 
 console.log("✅ Cliente inicializado - Sistema de modales unificado activo");

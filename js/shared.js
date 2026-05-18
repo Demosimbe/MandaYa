@@ -1,5 +1,4 @@
 // js/shared.js - Utilidades compartidas
-import './config.js';
 
 window.addEventListener('error', (e) => {
     if (e.message && e.message.includes('message port closed')) {
