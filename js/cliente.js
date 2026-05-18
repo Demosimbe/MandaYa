@@ -1751,29 +1751,56 @@ async function guardarPedidoEnSupabase() {
     }
     
     try {
+        // ✅ GENERAR ID ÚNICO (timestamp + random + fecha actual)
+        const nuevoId = Date.now() + Math.floor(Math.random() * 10000);
+        
         const pedidoAGuardar = {
             ...pedidoPendiente,
+            id: nuevoId,  // Usar ID único
             extras: pedidoPendiente.extras || { lluvia: false, noche: false, espera: false }
         };
+        
+        console.log("📝 Guardando pedido con ID:", nuevoId);
         
         const { error } = await supabase
             .from('pedidos')
             .insert([pedidoAGuardar]);
         
-        if (error) throw error;
+        if (error) {
+            // Si hay error por duplicado, reintentar con otro ID
+            if (error.code === '23505') {
+                console.log("⚠️ ID duplicado, reintentando...");
+                const nuevoId2 = Date.now() + Math.floor(Math.random() * 100000);
+                pedidoAGuardar.id = nuevoId2;
+                const { error: error2 } = await supabase
+                    .from('pedidos')
+                    .insert([pedidoAGuardar]);
+                
+                if (error2) throw error2;
+                pedidoActual = pedidoAGuardar;
+            } else {
+                throw error;
+            }
+        } else {
+            pedidoActual = pedidoAGuardar;
+        }
         
-        pedidoActual = pedidoPendiente;
+        // ✅ ACTUALIZAR pedidoPendiente con el ID real
+        pedidoPendiente.id = pedidoActual.id;
+        
+        console.log("✅ Pedido guardado con ID:", pedidoActual.id);
         
         cerrarModalPago();
         cerrarModalEfectivo();
         cerrarModalTransferencia();
         
         mostrarPanelEstado(pedidoActual);
+        actualizarTarjetaProgreso();
         
-        // ✅ MOSTRAR LA TARJETA DE PROGRESO INMEDIATAMENTE
-        actualizarTarjetaProgreso(); // Estado pendiente → amarillo "Buscando delivery..."
+        // ✅ MOSTRAR MODAL DE WHATSAPP DESPUÉS DE GUARDAR
+        mostrarModalWhatsAppOpcion(pedidoActual);
         
-        mostrarToast(`✅ ¡Envío solicitado! ID: #${pedidoActual.id} - Esperando delivery`);
+        mostrarToast(`✅ ¡Envío solicitado! ID: #${pedidoActual.id}`);
         iniciarSeguimientoDelivery();
         
     } catch(e) {
@@ -1782,87 +1809,142 @@ async function guardarPedidoEnSupabase() {
     }
 }
 
-function enviarComprobanteWhatsApp() {
-    if (!pedidoPendiente) {
-        mostrarToast("❌ No hay información del pedido", true);
-        return;
+// ==================== MODAL WHATSAPP OPCIÓN ====================
+function mostrarModalWhatsAppOpcion(pedido) {
+    if (!pedido) return;
+    
+    // Crear mensaje
+    let mensaje = "✅ *COMPROBANTE DE PAGO - MandaYa*\n\n";
+    mensaje += `🎫 *PEDIDO:* #${pedido.id}\n`;
+    mensaje += `👤 *CLIENTE:* ${pedido.cliente_nombre || 'Cliente'}\n`;
+    mensaje += `📍 *ORIGEN:* ${pedido.origen || 'No especificado'}\n`;
+    mensaje += `🏁 *DESTINO:* ${pedido.destino || 'No especificado'}\n`;
+    mensaje += `📦 *TIPO:* ${pedido.tipo || 'Paquete'}\n`;
+    mensaje += `💰 *TOTAL:* $${pedido.tarifa || '0'} MXN\n`;
+    mensaje += `\n✅ *PAGO CONFIRMADO*\n`;
+    mensaje += `🚀 *¡Gracias por usar MandaYa!*`;
+    
+    const mensajeCodificado = encodeURIComponent(mensaje);
+    const numero = "5219381083498";
+    
+    // Crear modal
+    const modal = document.createElement('div');
+    modal.id = 'modalWhatsappOpcion';
+    modal.className = 'fixed inset-0 bg-black bg-opacity-95 flex items-center justify-center z-[10002] p-4';
+    modal.innerHTML = `
+        <div class="bg-gray-800 rounded-2xl max-w-sm w-full p-6 text-center">
+            <div class="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                <i class="fab fa-whatsapp text-green-500 text-4xl"></i>
+            </div>
+            <h3 class="text-white text-xl font-bold mb-2">¡Pedido Creado!</h3>
+            <p class="text-gray-400 text-sm mb-4">¿Deseas enviar el comprobante por WhatsApp?</p>
+            
+            <div class="space-y-3">
+                <button id="btnEnviarWhatsApp" 
+                        class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl transition-all flex items-center justify-center gap-2">
+                    <i class="fab fa-whatsapp text-xl"></i> Enviar comprobante
+                </button>
+                
+                <button id="btnCopiarMensaje" 
+                        class="w-full bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded-xl transition-all flex items-center justify-center gap-2">
+                    <i class="fas fa-copy"></i> Copiar mensaje
+                </button>
+                
+                <button id="btnCerrarWhatsApp" 
+                        class="w-full text-gray-400 hover:text-white py-2 text-sm transition-all">
+                    Cerrar
+                </button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    
+    // Event listeners (en lugar de onclick)
+    document.getElementById('btnEnviarWhatsApp').onclick = () => {
+        const url = `https://api.whatsapp.com/send?phone=${numero}&text=${mensajeCodificado}`;
+        window.open(url, '_blank');
+        mostrarToast("📱 Abriendo WhatsApp...");
+        modal.remove();
+    };
+    
+    document.getElementById('btnCopiarMensaje').onclick = () => {
+        navigator.clipboard.writeText(decodeURIComponent(mensajeCodificado));
+        mostrarToast("✅ Mensaje copiado al portapapeles", false);
+        modal.remove();
+    };
+    
+    document.getElementById('btnCerrarWhatsApp').onclick = () => {
+        modal.remove();
+    };
+}
+
+// ==================== ENVIAR COMPROBANTE POR WHATSAPP (CORREGIDO) ====================
+window.enviarComprobanteWhatsApp = function(pedido = null) {
+    const numeroWhatsApp = window.getWhatsAppNumber ? 
+        window.getWhatsAppNumber().replace(/[^0-9]/g, '') : "5219381083498";
+    
+    let mensaje = "✅ *COMPROBANTE DE PAGO - MandaYa*\n\n";
+    mensaje += `━━━━━━━━━━━━━━━━━━━━\n`;
+    
+    if (pedido && pedido.id) {
+        mensaje += `🎫 *PEDIDO:* #${pedido.id}\n`;
+        mensaje += `👤 *CLIENTE:* ${pedido.cliente_nombre || 'Cliente'}\n`;
+        mensaje += `\n━━━━━━━━━━━━━━━━━━━━\n`;
+        mensaje += `📍 *ORIGEN:*\n${pedido.origen || 'No especificado'}\n`;
+        mensaje += `\n🏁 *DESTINO:*\n${pedido.destino || 'No especificado'}\n`;
+        mensaje += `\n━━━━━━━━━━━━━━━━━━━━\n`;
+        mensaje += `📦 *TIPO:* ${pedido.tipo || 'Paquete'}\n`;
+        mensaje += `📏 *DISTANCIA:* ${pedido.distancia_real || '0'} km\n`;
+        
+        // Extras si los hay
+        if (pedido.extras) {
+            const extrasActivos = [];
+            if (pedido.extras.lluvia) extrasActivos.push("🌧️ Lluvia");
+            if (pedido.extras.noche) extrasActivos.push("🌙 Noche");
+            if (pedido.extras.espera) extrasActivos.push("⏱️ Espera");
+            if (extrasActivos.length > 0) {
+                mensaje += `\n✨ *EXTRAS:* ${extrasActivos.join(", ")}\n`;
+            }
+        }
+        
+        mensaje += `\n━━━━━━━━━━━━━━━━━━━━\n`;
+        mensaje += `💰 *TOTAL PAGADO:* $${pedido.tarifa || '0'} MXN\n`;
+        
+    } else {
+        mensaje += `🎫 *PEDIDO:* #${Math.floor(Math.random() * 9000) + 1000}\n`;
+        mensaje += `💰 *TOTAL:* $0 MXN\n`;
     }
     
-    const total = pedidoPendiente.tarifa;
-    const pedidoId = pedidoPendiente.id;
-    
-    // ✅ TU NÚMERO
-    const numeroWhatsApp = "5219381083498";
-    
-    let mensaje = `🛵 *MANDAYA - NUEVO PEDIDO* 🛵\n`;
-    mensaje += `─────────────────────\n`;
-    mensaje += `🎫 Pedido: #${pedidoId}\n`;
-    mensaje += `👤 Cliente: ${pedidoPendiente.cliente_nombre}\n`;
-    mensaje += `─────────────────────\n`;
-    mensaje += `📍 Origen:\n${pedidoPendiente.origen}\n`;
-    mensaje += `─────────────────────\n`;
-    mensaje += `🏁 Destino:\n${pedidoPendiente.destino}\n`;
-    mensaje += `─────────────────────\n`;
-    mensaje += `📏 ${pedidoPendiente.distancia_real} km | 📦 ${pedidoPendiente.tipo}\n`;
-    mensaje += `💰 Total: $${total} MXN\n`;
-    mensaje += `─────────────────────\n`;
-    mensaje += `✅ Comprobante de pago adjunto\n`;
-    mensaje += `🙏 Gracias por usar MandaYa!`;
+    mensaje += `\n━━━━━━━━━━━━━━━━━━━━\n`;
+    mensaje += `✅ *PAGO CONFIRMADO*\n`;
+    mensaje += `📅 ${new Date().toLocaleString()}\n`;
+    mensaje += `\n🚀 *¡Gracias por usar MandaYa!*`;
     
     const mensajeCodificado = encodeURIComponent(mensaje);
     
-    // Detectar dispositivo
-    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    // ✅ USAR EL MISMO FORMATO QUE TE FUNCIONA (api.whatsapp.com)
+    const whatsappUrl = `https://api.whatsapp.com/send?phone=${numeroWhatsApp}&text=${mensajeCodificado}`;
     
-    let whatsappUrl;
-    if (isMobile) {
-        whatsappUrl = `https://api.whatsapp.com/send?phone=${numeroWhatsApp}&text=${mensajeCodificado}`;
-    } else {
-        whatsappUrl = `https://web.whatsapp.com/send?phone=${numeroWhatsApp}&text=${mensajeCodificado}`;
-    }
-    
-    console.log("📱 Abriendo WhatsApp con número:", numeroWhatsApp);
+    console.log("📱 Abriendo WhatsApp con URL:", whatsappUrl);
     window.open(whatsappUrl, '_blank');
+    
     mostrarToast("📱 Abriendo WhatsApp...");
-}
+};
 
 async function confirmarPagoTransferenciaFinal() {
-    // Verificar que haya un pedido pendiente
     if (!pedidoPendiente) {
         mostrarToast("❌ No hay información del pedido", true);
         return;
     }
     
-    // Evitar doble clic / doble guardado
     if (window.guardandoPedido) return;
     window.guardandoPedido = true;
     
-    // Mostrar loading
     mostrarToast("💾 Guardando pedido...");
     
     try {
-        // Guardar en Supabase
-        await guardarPedidoEnSupabase();
-        
-        // Cerrar modal de transferencia
+        await guardarPedidoEnSupabase();  // ✅ Ya muestra el modal de WhatsApp internamente
         cerrarModalTransferencia();
-        
-        // Mostrar mensaje de éxito
-        mostrarToast("✅ Pedido registrado correctamente. El delivery lo recogerá pronto.");
-        
-        // Usamos setTimeout para no interferir con el cierre del modal
-        setTimeout(async () => {
-            const enviarComprobante = await confirmarConModal(
-                "¿Deseas enviar el comprobante de pago por WhatsApp?",
-                null,
-                null,
-                "Comprobante de pago"
-            );
-            
-            if (enviarComprobante) {
-                enviarComprobanteWhatsApp();
-            }
-        }, 500);
         
     } catch (error) {
         console.error("Error al guardar pedido:", error);
