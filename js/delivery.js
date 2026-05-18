@@ -936,42 +936,6 @@ async function cargarPedidos(force = false) {
     }
 }
 
-// ==================== NOTIFICACIÓN DE NUEVO PEDIDO ====================
-function notificarNuevoPedido() {
-    // ✅ Vibrar si el dispositivo lo soporta
-    if (window.navigator && window.navigator.vibrate) {
-        window.navigator.vibrate([200, 100, 200]); // Patrón: vibra 200ms, pausa 100ms, vibra 200ms
-        console.log("📳 Vibración activada");
-    }
-    
-    // ✅ Reproducir sonido
-    try {
-        // Usar un sonido de notificación simple (Web Audio API)
-        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        const oscillator = audioContext.createOscillator();
-        const gainNode = audioContext.createGain();
-        
-        oscillator.connect(gainNode);
-        gainNode.connect(audioContext.destination);
-        
-        oscillator.frequency.value = 880; // Nota La5
-        gainNode.gain.value = 0.7; // Volumen bajo
-        
-        oscillator.start();
-        gainNode.gain.exponentialRampToValueAtTime(0.00001, audioContext.currentTime + 0.5);
-        oscillator.stop(audioContext.currentTime + 0.5);
-        
-        // Cerrar el contexto después de 1 segundo
-        setTimeout(() => {
-            audioContext.close();
-        }, 1000);
-        
-        console.log("🔔 Sonido de notificación reproducido");
-    } catch(e) {
-        console.log("No se pudo reproducir sonido:", e);
-    }
-}
-
 function seleccionarPedido(pedidoId) {
     pedidoSeleccionado = pedidosDisponibles.find(p => p.id === pedidoId);
     limpiarRutasYMarcadores();
