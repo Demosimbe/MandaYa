@@ -1472,10 +1472,6 @@ async function actualizarRutaEnTiempoReal() {
     }
 }
 
-// Variables para control
-let ultimoRecalculoRuta = 0;
-let intervaloActualizacionRuta = null;
-
 // Función para iniciar la actualización en tiempo real
 function iniciarActualizacionRutaTiempoReal() {
     if (intervaloActualizacionRuta) {
