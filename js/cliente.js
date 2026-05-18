@@ -3538,7 +3538,6 @@ window.cerrarModalConfirmacion = cerrarModalConfirmacion;
 window.limpiarTodosLosIntervalos = limpiarTodosLosIntervalos;
 window.confirmarPagoTransferenciaFinal = confirmarPagoTransferenciaFinal;
 window.enviarComprobanteWhatsApp = enviarComprobanteWhatsApp;  // ← AGREGAR ESTA LÍNEA
-window.eliminarEnvioConCierre = eliminarEnvioConCierre;
 window.toggleAutoFollowDelivery = toggleAutoFollowDelivery;
 
 console.log("✅ Cliente inicializado - Sistema de modales unificado activo");
