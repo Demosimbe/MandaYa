@@ -1378,7 +1378,8 @@ async function confirmarPagoEfectivo() {
         mostrarToast(`✅ Cambio a devolver: $${cambio.toFixed(2)}`);
     }
     
-    await guardarPedidoEnSupabase();
+    // ✅ false = NO mostrar modal de WhatsApp
+    await guardarPedidoEnSupabase(false);
     cerrarModalEfectivo();
 }
 
@@ -1760,7 +1761,7 @@ function forzarReactivacionUI() {
 }
 
 // ==================== FUNCIONES DE PEDIDO MODIFICADAS ====================
-async function guardarPedidoEnSupabase() {
+async function guardarPedidoEnSupabase(mostrarWhatsApp = true) {
     const supabase = supabaseClient;
     if (!supabase) {
         mostrarToast("❌ Error de conexión", true);
@@ -1814,8 +1815,10 @@ async function guardarPedidoEnSupabase() {
         mostrarPanelEstado(pedidoActual);
         actualizarTarjetaProgreso();
         
-        // ✅ MOSTRAR MODAL DE WHATSAPP DESPUÉS DE GUARDAR
-        mostrarModalWhatsAppOpcion(pedidoActual);
+        // ✅ SOLO MOSTRAR MODAL DE WHATSAPP SI ES transferencia (true)
+        if (mostrarWhatsApp) {
+            mostrarModalWhatsAppOpcion(pedidoActual);
+        }
         
         mostrarToast(`✅ ¡Envío solicitado! ID: #${pedidoActual.id}`);
         iniciarSeguimientoDelivery();
@@ -1960,7 +1963,8 @@ async function confirmarPagoTransferenciaFinal() {
     mostrarToast("💾 Guardando pedido...");
     
     try {
-        await guardarPedidoEnSupabase();  // ✅ Ya muestra el modal de WhatsApp internamente
+        // ✅ true = SÍ mostrar modal de WhatsApp
+        await guardarPedidoEnSupabase(true);
         cerrarModalTransferencia();
         
     } catch (error) {

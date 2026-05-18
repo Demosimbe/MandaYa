@@ -19,6 +19,8 @@ let watchId = null;
 let ubicacionInterval = null;
 let cargaPedidosInterval = null;
 let ultimaUbicacionEnviada = null;
+let intervaloActualizacionRuta = null;  // Intervalo para actualizar ruta en tiempo real
+let ultimoRecalculoRuta = 0; 
 
 // ✅ NUEVAS VARIABLES PARA BACKUP Y AUTO-FOLLOW
 let backupIntervalId = null;      // Intervalo de respaldo para pantalla bloqueada
@@ -1034,7 +1036,14 @@ async function cargarPedidos(force = false) {
         // ✅ Actualizar color del marcador y badge
         await actualizarColorMarcador();
         await actualizarBadgeEstado();
-        
+
+        // ✅ INICIAR/DETENER ACTUALIZACIÓN DE RUTA EN TIEMPO REAL
+        if (misPedidosActivos.length > 0) {
+            iniciarActualizacionRutaTiempoReal();
+        } else {
+            detenerActualizacionRutaTiempoReal();
+        }
+          
         console.log(`📦 ${sanitizarHTML(pedidosDisponibles.length)} pedidos disponibles, ${sanitizarHTML(misPedidosActivos.length)} activos`);
         
     } catch(e) {
@@ -1373,6 +1382,253 @@ function actualizarListaPedidos() {
             `;
         }).join('');
     }
+}
+
+// ==================== ACTUALIZAR RUTA EN TIEMPO REAL ====================
+async function actualizarRutaEnTiempoReal() {
+    // Solo si hay pedido activo
+    if (misPedidosActivos.length === 0) return;
+    
+    const pedidoActivo = misPedidosActivos[0];
+    if (!pedidoActivo) return;
+    
+    // Solo actualizar si estamos en asignado o recogido
+    if (pedidoActivo.estado !== 'asignado' && pedidoActivo.estado !== 'recogido') return;
+    
+    // Obtener ubicación actual del delivery
+    let ubicacionActual = null;
+    if (userMarker) {
+        const latLng = userMarker.getLatLng();
+        ubicacionActual = { lat: latLng.lat, lng: latLng.lng };
+    } else if (ultimaUbicacionEnviada) {
+        ubicacionActual = { lat: ultimaUbicacionEnviada.lat, lng: ultimaUbicacionEnviada.lng };
+    }
+    
+    if (!ubicacionActual) return;
+    
+    // Determinar destino según estado
+    let destinoCoords = null;
+    let tipoRuta = null;
+    
+    if (pedidoActivo.estado === 'asignado' && pedidoActivo.origenCoords) {
+        destinoCoords = pedidoActivo.origenCoords;
+        tipoRuta = 'recogida';
+    } else if (pedidoActivo.estado === 'recogido' && pedidoActivo.destinoCoords) {
+        destinoCoords = pedidoActivo.destinoCoords;
+        tipoRuta = 'entrega';
+    }
+    
+    if (!destinoCoords) return;
+    
+    // Calcular distancia a la ruta actual
+    let necesitaActualizacion = false;
+    
+    if (currentRoutingControl && currentRoutingControl.getWaypoints) {
+        try {
+            const waypoints = currentRoutingControl.getWaypoints();
+            if (waypoints && waypoints.length >= 2) {
+                const rutaOrigen = waypoints[0].latLng;
+                const rutaDestino = waypoints[waypoints.length - 1].latLng;
+                
+                // Calcular distancia desde ubicación actual a la ruta trazada
+                const distanciaALaRuta = calcularDistanciaPuntoALinea(
+                    ubicacionActual,
+                    { lat: rutaOrigen.lat, lng: rutaOrigen.lng },
+                    { lat: rutaDestino.lat, lng: rutaDestino.lng }
+                );
+                
+                // Si está a más de 80 metros de la ruta, recalculamos
+                if (distanciaALaRuta > 80) {
+                    necesitaActualizacion = true;
+                    console.log(`🔄 Delivery desviado de la ruta (${distanciaALaRuta.toFixed(0)}m), recalculando...`);
+                }
+            }
+        } catch(e) {
+            console.warn("Error verificando desviación:", e);
+            necesitaActualizacion = true;
+        }
+    } else {
+        // No hay ruta actual, dibujar por primera vez
+        necesitaActualizacion = true;
+    }
+    
+    // También actualizar cada 15 segundos para mantener sincronía
+    const ahora = Date.now();
+    if (!ultimoRecalculoRuta) ultimoRecalculoRuta = 0;
+    if (ahora - ultimoRecalculoRuta > 15000) {
+        necesitaActualizacion = true;
+        console.log("🔄 Actualización periódica de ruta (15s)");
+    }
+    
+    if (necesitaActualizacion) {
+        ultimoRecalculoRuta = ahora;
+        
+        // Redibujar ruta desde ubicación actual hasta destino
+        if (tipoRuta === 'recogida') {
+            await dibujarRutaRecogidaDesdeUbicacion(pedidoActivo, ubicacionActual);
+        } else if (tipoRuta === 'entrega') {
+            await dibujarRutaEntregaDesdeUbicacion(pedidoActivo, ubicacionActual);
+        }
+    }
+}
+
+// Variables para control
+let ultimoRecalculoRuta = 0;
+let intervaloActualizacionRuta = null;
+
+// Función para iniciar la actualización en tiempo real
+function iniciarActualizacionRutaTiempoReal() {
+    if (intervaloActualizacionRuta) {
+        clearInterval(intervaloActualizacionRuta);
+    }
+    
+    intervaloActualizacionRuta = setInterval(() => {
+        if (paginaVisible && isOnline) {
+            actualizarRutaEnTiempoReal();
+        }
+    }, 5000); // Cada 5 segundos
+    
+    console.log("🔄 Actualización de ruta en tiempo real iniciada (cada 5s)");
+}
+
+// Detener actualización
+function detenerActualizacionRutaTiempoReal() {
+    if (intervaloActualizacionRuta) {
+        clearInterval(intervaloActualizacionRuta);
+        intervaloActualizacionRuta = null;
+    }
+}
+
+// Dibujar ruta de RECOGIDA desde ubicación actual del delivery
+async function dibujarRutaRecogidaDesdeUbicacion(pedido, ubicacionActual) {
+    if (!pedido.origenCoords || !ubicacionActual) {
+        console.error("❌ Faltan coordenadas para ruta de recogida desde ubicación");
+        return;
+    }
+    
+    if (dibujandoRuta) {
+        console.log("⏳ Ya dibujando una ruta, espera...");
+        return;
+    }
+    
+    dibujandoRuta = true;
+    
+    // Limpiar ruta anterior pero mantener marcadores
+    if (currentRoutingControl) {
+        try {
+            if (currentRoutingControl._map) {
+                map.removeControl(currentRoutingControl);
+            }
+        } catch(e) {}
+        currentRoutingControl = null;
+    }
+    
+    const waypoints = [
+        L.latLng(ubicacionActual.lat, ubicacionActual.lng),
+        L.latLng(pedido.origenCoords.lat, pedido.origenCoords.lng)
+    ];
+    
+    currentRoutingControl = L.Routing.control({
+        waypoints: waypoints,
+        routeWhileDragging: false,
+        showAlternatives: false,
+        fitSelectedRoutes: false,  // No forzar zoom para no molestar
+        lineOptions: {
+            styles: [{ color: '#10B981', weight: 6, opacity: 0.9 }]
+        },
+        router: L.Routing.osrmv1({
+            serviceUrl: 'https://router.project-osrm.org/route/v1'
+        }),
+        show: false,
+        addWaypoints: false,
+        draggableWaypoints: false
+    }).addTo(map);
+    
+    dibujandoRuta = false;
+    console.log("🔄 Ruta de recogida actualizada desde ubicación actual");
+}
+
+// Dibujar ruta de ENTREGA desde ubicación actual del delivery
+async function dibujarRutaEntregaDesdeUbicacion(pedido, ubicacionActual) {
+    if (!pedido.destinoCoords || !ubicacionActual) {
+        console.error("❌ Faltan coordenadas para ruta de entrega desde ubicación");
+        return;
+    }
+    
+    if (dibujandoRuta) {
+        console.log("⏳ Ya dibujando una ruta, espera...");
+        return;
+    }
+    
+    dibujandoRuta = true;
+    
+    // Limpiar ruta anterior pero mantener marcadores
+    if (currentRoutingControl) {
+        try {
+            if (currentRoutingControl._map) {
+                map.removeControl(currentRoutingControl);
+            }
+        } catch(e) {}
+        currentRoutingControl = null;
+    }
+    
+    const waypoints = [
+        L.latLng(ubicacionActual.lat, ubicacionActual.lng),
+        L.latLng(pedido.destinoCoords.lat, pedido.destinoCoords.lng)
+    ];
+    
+    currentRoutingControl = L.Routing.control({
+        waypoints: waypoints,
+        routeWhileDragging: false,
+        showAlternatives: false,
+        fitSelectedRoutes: false,  // No forzar zoom
+        lineOptions: {
+            styles: [{ color: '#FF6200', weight: 6, opacity: 0.9 }]
+        },
+        router: L.Routing.osrmv1({
+            serviceUrl: 'https://router.project-osrm.org/route/v1'
+        }),
+        show: false,
+        addWaypoints: false,
+        draggableWaypoints: false
+    }).addTo(map);
+    
+    dibujandoRuta = false;
+    console.log("🔄 Ruta de entrega actualizada desde ubicación actual");
+}
+
+// Calcula la distancia mínima desde un punto a una línea (en metros)
+function calcularDistanciaPuntoALinea(punto, lineaInicio, lineaFin) {
+    const x0 = punto.lng;
+    const y0 = punto.lat;
+    const x1 = lineaInicio.lng;
+    const y1 = lineaInicio.lat;
+    const x2 = lineaFin.lng;
+    const y2 = lineaFin.lat;
+    
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    
+    if (dx === 0 && dy === 0) {
+        return Math.sqrt(Math.pow(x0 - x1, 2) + Math.pow(y0 - y1, 2)) * 111000;
+    }
+    
+    const t = ((x0 - x1) * dx + (y0 - y1) * dy) / (dx * dx + dy * dy);
+    
+    let xp, yp;
+    if (t < 0) {
+        xp = x1;
+        yp = y1;
+    } else if (t > 1) {
+        xp = x2;
+        yp = y2;
+    } else {
+        xp = x1 + t * dx;
+        yp = y1 + t * dy;
+    }
+    
+    const distanciaGrados = Math.sqrt(Math.pow(x0 - xp, 2) + Math.pow(y0 - yp, 2));
+    return distanciaGrados * 111000;
 }
 
 async function toggleOnline() {
@@ -1950,6 +2206,8 @@ function limpiarIntervalosDelivery() {
 
     // Limpiar rutas y marcadores del mapa
     limpiarRutasYMarcadores();
+    // Detener actualización de ruta en tiempo real
+    detenerActualizacionRutaTiempoReal();
 
     // Actualizar estado offline en Supabase
     if (currentUser && supabaseClient) {
