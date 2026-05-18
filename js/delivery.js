@@ -154,42 +154,43 @@ function initMap() {
 }
 
 // ==================== CIERRE DE SESIÓN CORREGIDO ====================
-async function cerrarSesion() {
-    // Usar el modal ya definido (retorna Promise true/false)
-    const confirmado = await mostrarModalConfirmacionDelivery(
+// ==================== CIERRE DE SESIÓN CORREGIDO ====================
+function cerrarSesion() {
+    console.log("🔐 Mostrando modal de confirmación para delivery...");
+    
+    // Usar el modal directamente con callbacks
+    mostrarModalConfirmacionDelivery(
         "Cerrar Sesión",
-        "¿Estás seguro de que deseas cerrar sesión?"
+        "¿Estás seguro de que deseas cerrar sesión?",
+        async () => {
+            console.log("✅ Usuario confirmó cierre de sesión, procediendo...");
+            
+            try {
+                // Usar la función centralizada de limpieza
+                limpiarIntervalosDelivery();
+
+                // Actualizar estado offline en Supabase
+                if (currentUser && supabaseClient) {
+                    await setDeliveryOnlineSupabase(currentUser.id, false)
+                        .catch(err => console.warn("No se pudo actualizar offline:", err));
+                }
+
+                // Cerrar sesión con securityManager
+                await securityManager.cerrarSesion();
+
+            } catch (error) {
+                console.error("❌ Error durante el cierre de sesión:", error);
+                try {
+                    await securityManager.cerrarSesion();
+                } catch (e) {
+                    window.location.href = "index.html";
+                }
+            }
+        },
+        () => {
+            console.log("❌ Usuario canceló cierre de sesión");
+        }
     );
-
-    if (!confirmado) return;
-
-    console.log("👋 Iniciando cierre de sesión...");
-
-    try {
-        // Usar la función centralizada de limpieza (evita duplicar código)
-        limpiarIntervalosDelivery();
-
-        // Actualizar estado offline en Supabase (por si la limpieza no lo hizo)
-        if (currentUser && supabaseClient) {
-            await setDeliveryOnlineSupabase(currentUser.id, false)
-                .catch(err => console.warn("No se pudo actualizar offline:", err));
-        }
-
-        // Cerrar sesión con securityManager (esto limpia localStorage y redirige)
-        await securityManager.cerrarSesion();
-
-    } catch (error) {
-        console.error("❌ Error durante el cierre de sesión:", error);
-        
-        // Fallback: intentar cerrar sesión de todas formas
-        try {
-            await securityManager.cerrarSesion();
-        } catch (e) {
-            console.error("Error en fallback:", e);
-            // Último recurso
-            window.location.href = "index.html";
-        }
-    }
 }
 
 async function actualizarBadgeEstado() {
@@ -932,18 +933,23 @@ async function agarrarPedido(pedidoId) {
         return;
     }
     
-    // ✅ VERIFICACIÓN 1: ¿El delivery ya tiene un pedido activo?
+    // ✅ PREVENIR DOBLE CLIC
+    if (window.agarrandoPedido) {
+        mostrarToast("⏳ Procesando solicitud, espera...", true);
+        return;
+    }
+    window.agarrandoPedido = true;
+    
     mostrarToast("🔍 Verificando disponibilidad...");
     
     try {
-        // Usar la función de config.js
+        // ========== 1. VERIFICAR QUE EL DELIVERY NO TENGA PEDIDO ACTIVO ==========
         const tienePedidoActivo = await deliveryTienePedidoActivo(currentUser.id);
         
         if (tienePedidoActivo) {
             const pedidoActivo = await getPedidoActivoDelDelivery(currentUser.id);
             mostrarToast(`❌ Ya tienes un pedido activo (#${sanitizarHTML(pedidoActivo?.id)}). Complétalo primero.`, true);
             
-            // Resaltar el pedido activo en la lista
             if (pedidoActivo) {
                 const elementoActivo = document.querySelector(`[data-pedido-id="${sanitizarHTML(pedidoActivo.id)}"]`);
                 if (elementoActivo) {
@@ -954,39 +960,47 @@ async function agarrarPedido(pedidoId) {
                     }, 3000);
                 }
             }
+            window.agarrandoPedido = false;
             return;
         }
         
-        // ✅ VERIFICACIÓN 2: ¿El pedido sigue disponible (estado pendiente)?
+        // ========== 2. VERIFICAR QUE EL PEDIDO SIGA PENDIENTE ==========
         const { data: pedidoActual, error: errorPedido } = await supabase
             .from('pedidos')
-            .select('estado')
+            .select('id, estado, cliente_nombre, origen, destino, tarifa')
             .eq('id', pedidoId)
             .single();
         
         if (errorPedido) throw errorPedido;
         
-        if (pedidoActual.estado !== 'pendiente') {
-            mostrarToast(`❌ El pedido #${sanitizarHTML(pedidoId)} ya no está disponible (fue agarrado por otro delivery)`, true);
-            await cargarPedidos(true);   // ✅
+        if (!pedidoActual) {
+            mostrarToast(`❌ El pedido #${sanitizarHTML(pedidoId)} no existe`, true);
+            window.agarrandoPedido = false;
             return;
         }
         
-        // ✅ VERIFICACIÓN 3: Confirmar con modal personalizado
+        if (pedidoActual.estado !== 'pendiente') {
+            mostrarToast(`❌ El pedido #${sanitizarHTML(pedidoId)} ya no está disponible (fue agarrado por otro delivery)`, true);
+            await cargarPedidos(true);
+            window.agarrandoPedido = false;
+            return;
+        }
+        
+        // ========== 3. CONFIRMAR CON MODAL ==========
         const confirmado = await mostrarModalConfirmacionDelivery(
             "Confirmar pedido",
-            `¿Seguro que quieres AGARRAR el pedido #${sanitizarHTML(pedidoId)}?`,
-            () => {} // callback vacío, la función retorna Promise
+            `¿Seguro que quieres AGARRAR el pedido #${sanitizarHTML(pedidoId)}?\n\n📦 ${sanitizarHTML(pedidoActual.cliente_nombre)}\n📍 ${sanitizarHTML(pedidoActual.origen)}\n💰 $${pedidoActual.tarifa}`,
         );
         
         if (!confirmado) {
             mostrarToast("❌ Acción cancelada");
+            window.agarrandoPedido = false;
             return;
         }
         
-        
-        // ✅ AGARRAR EL PEDIDO
-        const { error } = await supabase
+        // ========== 4. AGARRAR PEDIDO CON DOBLE VERIFICACIÓN ==========
+        // 🔴 CRÍTICO: Usar transacción/condición para evitar race condition
+        const { data: updatedPedido, error: updateError } = await supabase
             .from('pedidos')
             .update({
                 estado: 'asignado',
@@ -995,33 +1009,72 @@ async function agarrarPedido(pedidoId) {
                 fecha_asignado: new Date().toISOString()
             })
             .eq('id', pedidoId)
-            .eq('estado', 'pendiente'); // Doble verificación: solo si sigue pendiente
+            .eq('estado', 'pendiente')  // ← CLAVE: solo si sigue pendiente
+            .select();  // ← Devolver el registro actualizado
         
-        if (error) throw error;
+        // ========== 5. VERIFICAR SI LA ACTUALIZACIÓN FUE EXITOSA ==========
+        if (updateError) throw updateError;
         
+        // Si no se actualizó ningún registro, alguien más lo agarró
+        if (!updatedPedido || updatedPedido.length === 0) {
+            mostrarToast(`❌ El pedido #${sanitizarHTML(pedidoId)} fue agarrado por otro delivery justo ahora`, true);
+            await cargarPedidos(true);
+            window.agarrandoPedido = false;
+            return;
+        }
+        
+        // ========== 6. ACTUALIZAR ESTADO LOCAL ==========
+        const pedidoAsignado = updatedPedido[0];
+        
+        // Mostrar éxito
         mostrarToast(`✅ Pedido #${sanitizarHTML(pedidoId)} AGARRADO! Dirígete al origen para recoger.`);
-        vibrar(300);  // <-- AGREGAR
+        vibrar(300);
         
-        // ✅ Limpiar selección y recargar
+        // Limpiar selección
         pedidoSeleccionado = null;
-        await cargarPedidos(true);   // ✅ Forzar recarga
+        
+        // ========== 7. ACTUALIZAR LISTAS ==========
+        // Recargar pedidos desde Supabase
+        await cargarPedidos(true);
+        
+        // Actualizar color del marcador (a naranja porque está ocupado)
         await actualizarColorMarcador();
         
-        // ✅ Mostrar ruta de recogida inmediatamente
-        const pedidoAsignado = misPedidosActivos.find(p => p.id === pedidoId);
-        if (pedidoAsignado) {
-            await dibujarRutaRecogida(pedidoAsignado);
-            // Centrar mapa en la ruta
+        // ========== 8. MOSTRAR RUTA DE RECOGIDA ==========
+        // Buscar el pedido en misPedidosActivos (ya debería estar después de cargarPedidos)
+        const pedidoActivo = misPedidosActivos.find(p => p.id === pedidoId);
+        
+        if (pedidoActivo && pedidoActivo.origenCoords) {
+            await dibujarRutaRecogida(pedidoActivo);
+            
+            // Centrar mapa en el origen
             setTimeout(() => {
-                if (pedidoAsignado.origenCoords) {
-                    map.setView([pedidoAsignado.origenCoords.lat, pedidoAsignado.origenCoords.lng], 14);
+                if (map && pedidoActivo.origenCoords) {
+                    map.setView([pedidoActivo.origenCoords.lat, pedidoActivo.origenCoords.lng], 14);
+                    // Mostrar popup en el origen
+                    if (recogidaMarker) {
+                        recogidaMarker.openPopup();
+                        setTimeout(() => recogidaMarker.closePopup(), 5000);
+                    }
                 }
             }, 500);
+        } else {
+            console.warn("⚠️ No se encontró el pedido asignado en misPedidosActivos");
+            // Forzar una recarga adicional después de 1 segundo
+            setTimeout(() => cargarPedidos(true), 1000);
         }
-
+        
+        // ========== 9. ACTUALIZAR BADGE DE ESTADO ==========
+        await actualizarBadgeEstado();
+        
     } catch(e) {
-        console.error('Error agarrando pedido:', e);
-        mostrarToast("❌ Error al agarrar el pedido: " + (e.message || "Intenta de nuevo"), true);
+        console.error('❌ Error agarrando pedido:', e);
+        mostrarToast(`❌ Error al agarrar el pedido: ${e.message || "Intenta de nuevo"}`, true);
+    } finally {
+        // Liberar el lock después de 2 segundos (para prevenir doble clic)
+        setTimeout(() => {
+            window.agarrandoPedido = false;
+        }, 2000);
     }
 }
 
@@ -1482,52 +1535,50 @@ async function actualizarEstadisticas() {
     }
 }
 
-// ==================== MODAL DE CONFIRMACIÓN MEJORADO ====================
-function mostrarModalConfirmacionDelivery(titulo, mensaje) {
-    return new Promise((resolve) => {
-        // Eliminar modal existente si hay
-        const modalExistente = document.getElementById("modalConfirmacionDelivery");
-        if (modalExistente) modalExistente.remove();
-        
-        const modal = document.createElement('div');
-        modal.id = "modalConfirmacionDelivery";
-        modal.className = "fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[100000] p-4";
-        modal.innerHTML = `
-            <div class="bg-gray-800 rounded-3xl max-w-sm w-full modal-uber text-center p-6">
-                <div class="w-16 h-16 bg-orange-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <i class="fas fa-motorcycle text-3xl text-orange-500"></i>
-                </div>
-                <h3 class="text-xl font-bold text-white mb-2">${sanitizarHTML(titulo)}</h3>
-                <p class="text-gray-400 text-sm mb-6">${sanitizarHTML(mensaje)}</p>
-                <div class="flex gap-3">
-                    <button id="btnCancelarConfirm" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-3 rounded-xl transition-all font-medium">
-                        Cancelar
-                    </button>
-                    <button id="btnAceptarConfirm" class="flex-1 bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-xl transition-all font-medium">
-                        <i class="fas fa-hand-paper mr-2"></i>Aceptar
-                    </button>
-                </div>
+// ==================== MODAL DE CONFIRMACIÓN ====================
+function mostrarModalConfirmacionDelivery(titulo, mensaje, onConfirm, onCancel) {
+    // Eliminar modal existente si hay
+    const modalExistente = document.getElementById("modalConfirmacionDelivery");
+    if (modalExistente) modalExistente.remove();
+    
+    const modal = document.createElement('div');
+    modal.id = "modalConfirmacionDelivery";
+    modal.className = "fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[100000] p-4";
+    modal.innerHTML = `
+        <div class="bg-gray-800 rounded-3xl max-w-sm w-full modal-uber text-center p-6">
+            <div class="w-16 h-16 bg-orange-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                <i class="fas fa-motorcycle text-3xl text-orange-500"></i>
             </div>
-        `;
-        
-        document.body.appendChild(modal);
-        
-        document.getElementById("btnAceptarConfirm").onclick = () => {
+            <h3 class="text-xl font-bold text-white mb-2">${sanitizarHTML(titulo)}</h3>
+            <p class="text-gray-400 text-sm mb-6">${sanitizarHTML(mensaje)}</p>
+            <div class="flex gap-3">
+                <button id="btnCancelarConfirm" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-3 rounded-xl transition-all font-medium">
+                    Cancelar
+                </button>
+                <button id="btnAceptarConfirm" class="flex-1 bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-xl transition-all font-medium">
+                    <i class="fas fa-hand-paper mr-2"></i>Aceptar
+                </button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    document.getElementById("btnAceptarConfirm").onclick = () => {
+        modal.remove();
+        if (onConfirm) onConfirm();
+    };
+    
+    document.getElementById("btnCancelarConfirm").onclick = () => {
+        modal.remove();
+        if (onCancel) onCancel();
+    };
+    
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
             modal.remove();
-            resolve(true);
-        };
-        
-        document.getElementById("btnCancelarConfirm").onclick = () => {
-            modal.remove();
-            resolve(false);
-        };
-        
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                modal.remove();
-                resolve(false);
-            }
-        });
+            if (onCancel) onCancel();
+        }
     });
 }
 
@@ -1762,5 +1813,6 @@ window.agarrarPedido = agarrarPedido;
 window.marcarPaqueteRecogido = marcarPaqueteRecogido;
 window.completarPedido = completarPedido;
 window.cerrarModalHistorialDelivery = cerrarModalHistorialDelivery;
-window.mostrarModalConfirmacionDelivery = mostrarModalConfirmacionDelivery;
+window.mostrarModalConfirmacionDelivery = mostrarModalConfirmacionDelivery; // ← Mantener exportación
 window.cerrarModalPerfilDelivery = cerrarModalPerfilDelivery;
+window.limpiarIntervalosDelivery = limpiarIntervalosDelivery;

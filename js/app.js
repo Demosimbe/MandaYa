@@ -2,11 +2,12 @@
 import './shared.js';
 import './security.js';
 import './config.js';
+
 // ==================== VARIABLES GLOBALES ====================
 let rolSeleccionado = 'cliente';
-window.togglePassword = togglePassword;
 
 // ==================== FUNCIONES DE UTILIDAD ====================
+
 // Fallback por si shared.js no carga
 if (typeof window.mostrarToast !== 'function') {
     window.mostrarToast = function(msg, err) {
@@ -32,6 +33,7 @@ if (typeof window.mostrarToast !== 'function') {
     };
 }
 
+// ✅ 1. PRIMERO DEFINIR LA FUNCIÓN
 function togglePassword() {
     const password = document.getElementById("password");
     const eyeIcon = document.getElementById("eyeIcon");
@@ -43,6 +45,22 @@ function togglePassword() {
     } else {
         password.type = "password";
         eyeIcon.classList.replace("fa-eye-slash", "fa-eye");
+    }
+}
+
+// ✅ 2. LUEGO EXPONERLA GLOBALMENTE (DESPUÉS de definirla)
+window.togglePassword = togglePassword;
+
+// ✅ 3. TAMBIÉN EXPONER mostrarToast SI ES NECESARIO
+window.mostrarToast = window.mostrarToast || mostrarToastFallback;
+
+// Función auxiliar por si necesitas mostrarToast en otros contextos
+function mostrarToastFallback(msg, err) {
+    if (typeof window.mostrarToast === 'function') {
+        window.mostrarToast(msg, err);
+    } else {
+        console.log(`${err ? '❌' : '✅'} ${msg}`);
+        alert(msg);
     }
 }
 
@@ -203,8 +221,8 @@ function enviarComprobanteWhatsApp() {
     const total = pedidoPendiente.tarifa;
     const pedidoId = pedidoPendiente.id;
     
-     // ✅ Usar config centralizada (simplificado)
-    const numeroWhatsApp = window.getWhatsAppNumber();
+    // ✅ Usar config centralizada (simplificado)
+    const numeroWhatsApp = window.getWhatsAppNumber ? window.getWhatsAppNumber() : '521234567890';
     
     let mensaje = `🛵 *MANDAYA-NUEVO PEDIDO* 🛵\n`;
     mensaje += `─────────────────────\n`;

@@ -632,6 +632,12 @@
             sidebar.style.transform = 'translateY(0)';
             mobileSidebarOpen = true;
         }
+        // ✅ Forzar redimensionamiento del mapa después de la animación
+        setTimeout(() => {
+            if (typeof map !== 'undefined' && map && typeof map.invalidateSize === 'function') {
+                map.invalidateSize();
+            }
+        }, 300);
     }
     
     function sincronizarInputsMobile() {
@@ -676,109 +682,158 @@
         }
     }
     
-   function solicitarEnvioMobile() {
-    // Prevenir múltiples clics
-    const btnMobile = document.querySelector('button[onclick="solicitarEnvioMobile()"]');
-    const btnDesktop = document.querySelector('button[onclick="solicitarEnvio()"]');
+    // ==================== ✅ NUEVO: SINCRONIZACIÓN BIDIRECCIONAL MOBILE → DESKTOP ====================
+    const origenMobileInput = document.getElementById('origenMobile');
+    const destinoMobileInput = document.getElementById('destinoMobile');
     
-    if (btnMobile && btnMobile.disabled) return;
+    if (origenMobileInput) {
+        origenMobileInput.addEventListener('input', (e) => {
+            const origenDesktop = document.getElementById("origen");
+            if (origenDesktop && document.activeElement !== origenDesktop) {
+                origenDesktop.value = e.target.value;
+                // Disparar búsqueda de direcciones en desktop
+                if (typeof buscarDirecciones === 'function') {
+                    buscarDirecciones(e.target.value, 'origen');
+                }
+            }
+        });
+        
+        // Sincronizar cuando pierde el foco (para actualizar coordenadas)
+        origenMobileInput.addEventListener('blur', () => {
+            const origenDesktop = document.getElementById("origen");
+            if (origenDesktop && origenDesktop.value !== origenMobileInput.value) {
+                origenDesktop.value = origenMobileInput.value;
+                if (typeof actualizarRutaYTarifa === 'function') {
+                    setTimeout(() => actualizarRutaYTarifa(), 100);
+                }
+            }
+        });
+    }
     
-    // Función auxiliar para reactivar botones (usada en errores)
-    const reenableButtons = () => {
-        if (btnMobile) btnMobile.disabled = false;
-        if (btnDesktop) btnDesktop.disabled = false;
-    };
+    if (destinoMobileInput) {
+        destinoMobileInput.addEventListener('input', (e) => {
+            const destinoDesktop = document.getElementById("destino");
+            if (destinoDesktop && document.activeElement !== destinoDesktop) {
+                destinoDesktop.value = e.target.value;
+                // Disparar búsqueda de direcciones en desktop
+                if (typeof buscarDirecciones === 'function') {
+                    buscarDirecciones(e.target.value, 'destino');
+                }
+            }
+        });
+        
+        // Sincronizar cuando pierde el foco (para actualizar coordenadas)
+        destinoMobileInput.addEventListener('blur', () => {
+            const destinoDesktop = document.getElementById("destino");
+            if (destinoDesktop && destinoDesktop.value !== destinoMobileInput.value) {
+                destinoDesktop.value = destinoMobileInput.value;
+                if (typeof actualizarRutaYTarifa === 'function') {
+                    setTimeout(() => actualizarRutaYTarifa(), 100);
+                }
+            }
+        });
+    }
+    // ==================== FIN DE LA NUEVA SINCRONIZACIÓN ====================
     
-    // Deshabilitar botones durante el proceso
-    if (btnMobile) btnMobile.disabled = true;
-    if (btnDesktop) btnDesktop.disabled = true;
-    
-    try {
-        const origenMobileVal = document.getElementById("origenMobile")?.value || '';
-        const destinoMobileVal = document.getElementById("destinoMobile")?.value || '';
-        const tipoMobileVal = document.getElementById("tipoEnvioMobile")?.value || '';
+    function solicitarEnvioMobile() {
+        // Prevenir múltiples clics
+        const btnMobile = document.querySelector('button[onclick="solicitarEnvioMobile()"]');
+        const btnDesktop = document.querySelector('button[onclick="solicitarEnvio()"]');
         
-        // Validación 1: origen y destino
-        if (!origenMobileVal || !destinoMobileVal) {
-            mostrarToast("❌ Selecciona origen y destino", true);
-            reenableButtons();
-            return;
-        }
+        if (btnMobile && btnMobile.disabled) return;
         
-        // Validación 2: tipo de envío
-        if (!tipoMobileVal || tipoMobileVal === '') {
-            mostrarToast("❌ Selecciona el tipo de envío (Comida, Paquete, etc.)", true);
-            document.querySelectorAll('.tipo-mobile-btn').forEach(btn => {
-                btn.style.animation = 'shake 0.5s ease';
-                setTimeout(() => { btn.style.animation = ''; }, 500);
-            });
-            reenableButtons();
-            return;
-        }
+        // Función auxiliar para reactivar botones (usada en errores)
+        const reenableButtons = () => {
+            if (btnMobile) btnMobile.disabled = false;
+            if (btnDesktop) btnDesktop.disabled = false;
+        };
         
-        // Sincronizar con los campos de escritorio
-        const origenDesktop = document.getElementById("origen");
-        const destinoDesktop = document.getElementById("destino");
-        const tipoDesktop = document.getElementById("tipoEnvio");
+        // Deshabilitar botones durante el proceso
+        if (btnMobile) btnMobile.disabled = true;
+        if (btnDesktop) btnDesktop.disabled = true;
         
-        if (origenDesktop) origenDesktop.value = origenMobileVal;
-        if (destinoDesktop) destinoDesktop.value = destinoMobileVal;
-        if (tipoDesktop) tipoDesktop.value = tipoMobileVal;
-        
-        // Llamar a la función principal
-        if (typeof solicitarEnvio === 'function') {
-            solicitarEnvio().catch(err => {
-                console.error("Error en solicitarEnvio:", err);
-                mostrarToast("❌ Error al solicitar el envío", true);
-                // Si falla, reactivar botones
+        try {
+            const origenMobileVal = document.getElementById("origenMobile")?.value || '';
+            const destinoMobileVal = document.getElementById("destinoMobile")?.value || '';
+            const tipoMobileVal = document.getElementById("tipoEnvioMobile")?.value || '';
+            
+            // Validación 1: origen y destino
+            if (!origenMobileVal || !destinoMobileVal) {
+                mostrarToast("❌ Selecciona origen y destino", true);
                 reenableButtons();
-            });
-            // No reactivamos aquí porque el modal de pago puede abrirse
-            // Los botones se reactivarán al cerrar el modal (callbacks en cliente.js)
-        } else {
-            mostrarToast("❌ Error interno: función no disponible", true);
+                return;
+            }
+            
+            // Validación 2: tipo de envío
+            if (!tipoMobileVal || tipoMobileVal === '') {
+                mostrarToast("❌ Selecciona el tipo de envío (Comida, Paquete, etc.)", true);
+                document.querySelectorAll('.tipo-mobile-btn').forEach(btn => {
+                    btn.style.animation = 'shake 0.5s ease';
+                    setTimeout(() => { btn.style.animation = ''; }, 500);
+                });
+                reenableButtons();
+                return;
+            }
+            
+            // Sincronizar con los campos de escritorio
+            const origenDesktop = document.getElementById("origen");
+            const destinoDesktop = document.getElementById("destino");
+            const tipoDesktop = document.getElementById("tipoEnvio");
+            
+            if (origenDesktop) origenDesktop.value = origenMobileVal;
+            if (destinoDesktop) destinoDesktop.value = destinoMobileVal;
+            if (tipoDesktop) tipoDesktop.value = tipoMobileVal;
+            
+            // Llamar a la función principal
+            if (typeof solicitarEnvio === 'function') {
+                solicitarEnvio().catch(err => {
+                    console.error("Error en solicitarEnvio:", err);
+                    mostrarToast("❌ Error al solicitar el envío", true);
+                    reenableButtons();
+                });
+            } else {
+                mostrarToast("❌ Error interno: función no disponible", true);
+                reenableButtons();
+            }
+        } catch (error) {
+            console.error("Error en solicitarEnvioMobile:", error);
+            mostrarToast("❌ Ocurrió un error inesperado", true);
             reenableButtons();
         }
-    } catch (error) {
-        console.error("Error en solicitarEnvioMobile:", error);
-        mostrarToast("❌ Ocurrió un error inesperado", true);
-        reenableButtons();
-    }
-}
- 
-  function seleccionarTipoMobile(valor, texto) {
-    const tipoDesktop = document.getElementById('tipoEnvio');
-    const tipoMobile = document.getElementById('tipoEnvioMobile');
-    const mensajeDiv = document.getElementById('tipoSeleccionadoMobile');
-    
-    if (tipoDesktop) tipoDesktop.value = valor;
-    if (tipoMobile) tipoMobile.value = valor;
-    
-    if (mensajeDiv) {
-        mensajeDiv.innerHTML = `✅ ${texto} seleccionado`;
-        mensajeDiv.classList.remove('hidden');
-        setTimeout(() => mensajeDiv.classList.add('hidden'), 2000);
     }
     
-    // Buscar el botón que corresponda según el valor
-    document.querySelectorAll('.tipo-mobile-btn').forEach(btn => {
-        // Quitar clase naranja de todos
-        btn.classList.remove('bg-orange-500', 'text-white');
-        btn.classList.add('bg-gray-100', 'text-gray-800');
-        // Como no tenemos data-valor, usamos una comparación por el texto exacto
-        if ((valor === 'mercancia' && btn.textContent.includes('Mercancía')) ||
-            (valor === 'paquete' && btn.textContent.includes('Paquete') && !btn.textContent.includes('Mercancía')) ||
-            (valor === 'comida' && btn.textContent.includes('Comida')) ||
-            (valor === 'farmacia' && btn.textContent.includes('Farmacia'))) {
-            btn.classList.remove('bg-gray-100', 'text-gray-800');
-            btn.classList.add('bg-orange-500', 'text-white');
+    function seleccionarTipoMobile(valor, texto) {
+        const tipoDesktop = document.getElementById('tipoEnvio');
+        const tipoMobile = document.getElementById('tipoEnvioMobile');
+        const mensajeDiv = document.getElementById('tipoSeleccionadoMobile');
+        
+        if (tipoDesktop) tipoDesktop.value = valor;
+        if (tipoMobile) tipoMobile.value = valor;
+        
+        if (mensajeDiv) {
+            mensajeDiv.innerHTML = `✅ ${texto} seleccionado`;
+            mensajeDiv.classList.remove('hidden');
+            setTimeout(() => mensajeDiv.classList.add('hidden'), 2000);
         }
-    });
-    
-    console.log(`✅ Tipo seleccionado: ${valor} - ${texto}`);
-}
+        
+        // Buscar el botón que corresponda según el valor
+        document.querySelectorAll('.tipo-mobile-btn').forEach(btn => {
+            btn.classList.remove('bg-orange-500', 'text-white');
+            btn.classList.add('bg-gray-100', 'text-gray-800');
+            if ((valor === 'mercancia' && btn.textContent.includes('Mercancía')) ||
+                (valor === 'paquete' && btn.textContent.includes('Paquete') && !btn.textContent.includes('Mercancía')) ||
+                (valor === 'comida' && btn.textContent.includes('Comida')) ||
+                (valor === 'farmacia' && btn.textContent.includes('Farmacia'))) {
+                btn.classList.remove('bg-gray-100', 'text-gray-800');
+                btn.classList.add('bg-orange-500', 'text-white');
+            }
+        });
+        
+        console.log(`✅ Tipo seleccionado: ${valor} - ${texto}`);
+    }
     
     let syncInterval = null;
+    
     function ejecutarSincronizacion() {
         sincronizarInputsMobile();
         const userInfo = document.getElementById("userInfo");
@@ -787,7 +842,7 @@
             userInfoMobile.innerHTML = userInfo.innerHTML;
         }
     }
-    
+   
     function iniciarSincronizacion() {
         if (syncInterval) return;
         syncInterval = setInterval(ejecutarSincronizacion, 500);
@@ -804,8 +859,6 @@
     
     iniciarSincronizacion();
     window.addEventListener('beforeunload', function() { detenerSincronizacion(); });
-    
-
-    </script>
+</script>
 </body>
 </html>

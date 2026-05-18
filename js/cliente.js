@@ -166,12 +166,19 @@ async function cargarPedidoActivoDesdeDB() {
     }
 }
 
-// ==================== CERRAR SESIÓN CON MODAL ORIGINAL ====================
-function cerrarSesion() { 
+// ==================== CERRAR SESIÓN CORREGIDO ====================
+async function cerrarSesion() { 
+    console.log("🔐 Mostrando modal de confirmación...");
+    
+    // Usar mostrarModalConfirmacion con callbacks en lugar de confirmarConModal
+    let confirmado = false;
     mostrarModalConfirmacion(
         "Cerrar Sesión",
         "¿Estás seguro de que deseas cerrar sesión?",
-        async () => {
+        () => {
+            console.log("✅ Usuario confirmó cierre de sesión, procediendo...");
+            confirmado = true;
+            
             // Detener sincronización mobile
             if (typeof detenerSincronizacion === 'function') {
                 detenerSincronizacion();
@@ -187,7 +194,11 @@ function cerrarSesion() {
             sessionStorage.clear();
             
             // Redirigir al login
+            console.log("👋 Redirigiendo a index.html");
             window.location.href = "index.html";
+        },
+        () => {
+            console.log("❌ Usuario canceló cierre de sesión");
         }
     );
 }
@@ -238,13 +249,15 @@ if (destinoInput) {
 function bloquearUIporPedidoActivo(bloquear) {
     const elementos = {
         inputs: ['origen', 'destino'],
+        inputsMobile: ['origenMobile', 'destinoMobile'],  // ✅ NUEVO: inputs móviles
         select: 'tipoEnvio',
+        selectMobile: 'tipoEnvioMobile',  // ✅ NUEVO: select móvil
         botones: ['btnOrigen', 'btnDestino'],
         botonSolicitar: 'solicitarEnvio'
     };
     
     if (bloquear) {
-        // Bloquear inputs de origen y destino
+        // Bloquear inputs de origen y destino (DESKTOP)
         elementos.inputs.forEach(id => {
             const input = document.getElementById(id);
             if (input) {
@@ -253,11 +266,27 @@ function bloquearUIporPedidoActivo(bloquear) {
             }
         });
         
-        // Bloquear select de tipo de envío
+        // ✅ Bloquear inputs móviles
+        elementos.inputsMobile.forEach(id => {
+            const input = document.getElementById(id);
+            if (input) {
+                input.disabled = true;
+                input.classList.add('bg-gray-100', 'cursor-not-allowed', 'opacity-70');
+            }
+        });
+        
+        // Bloquear select de tipo de envío (DESKTOP)
         const select = document.getElementById(elementos.select);
         if (select) {
             select.disabled = true;
             select.classList.add('bg-gray-100', 'cursor-not-allowed', 'opacity-70');
+        }
+        
+        // ✅ Bloquear select móvil
+        const selectMobile = document.getElementById(elementos.selectMobile);
+        if (selectMobile) {
+            selectMobile.disabled = true;
+            selectMobile.classList.add('bg-gray-100', 'cursor-not-allowed', 'opacity-70');
         }
         
         // Bloquear botones de modo (Origen/Destino)
@@ -282,7 +311,7 @@ function bloquearUIporPedidoActivo(bloquear) {
         // Deshabilitar click en el mapa para seleccionar ubicación
         if (map) { map._container.style.cursor = 'default'; }
         
-        // Mostrar mensaje en los inputs
+        // Mostrar mensaje en los inputs (DESKTOP)
         const origenInput = document.getElementById('origen');
         if (origenInput && !origenInput.placeholder.includes('(Bloqueado)')) {
             origenInput.placeholder = '📍 Origen (bloqueado - pedido en curso)';
@@ -291,28 +320,61 @@ function bloquearUIporPedidoActivo(bloquear) {
         if (destinoInput && !destinoInput.placeholder.includes('(Bloqueado)')) {
             destinoInput.placeholder = '🏁 Destino (bloqueado - pedido en curso)';
         }
+        
+        // ✅ Mostrar mensaje en inputs móviles
+        const origenMobileInput = document.getElementById('origenMobile');
+        if (origenMobileInput && !origenMobileInput.placeholder.includes('(Bloqueado)')) {
+            origenMobileInput.placeholder = '📍 Origen (bloqueado - pedido en curso)';
+        }
+        const destinoMobileInput = document.getElementById('destinoMobile');
+        if (destinoMobileInput && !destinoMobileInput.placeholder.includes('(Bloqueado)')) {
+            destinoMobileInput.placeholder = '🏁 Destino (bloqueado - pedido en curso)';
+        }
 
-          // ✅ SINCRONIZAR BLOQUEO CON MÓVIL
-        if (typeof sincronizarBloqueoMobile === 'function') { sincronizarBloqueoMobile(true); }
+        // ✅ SINCRONIZAR BLOQUEO CON MÓVIL
+        if (typeof sincronizarBloqueoMobile === 'function') { 
+            sincronizarBloqueoMobile(true); 
+        }
         console.log("🔒 UI bloqueada - Pedido activo en curso");
         
     } else {
-        // Reactivar todo
+        // Reactivar todo (DESKTOP)
         elementos.inputs.forEach(id => {
             const input = document.getElementById(id);
             if (input) {
                 input.disabled = false;
                 input.classList.remove('bg-gray-100', 'cursor-not-allowed', 'opacity-70');
-                input.placeholder = id === 'origen' ? 'Buscar dirección o arrastra el marcador' : 'Buscar dirección o arrastra el marcador';
+                // ✅ Restaurar mensaje original
+                input.placeholder = 'Buscar dirección o arrastra el marcador';
             }
         });
         
+        // ✅ Reactivar inputs móviles
+        elementos.inputsMobile.forEach(id => {
+            const input = document.getElementById(id);
+            if (input) {
+                input.disabled = false;
+                input.classList.remove('bg-gray-100', 'cursor-not-allowed', 'opacity-70');
+                // ✅ Restaurar mensaje original
+                input.placeholder = 'Buscar dirección...';
+            }
+        });
+        
+        // Reactivar select (DESKTOP)
         const select = document.getElementById(elementos.select);
         if (select) {
             select.disabled = false;
             select.classList.remove('bg-gray-100', 'cursor-not-allowed', 'opacity-70');
         }
         
+        // ✅ Reactivar select móvil
+        const selectMobile = document.getElementById(elementos.selectMobile);
+        if (selectMobile) {
+            selectMobile.disabled = false;
+            selectMobile.classList.remove('bg-gray-100', 'cursor-not-allowed', 'opacity-70');
+        }
+        
+        // Reactivar botones de modo
         elementos.botones.forEach(id => {
             const btn = document.getElementById(id);
             if (btn) {
@@ -321,6 +383,7 @@ function bloquearUIporPedidoActivo(bloquear) {
             }
         });
         
+        // Reactivar marcadores arrastrables
         if (originMarker && originMarker.dragging) {
             originMarker.dragging.enable();
             originMarker.setOpacity(1);
@@ -330,8 +393,10 @@ function bloquearUIporPedidoActivo(bloquear) {
             destMarker.setOpacity(1);
         }
         
+        // Reactivar click en el mapa
         if (map) { map._container.style.cursor = 'crosshair'; }
         
+        // Reactivar botón solicitar
         const btnSolicitar = document.querySelector('button[onclick="solicitarEnvio()"], button[onclick="solicitarEnvioMobile()"]');
         if (btnSolicitar) {
             btnSolicitar.disabled = false;
@@ -339,7 +404,9 @@ function bloquearUIporPedidoActivo(bloquear) {
         }
 
         // ✅ SINCRONIZAR REACTIVACIÓN CON MÓVIL
-        if (typeof sincronizarBloqueoMobile === 'function') { sincronizarBloqueoMobile(false); }
+        if (typeof sincronizarBloqueoMobile === 'function') { 
+            sincronizarBloqueoMobile(false); 
+        }
         console.log("🔓 UI reactivada - Sin pedido activo");
     }
 }
@@ -386,48 +453,66 @@ function initMap() {
         return limitarCoordenadasACarmen(lat, lng);
     }
 
-    // ==================== ICONOS ====================
-    const originIcon = L.divIcon({
-        html: `
-            <div style="background:#FF6200; width:28px; height:28px; border-radius:50%; border:3px solid white; box-shadow:0 2px 5px rgba(0,0,0,0.3); display:flex; align-items:center; justify-content:center;">
-                <i class="fas fa-circle" style="color:white; font-size:12px;"></i>
-            </div>
-        `,
-        iconSize: [28, 28],
-        className: 'custom-marker'
-    });
+   // ==================== ICONOS ====================
+   const originIcon = L.divIcon({
+       html: `
+           <div style="background:#FF6200; width:28px; height:28px; border-radius:50%; border:3px solid white; box-shadow:0 2px 5px rgba(0,0,0,0.3); display:flex; align-items:center; justify-content:center;">
+               <i class="fas fa-circle" style="color:white; font-size:12px;"></i>
+           </div>
+       `,
+       iconSize: [28, 28],
+       className: 'custom-marker'
+   });
+   
+   const destIcon = L.divIcon({
+       html: `
+           <div style="background:#3B82F6; width:28px; height:28px; border-radius:50%; border:3px solid white; box-shadow:0 2px 5px rgba(0,0,0,0.3); display:flex; align-items:center; justify-content:center;">
+               <i class="fas fa-square" style="color:white; font-size:12px;"></i>
+           </div>
+       `,
+       iconSize: [28, 28],
+       className: 'custom-marker'
+   });
+   
+// ==================== MARCADORES ====================
+const origenInicial = getOriginCoords();
+originMarker = L.marker([origenInicial.lat, origenInicial.lng], {
+    icon: originIcon,
+    draggable: true,
+    rotationAngle: 0,
+    rotationOrigin: 'center center'
+}).addTo(map);
 
-    const destIcon = L.divIcon({
-        html: `
-            <div style="background:#3B82F6; width:28px; height:28px; border-radius:50%; border:3px solid white; box-shadow:0 2px 5px rgba(0,0,0,0.3); display:flex; align-items:center; justify-content:center;">
-                <i class="fas fa-square" style="color:white; font-size:12px;"></i>
-            </div>
-        `,
-        iconSize: [28, 28],
-        className: 'custom-marker'
-    });
+const destinoInicial = getDestCoords();
+destMarker = L.marker([destinoInicial.lat, destinoInicial.lng], {
+    icon: destIcon,
+    draggable: true,
+    rotationAngle: 0,
+    rotationOrigin: 'center center'
+}).addTo(map);
 
-    // ==================== MARCADORES ====================
-    // ✅ Usar getOriginCoords() en lugar de variables directas
-    const origenInicial = getOriginCoords();
-    originMarker = L.marker([origenInicial.lat, origenInicial.lng], {
-        icon: originIcon,
-        draggable: true,
-        rotationAngle: 0,
-        rotationOrigin: 'center center'
-    }).addTo(map);
+// ✅ POPUP AL PASAR EL CURSOR (HOVER) - SIN HACER CLICK
+originMarker.bindPopup('📍 <b>Origen</b><br>Arrástrame para cambiar');
+destMarker.bindPopup('🏁 <b>Destino</b><br>Arrástrame para cambiar');
 
-    const destinoInicial = getDestCoords();
-    destMarker = L.marker([destinoInicial.lat, destinoInicial.lng], {
-        icon: destIcon,
-        draggable: true,
-        rotationAngle: 0,
-        rotationOrigin: 'center center'
-    }).addTo(map);
+// Abrir popup al pasar el mouse
+originMarker.on('mouseover', function() {
+    this.openPopup();
+});
 
-    originMarker.bindPopup('📍 <b>Origen</b><br>Arrástrame para cambiar');
-    destMarker.bindPopup('🏁 <b>Destino</b><br>Arrástrame para cambiar');
+destMarker.on('mouseover', function() {
+    this.openPopup();
+});
 
+// Cerrar popup al salir el mouse
+originMarker.on('mouseout', function() {
+    this.closePopup();
+});
+
+destMarker.on('mouseout', function() {
+    this.closePopup();
+});
+       
     // ==================== DRAG EVENTS ====================
     originMarker.on('drag', function(e) {
         const latlng = e.target.getLatLng();
@@ -980,17 +1065,13 @@ async function actualizarRutaYTarifa() {
     const orig = getOriginCoords();
     const dest = getDestCoords();
 
-    if (!orig || !dest) { console.log("⚠️ No hay coordenadas de origen o destino"); return; }
+    if (!orig || !dest) {
+        console.log("⚠️ No hay coordenadas de origen o destino");
+        return;
+    }
 
-    const origenSeguro = limitarCoordenadasACarmen(
-        orig.lat,
-        orig.lng
-    );
-
-    const destinoSeguro = limitarCoordenadasACarmen(
-        dest.lat,
-        dest.lng
-    );
+    const origenSeguro = limitarCoordenadasACarmen(orig.lat, orig.lng);
+    const destinoSeguro = limitarCoordenadasACarmen(dest.lat, dest.lng);
 
     // Guardar corregidas
     setOriginCoords(origenSeguro);
@@ -998,135 +1079,65 @@ async function actualizarRutaYTarifa() {
 
     // Corregir marcadores visualmente
     if (originMarker) {
-        originMarker.setLatLng([
-            origenSeguro.lat,
-            origenSeguro.lng
-        ]);
+        originMarker.setLatLng([origenSeguro.lat, origenSeguro.lng]);
     }
-
     if (destMarker) {
-        destMarker.setLatLng([
-            destinoSeguro.lat,
-            destinoSeguro.lng
-        ]);
+        destMarker.setLatLng([destinoSeguro.lat, destinoSeguro.lng]);
     }
 
+    // Mostrar loading
     const tarifaContainer = document.getElementById("tarifaContainer");
-    if (tarifaContainer) { tarifaContainer.classList.remove("hidden"); }
+    const tarifaContainerMobile = document.getElementById("tarifaContainerMobile");
+    if (tarifaContainer) tarifaContainer.classList.remove("hidden");
+    if (tarifaContainerMobile) tarifaContainerMobile.classList.remove("hidden");
+    
     const tarifaValue = document.getElementById("tarifaValue");
-    if (tarifaValue) { tarifaValue.innerHTML = '<div class="loading-spinner"></div> Calculando...'; }
+    const tarifaValueMobile = document.getElementById("tarifaValueMobile");
+    if (tarifaValue) tarifaValue.innerHTML = '<div class="loading-spinner"></div> Calculando...';
+    if (tarifaValueMobile) tarifaValueMobile.innerHTML = '<div class="loading-spinner"></div> Calculando...';
+
+    // Limpiar rutas anteriores
     if (routeLine) {
-
         try {
-
             if (typeof routeLine.remove === 'function') {
                 routeLine.remove();
             } else if (routeLine._map) {
                 map.removeLayer(routeLine);
             }
-
         } catch(e) {
-
-            console.warn(
-                "Error limpiando routeLine:",
-                e
-            );
-
+            console.warn("Error limpiando routeLine:", e);
         }
-
         routeLine = null;
     }
 
-    if (clienteRouteControl) { try { if (clienteRouteControl._map) { map.removeControl(clienteRouteControl); }
+    if (clienteRouteControl) {
+        try {
+            if (clienteRouteControl._map) {
+                map.removeControl(clienteRouteControl);
+            }
         } catch(e) {}
         clienteRouteControl = null;
     }
 
-    const extrasGuardados =
-        currentRouteData?.extras || {
-            lluvia: false,
-            noche: false,
-            espera: false
-        };
+    const extrasGuardados = currentRouteData?.extras || {
+        lluvia: false,
+        noche: false,
+        espera: false
+    };
 
-    const tipoEnvio = document.getElementById("tipoEnvio")?.value || 'paquete';
-    const routeResult = await drawRealRoute(
-        map,
-        origenSeguro,
-        destinoSeguro,
-        '#FF6200',
-        5
-    );
+    const tipoEnvio = document.getElementById("tipoEnvio")?.value || 
+                      document.getElementById("tipoEnvioMobile")?.value || 
+                      'paquete';
+
+    const routeResult = await drawRealRoute(map, origenSeguro, destinoSeguro, '#FF6200', 5);
+
+    let distance, duration, rate;
 
     if (routeResult && routeResult.routeData) {
         routeLine = routeResult.line;
-
-        const distance = routeResult.routeData.distance;
-        const duration = routeResult.routeData.duration;
-        const rate = calculateShippingRate( distance, tipoEnvio );
-
-        // Guardar datos actuales
-        currentRouteData = {
-            distance: distance,
-            duration: duration,
-            extras: extrasGuardados
-        };
-
-        let tarifaMostrar = rate.total;
-        if (currentRouteData.extras.lluvia) { tarifaMostrar += 10; }
-        if (currentRouteData.extras.noche) { tarifaMostrar += 10; }
-        if (currentRouteData.extras.espera) { tarifaMostrar += 10; }
-
-        // =========================
-        // ACTUALIZAR UI DESKTOP
-        // =========================
-        const tarifaElement =
-            document.getElementById("tarifaValue");
-
-        if (tarifaElement) {
-            tarifaElement.innerHTML =
-                `$${tarifaMostrar} MXN`;
-        }
-
-        // =========================
-        // ACTUALIZAR UI MOBILE
-        // =========================
-        const tarifaMobile =
-            document.getElementById("tarifaValueMobile");
-
-        if (tarifaMobile) {
-            tarifaMobile.innerHTML =
-                `$${tarifaMostrar} MXN`;
-        }
-
-        // =========================
-        // MENSAJE
-        // =========================
-        mostrarToast(
-            `📏 Distancia: ${distance.toFixed(2)} km • ⏱️ ${formatDuration(duration)}`
-        );
-
-    }
-
-    // =========================
-    // FALLBACK SI FALLA OSRM
-    // =========================
-    else {
-
-        const distance =
-            calcularDistanciaEntrePuntos(
-                origenSeguro,
-                destinoSeguro
-            );
-
-        const duration =
-            distance * 2;
-
-        const rate =
-            calculateShippingRate(
-                distance,
-                tipoEnvio
-            );
+        distance = routeResult.routeData.distance;
+        duration = routeResult.routeData.duration;
+        rate = calculateShippingRate(distance, tipoEnvio);
 
         currentRouteData = {
             distance: distance,
@@ -1134,76 +1145,53 @@ async function actualizarRutaYTarifa() {
             extras: extrasGuardados
         };
 
-        // =========================
-        // TARIFA FINAL
-        // =========================
-        let tarifaMostrar = rate.total;
+        mostrarToast(`📏 Distancia: ${distance.toFixed(2)} km • ⏱️ ${formatDuration(duration)}`);
 
-        if (currentRouteData.extras.lluvia) {
-            tarifaMostrar += 10;
-        }
+    } else {
+        distance = calcularDistanciaEntrePuntos(origenSeguro, destinoSeguro);
+        duration = distance * 2;
+        rate = calculateShippingRate(distance, tipoEnvio);
 
-        if (currentRouteData.extras.noche) {
-            tarifaMostrar += 10;
-        }
+        currentRouteData = {
+            distance: distance,
+            duration: duration,
+            extras: extrasGuardados
+        };
 
-        if (currentRouteData.extras.espera) {
-            tarifaMostrar += 10;
-        }
-
-        // =========================
-        // UI DESKTOP
-        // =========================
-        const tarifaElement =
-            document.getElementById("tarifaValue");
-
-        if (tarifaElement) {
-            tarifaElement.innerHTML =
-                `$${tarifaMostrar} MXN (estimado)`;
-        }
-
-        // =========================
-        // UI MOBILE
-        // =========================
-        const tarifaMobile =
-            document.getElementById("tarifaValueMobile");
-
-        if (tarifaMobile) {
-            tarifaMobile.innerHTML =
-                `$${tarifaMostrar} MXN (estimado)`;
-        }
-
-        // =========================
-        // LÍNEA RECTA FALLBACK
-        // =========================
         if (map) {
-
             routeLine = L.polyline([
-                [
-                    origenSeguro.lat,
-                    origenSeguro.lng
-                ],
-                [
-                    destinoSeguro.lat,
-                    destinoSeguro.lng
-                ]
+                [origenSeguro.lat, origenSeguro.lng],
+                [destinoSeguro.lat, destinoSeguro.lng]
             ], {
                 color: '#FF6200',
                 weight: 5,
                 opacity: 0.6,
                 dashArray: '5, 10'
             }).addTo(map);
-
         }
 
-        // =========================
-        // MENSAJE
-        // =========================
-        mostrarToast(
-            `📏 Distancia: ${distance.toFixed(2)} km (estimado)`
-        );
-
+        mostrarToast(`📏 Distancia: ${distance.toFixed(2)} km (estimado)`);
     }
+
+    let tarifaMostrar = rate.total;
+    if (currentRouteData.extras.lluvia) tarifaMostrar += 10;
+    if (currentRouteData.extras.noche) tarifaMostrar += 10;
+    if (currentRouteData.extras.espera) tarifaMostrar += 10;
+
+    if (tarifaValue) {
+        tarifaValue.innerHTML = `$${tarifaMostrar} MXN${routeResult ? '' : ' (estimado)'}`;
+    }
+    if (tarifaValueMobile) {
+        tarifaValueMobile.innerHTML = `$${tarifaMostrar} MXN${routeResult ? '' : ' (estimado)'}`;
+    }
+
+    if (pedidoPendiente) {
+        pedidoPendiente.tarifa = tarifaMostrar;
+        pedidoPendiente.distancia_real = distance.toFixed(2);
+        pedidoPendiente.extras = { ...currentRouteData.extras };
+    }
+
+    console.log(`✅ Ruta actualizada: ${distance.toFixed(2)}km, tarifa: $${tarifaMostrar}`);
 }
 
 // ==================== FUNCIONES DE SINCRONIZACIÓN DE COORDENADAS ====================
@@ -1538,34 +1526,36 @@ async function cancelarPedido() {
         return;
     }
     
-    mostrarModalConfirmacion(
-        "Cancelar pedido",
+    const confirmado = await confirmarConModal(
         `¿Estás seguro de cancelar el pedido #${sanitizarHTML(pedidoActual.id)}? Esta acción no se puede deshacer.`,
-        async () => {
-            const supabase = supabaseClient;
-            if (!supabase) return;
-            
-            try {
-                const { error } = await supabase
-                    .from('pedidos')
-                    .delete()
-                    .eq('id', pedidoActual.id);
-                
-                if (error) throw error;
-                
-                mostrarToast(`✅ Pedido #${sanitizarHTML(pedidoActual.id)} cancelado correctamente`);
-                
-                // ✅ Reactivar UI antes de limpiar
-                bloquearUIporPedidoActivo(false);
-                
-                limpiarYResetearUI();
-                
-            } catch(e) {
-                console.error('Error cancelando pedido:', e);
-                mostrarToast("❌ Error al cancelar el pedido", true);
-            }
-        }
+        null,
+        null,
+        "Cancelar pedido"
     );
+    
+    if (!confirmado) return;
+    
+    const supabase = supabaseClient;
+    if (!supabase) return;
+    
+    try {
+        const { error } = await supabase
+            .from('pedidos')
+            .delete()
+            .eq('id', pedidoActual.id);
+        
+        if (error) throw error;
+        
+        mostrarToast(`✅ Pedido #${sanitizarHTML(pedidoActual.id)} cancelado correctamente`);
+        
+        // ✅ Reactivar UI antes de limpiar
+        bloquearUIporPedidoActivo(false);
+        limpiarYResetearUI();
+        
+    } catch(e) {
+        console.error('Error cancelando pedido:', e);
+        mostrarToast("❌ Error al cancelar el pedido", true);
+    }
 }
 
 function limpiarYResetearUI() {
@@ -1817,13 +1807,18 @@ async function confirmarPagoTransferenciaFinal() {
         mostrarToast("✅ Pedido registrado correctamente. El delivery lo recogerá pronto.");
         
         // Usamos setTimeout para no interferir con el cierre del modal
-        setTimeout(() => {
-        confirmarConModal(
+        setTimeout(async () => {
+            const enviarComprobante = await confirmarConModal(
                 "¿Deseas enviar el comprobante de pago por WhatsApp?",
-            () => enviarComprobanteWhatsApp(),
-            () => {} // no hacer nada si cancela
-     );
-    }, 500);
+                null,
+                null,
+                "Comprobante de pago"
+            );
+            
+            if (enviarComprobante) {
+                enviarComprobanteWhatsApp();
+            }
+        }, 500);
         
     } catch (error) {
         console.error("Error al guardar pedido:", error);
@@ -1831,30 +1826,6 @@ async function confirmarPagoTransferenciaFinal() {
     } finally {
         window.guardandoPedido = false;
     }
-}
-
-function confirmarConModal(mensaje, onConfirm, onCancel) {
-    let modalExistente = document.getElementById("modalConfirmacionSimple");
-    if (modalExistente) modalExistente.remove();
-    
-    const modal = document.createElement('div');
-    modal.id = "modalConfirmacionSimple";
-    modal.className = "fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[10002] p-4";
-    modal.innerHTML = `
-        <div class="bg-gray-800 rounded-3xl max-w-sm w-full modal-uber text-center p-6">
-            <div class="w-16 h-16 bg-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                <i class="fas fa-question-circle text-3xl text-blue-500"></i>
-            </div>
-            <p class="text-gray-200 text-sm mb-6">${mensaje}</p>
-            <div class="flex gap-3">
-                <button id="btnCancelarSimple" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-2 rounded-xl transition-all">Cancelar</button>
-                <button id="btnAceptarSimple" class="flex-1 bg-orange-500 hover:bg-orange-600 text-white py-2 rounded-xl transition-all">Aceptar</button>
-            </div>
-        </div>
-    `;
-    document.body.appendChild(modal);
-    document.getElementById("btnAceptarSimple").onclick = () => { modal.remove(); if (onConfirm) onConfirm(); };
-    document.getElementById("btnCancelarSimple").onclick = () => { modal.remove(); if (onCancel) onCancel(); };
 }
 
 function cerrarModalPago() {
@@ -2385,67 +2356,43 @@ async function eliminarEnvio(pedidoId) {
         mensaje = "¿Estás seguro de que quieres eliminar este envío? Esta acción no se puede deshacer.";
     }
     
-    mostrarModalConfirmacion(
-        "Eliminar envío",
+    const confirmado = await confirmarConModal(
         mensaje,
-        async () => {
-            try {
-                const { error } = await supabase
-                    .from('pedidos')
-                    .delete()
-                    .eq('id', pedidoId);
-                
-                if (error) throw error;
-                
-                mostrarToast(`🗑️ Envío #${pedidoId} eliminado correctamente`);
-                
-                if (document.getElementById("modalHistorial")) {
-                    mostrarHistorialCompleto();
-                }
-            } catch(e) {
-                console.error('Error eliminando:', e);
-                mostrarToast("Error al eliminar el envío", true);
-            }
-        }
+        null,
+        null,
+        "Eliminar envío"
     );
+    
+    if (!confirmado) return;
+    
+    try {
+        const { error } = await supabase
+            .from('pedidos')
+            .delete()
+            .eq('id', pedidoId);
+        
+        if (error) throw error;
+        
+        mostrarToast(`🗑️ Envío #${pedidoId} eliminado correctamente`);
+        
+        if (document.getElementById("modalHistorial")) {
+            mostrarHistorialCompleto();
+        }
+    } catch(e) {
+        console.error('Error eliminando:', e);
+        mostrarToast("Error al eliminar el envío", true);
+    }
 }
 
-function mostrarModalConfirmacion(titulo, mensaje, onConfirm) {
-    let modalExistente = document.getElementById("modalConfirmacion");
-    if (modalExistente) modalExistente.remove();
-    
-    const modal = document.createElement('div');
-    modal.id = "modalConfirmacion";
-    modal.className = "fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[10000] p-4";
-    modal.innerHTML = `
-        <div class="bg-gray-800 rounded-3xl max-w-sm w-full modal-uber text-center p-6">
-            <div class="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                <i class="fas fa-exclamation-triangle text-3xl text-red-500"></i>
-            </div>
-            <h3 class="text-xl font-bold text-white mb-2">${sanitizarHTML(titulo)}</h3>
-            <p class="text-gray-400 text-sm mb-6">${sanitizarHTML(mensaje)}</p>
-            <div class="flex gap-3">
-                <button onclick="cerrarModalConfirmacion()" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-2 rounded-xl transition-all">
-                    Cancelar
-                </button>
-                <button id="confirmarBtn" class="flex-1 bg-red-500 hover:bg-red-600 text-white py-2 rounded-xl transition-all">
-                    Eliminar
-                </button>
-            </div>
-        </div>
-    `;
-    
-    document.body.appendChild(modal);
-    
-    document.getElementById("confirmarBtn").onclick = () => {
-        cerrarModalConfirmacion();
-        if (onConfirm) onConfirm();
-    };
+// Modal de confirmación unificado (usando shared.js)
+async function mostrarModalConfirmacion(titulo, mensaje, onConfirm) {
+    // Usar la función unificada de shared.js
+    const confirmado = await confirmarConModal(mensaje, onConfirm, null, titulo);
+    return confirmado;
 }
 
 function cerrarModalConfirmacion() {
-    const modal = document.getElementById("modalConfirmacion");
-    if (modal) modal.remove();
+    cerrarTodosLosModales();
 }
 
 function verHistorial() { mostrarHistorialCompleto();}
@@ -3264,16 +3211,6 @@ function limpiarTodosLosIntervalos() {
     console.log("✅ Todos los recursos liberados");
 }
 
-// Guardar referencia a la función original de cerrar sesión si existe
-const originalCerrarSesionCliente = window.cerrarSesion;
-// Sobrescribir cerrarSesion para incluir limpieza
-window.cerrarSesion = function() {
-    limpiarTodosLosIntervalos();
-    if (originalCerrarSesionCliente) {
-        originalCerrarSesionCliente();
-    }
-};
-
  //Evento cuando la página se está cerrando (pestaña cerrada, navegador cerrado, refresh)
 window.addEventListener('beforeunload', function() {
  console.log("🚪 Pestaña cerrando - Limpiando recursos...");
@@ -3329,8 +3266,11 @@ window.toggleExtraEnResumen = toggleExtraEnResumen;
 window.confirmarExtrasDesdeResumen = confirmarExtrasDesdeResumen;
 window.cerrarModalResumen = cerrarModalResumen;
 window.cerrarSesion = cerrarSesion;
-// ✅ AGREGAR ESTAS:
 window.cerrarModalHistorial = cerrarModalHistorial;
 window.eliminarEnvio = eliminarEnvio;
+// ✅ MODALES ACTUALIZADOS (ahora son wrappers del sistema unificado)
 window.mostrarModalConfirmacion = mostrarModalConfirmacion;
 window.cerrarModalConfirmacion = cerrarModalConfirmacion;
+window.limpiarTodosLosIntervalos = limpiarTodosLosIntervalos;
+
+console.log("✅ Cliente inicializado - Sistema de modales unificado activo");

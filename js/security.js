@@ -162,64 +162,87 @@ async verificarSesionUnica() {
     const supabase = window.supabaseClient;
     if (!supabase) {
         console.warn("⚠️ Supabase no disponible, asumiendo sesión válida");
-        return true; // Si no hay Supabase, asumir válido
+        return true;
     }
     
     try {
-        // ✅ Obtener usuario actual desde Supabase
         const { data: usuario, error } = await supabase
             .from('usuarios')
             .select('session_token, device_id, online')
             .eq('id', usuarioLocal.id)
             .single();
         
-        // ✅ Manejar error de usuario no encontrado (código PGRST116)
         if (error) {
             if (error.code === 'PGRST116') {
                 console.warn("⚠️ Usuario no encontrado en BD, cerrando sesión");
                 await this.limpiarTodo();
+                this.limpiarIntervalosGlobales();  // ✅ NUEVO: Limpiar intervalos
                 this.cerrarSesionForzado();
                 return false;
             }
-            // Otros errores (red, timeout, etc.) - asumir válido para no bloquear
             console.warn("⚠️ Error de red al verificar sesión:", error.message);
             return true;
         }
         
-        // ✅ Usuario no existe en respuesta
         if (!usuario) {
             console.warn("⚠️ Usuario sin datos en BD, cerrando sesión");
             await this.limpiarTodo();
+            this.limpiarIntervalosGlobales();  // ✅ NUEVO: Limpiar intervalos
             this.cerrarSesionForzado();
             return false;
         }
         
-        // ✅ Si el usuario está offline, permitir acceso (puede ser cierre limpio)
         if (!usuario.online) {
             console.log("📴 Usuario está offline en BD, sesión válida");
             return true;
         }
         
-        // ✅ Verificar que el token de sesión coincida Y el device_id
         const sessionValida = usuario.session_token === usuarioLocal.session_token &&
                               usuario.device_id === this.DEVICE_ID;
         
         if (!sessionValida) {
             console.warn("⚠️ Conflicto de sesión detectado - otro dispositivo activo");
             await this.limpiarTodo();
+            this.limpiarIntervalosGlobales();  // ✅ NUEVO: Limpiar intervalos
             this.cerrarSesionForzado();
             return false;
         }
         
-        // ✅ Sesión válida
         console.log("✅ Sesión verificada correctamente");
         return true;
         
     } catch(e) {
-        // ✅ Error inesperado (red caída, excepción, etc.)
         console.error("❌ Error inesperado verificando sesión:", e.message);
-        // No cerramos sesión por error de red, asumimos válido para no frustrar usuario
         return true;
+    }
+}
+
+// ✅ NUEVA FUNCIÓN: Limpiar intervalos globalmente
+limpiarIntervalosGlobales() {
+    console.log("🧹 Limpiando intervalos globales por conflicto de sesión...");
+    
+    // Limpiar intervalos de cliente.js
+    if (typeof window.limpiarTodosLosIntervalos === 'function') {
+        window.limpiarTodosLosIntervalos();
+    }
+    
+    // Limpiar intervalos de delivery.js
+    if (typeof window.limpiarIntervalosDelivery === 'function') {
+        window.limpiarIntervalosDelivery();
+    }
+    
+    // También intentar limpiar directamente si las funciones no están expuestas
+    if (typeof seguimientoInterval !== 'undefined' && seguimientoInterval) {
+        clearInterval(seguimientoInterval);
+    }
+    if (typeof ubicacionInterval !== 'undefined' && ubicacionInterval) {
+        clearInterval(ubicacionInterval);
+    }
+    if (typeof deliverysInterval !== 'undefined' && deliverysInterval) {
+        clearInterval(deliverysInterval);
+    }
+    if (typeof cargaPedidosInterval !== 'undefined' && cargaPedidosInterval) {
+        clearInterval(cargaPedidosInterval);
     }
 }
     
