@@ -154,7 +154,6 @@ function initMap() {
 }
 
 // ==================== CIERRE DE SESIÓN CORREGIDO ====================
-// ==================== CIERRE DE SESIÓN CORREGIDO ====================
 function cerrarSesion() {
     console.log("🔐 Mostrando modal de confirmación para delivery...");
     
@@ -989,8 +988,10 @@ async function agarrarPedido(pedidoId) {
         // ========== 3. CONFIRMAR CON MODAL ==========
         const confirmado = await mostrarModalConfirmacionDelivery(
             "Confirmar pedido",
-            `¿Seguro que quieres AGARRAR el pedido #${sanitizarHTML(pedidoId)}?\n\n📦 ${sanitizarHTML(pedidoActual.cliente_nombre)}\n📍 ${sanitizarHTML(pedidoActual.origen)}\n💰 $${pedidoActual.tarifa}`,
+            `¿Seguro que quieres AGARRAR el pedido #${sanitizarHTML(pedidoId)}?\n\n📦 ${sanitizarHTML(pedidoActual.cliente_nombre)}\n📍 ${sanitizarHTML(pedidoActual.origen)}\n💰 $${pedidoActual.tarifa}`
         );
+        
+        console.log("Confirmado:", confirmado); // ✅ Debería mostrar true o false
         
         if (!confirmado) {
             mostrarToast("❌ Acción cancelada");
@@ -1537,48 +1538,53 @@ async function actualizarEstadisticas() {
 
 // ==================== MODAL DE CONFIRMACIÓN ====================
 function mostrarModalConfirmacionDelivery(titulo, mensaje, onConfirm, onCancel) {
-    // Eliminar modal existente si hay
-    const modalExistente = document.getElementById("modalConfirmacionDelivery");
-    if (modalExistente) modalExistente.remove();
-    
-    const modal = document.createElement('div');
-    modal.id = "modalConfirmacionDelivery";
-    modal.className = "fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[100000] p-4";
-    modal.innerHTML = `
-        <div class="bg-gray-800 rounded-3xl max-w-sm w-full modal-uber text-center p-6">
-            <div class="w-16 h-16 bg-orange-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                <i class="fas fa-motorcycle text-3xl text-orange-500"></i>
+    return new Promise((resolve) => {
+        // Eliminar modal existente si hay
+        const modalExistente = document.getElementById("modalConfirmacionDelivery");
+        if (modalExistente) modalExistente.remove();
+        
+        const modal = document.createElement('div');
+        modal.id = "modalConfirmacionDelivery";
+        modal.className = "fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[100000] p-4";
+        modal.innerHTML = `
+            <div class="bg-gray-800 rounded-3xl max-w-sm w-full modal-uber text-center p-6">
+                <div class="w-16 h-16 bg-orange-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <i class="fas fa-motorcycle text-3xl text-orange-500"></i>
+                </div>
+                <h3 class="text-xl font-bold text-white mb-2">${sanitizarHTML(titulo)}</h3>
+                <p class="text-gray-400 text-sm mb-6">${sanitizarHTML(mensaje)}</p>
+                <div class="flex gap-3">
+                    <button id="btnCancelarConfirm" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-3 rounded-xl transition-all font-medium">
+                        Cancelar
+                    </button>
+                    <button id="btnAceptarConfirm" class="flex-1 bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-xl transition-all font-medium">
+                        <i class="fas fa-hand-paper mr-2"></i>Aceptar
+                    </button>
+                </div>
             </div>
-            <h3 class="text-xl font-bold text-white mb-2">${sanitizarHTML(titulo)}</h3>
-            <p class="text-gray-400 text-sm mb-6">${sanitizarHTML(mensaje)}</p>
-            <div class="flex gap-3">
-                <button id="btnCancelarConfirm" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-3 rounded-xl transition-all font-medium">
-                    Cancelar
-                </button>
-                <button id="btnAceptarConfirm" class="flex-1 bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-xl transition-all font-medium">
-                    <i class="fas fa-hand-paper mr-2"></i>Aceptar
-                </button>
-            </div>
-        </div>
-    `;
-    
-    document.body.appendChild(modal);
-    
-    document.getElementById("btnAceptarConfirm").onclick = () => {
-        modal.remove();
-        if (onConfirm) onConfirm();
-    };
-    
-    document.getElementById("btnCancelarConfirm").onclick = () => {
-        modal.remove();
-        if (onCancel) onCancel();
-    };
-    
-    modal.addEventListener('click', (e) => {
-        if (e.target === modal) {
+        `;
+        
+        document.body.appendChild(modal);
+        
+        document.getElementById("btnAceptarConfirm").onclick = () => {
+            modal.remove();
+            if (onConfirm) onConfirm();
+            resolve(true);  // ✅ IMPORTANTE: resolver la Promise
+        };
+        
+        document.getElementById("btnCancelarConfirm").onclick = () => {
             modal.remove();
             if (onCancel) onCancel();
-        }
+            resolve(false); // ✅ IMPORTANTE: resolver la Promise
+        };
+        
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.remove();
+                if (onCancel) onCancel();
+                resolve(false);
+            }
+        });
     });
 }
 
