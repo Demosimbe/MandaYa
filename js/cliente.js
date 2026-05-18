@@ -3294,5 +3294,6 @@ window.mostrarModalConfirmacion = mostrarModalConfirmacion;
 window.cerrarModalConfirmacion = cerrarModalConfirmacion;
 window.limpiarTodosLosIntervalos = limpiarTodosLosIntervalos;
 window.confirmarPagoTransferenciaFinal = confirmarPagoTransferenciaFinal;
+window.enviarComprobanteWhatsApp = enviarComprobanteWhatsApp;
 
 console.log("✅ Cliente inicializado - Sistema de modales unificado activo");

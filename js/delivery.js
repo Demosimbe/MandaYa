@@ -43,41 +43,53 @@ function vibrar(duracion = 200) {
 
 // ==================== NOTIFICACIÓN DE NUEVO PEDIDO ====================
 function notificarNuevoPedido() {
-    // ✅ Vibrar si el dispositivo lo soporta
+    // Vibrar
     if (window.navigator && window.navigator.vibrate) {
         window.navigator.vibrate([300, 100, 300, 100, 300]);
         console.log("📳 Vibración activada");
     }
     
-    // ✅ Reproducir sonido MP3
+    // Sonido con Web Audio API - Dos tonos (ding-dong)
     try {
-        const audio = new Audio('/sounds/notification.mp3');
-        audio.volume = 0.8; // Ajusta el volumen (0.0 a 1.0)
-        audio.play().catch(e => console.log("Error reproduciendo sonido:", e));
-        console.log("🔔 Sonido de notificación reproducido");
-    } catch(e) {
-        console.log("Error al reproducir sonido MP3:", e);
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
         
-        // Fallback: sonido con Web Audio API si el MP3 falla
-        try {
-            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            const oscillator = audioContext.createOscillator();
-            const gainNode = audioContext.createGain();
-            
-            oscillator.connect(gainNode);
-            gainNode.connect(audioContext.destination);
-            
-            oscillator.frequency.value = 880;
-            gainNode.gain.value = 0.5;
-            
-            oscillator.start();
-            gainNode.gain.exponentialRampToValueAtTime(0.00001, audioContext.currentTime + 0.5);
-            oscillator.stop(audioContext.currentTime + 0.5);
-            
-            setTimeout(() => audioContext.close(), 1000);
-        } catch(err) {
-            console.log("Fallback también falló:", err);
+        if (audioContext.state === 'suspended') {
+            audioContext.resume();
         }
+        
+        // Primer tono (agudo - "ding") - más largo
+        const osc1 = audioContext.createOscillator();
+        const gain1 = audioContext.createGain();
+        osc1.connect(gain1);
+        gain1.connect(audioContext.destination);
+        osc1.frequency.value = 880;
+        gain1.gain.value = 0.8; // Volumen más alto
+        
+        // Segundo tono (grave - "dong") - más largo
+        const osc2 = audioContext.createOscillator();
+        const gain2 = audioContext.createGain();
+        osc2.connect(gain2);
+        gain2.connect(audioContext.destination);
+        osc2.frequency.value = 660;
+        gain2.gain.value = 0.8; // Volumen más alto
+        
+        osc1.start();
+        gain1.gain.exponentialRampToValueAtTime(0.00001, audioContext.currentTime + 0.5); // 0.5 segundos
+        osc1.stop(audioContext.currentTime + 0.5);
+        
+        setTimeout(() => {
+            osc2.start();
+            gain2.gain.exponentialRampToValueAtTime(0.00001, audioContext.currentTime + 0.5);
+            osc2.stop(audioContext.currentTime + 0.5);
+        }, 250); // Mayor separación entre tonos
+        
+        setTimeout(() => {
+            audioContext.close();
+        }, 1500);
+        
+        console.log("🔔🔔 Sonido de notificación (ding-dong) reproducido");
+    } catch(e) {
+        console.log("Error con Web Audio API:", e);
     }
 }
 
@@ -1877,3 +1889,4 @@ window.cerrarModalHistorialDelivery = cerrarModalHistorialDelivery;
 window.mostrarModalConfirmacionDelivery = mostrarModalConfirmacionDelivery; // ← Mantener exportación
 window.cerrarModalPerfilDelivery = cerrarModalPerfilDelivery;
 window.limpiarIntervalosDelivery = limpiarIntervalosDelivery;
+window.notificarNuevoPedido = notificarNuevoPedido;
