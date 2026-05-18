@@ -211,38 +211,3 @@ if (modalFormRegistroElement) {
     });
 }
 
-// app.js - Actualizar función de WhatsApp
-function enviarComprobanteWhatsApp() {
-    if (!pedidoPendiente) {
-        mostrarToast("❌ No hay información del pedido", true);
-        return;
-    }
-    
-    const total = pedidoPendiente.tarifa;
-    const pedidoId = pedidoPendiente.id;
-    
-    // ✅ Usar config centralizada (simplificado)
-    const numeroWhatsApp = window.getWhatsAppNumber ? window.getWhatsAppNumber() : '521234567890';
-    
-    let mensaje = `🛵 *MANDAYA-NUEVO PEDIDO* 🛵\n`;
-    mensaje += `─────────────────────\n`;
-    mensaje += `🎫 Pedido: #${pedidoId}\n`;
-    mensaje += `👤 Cliente: ${pedidoPendiente.cliente_nombre}\n`;
-    mensaje += `─────────────────────\n`;
-    mensaje += `📍 Origen:\n${pedidoPendiente.origen}\n`;
-    mensaje += `─────────────────────\n`;
-    mensaje += `🏁 Destino:\n${pedidoPendiente.destino}\n`;
-    mensaje += `─────────────────────\n`;
-    mensaje += `📏 ${pedidoPendiente.distancia_real} km | 📦 ${pedidoPendiente.tipo}\n`;
-    mensaje += `💰 Total: $${total} MXN\n`;
-    mensaje += `─────────────────────\n`;
-    mensaje += `✅ Comprobante adjunto\n`;
-    mensaje += `🙏 Gracias por usar MandaYa!`;
-    
-    const mensajeCodificado = encodeURIComponent(mensaje);
-    const whatsappUrl = `https://api.whatsapp.com/send?phone=${numeroWhatsApp}&text=${mensajeCodificado}`;
-    
-    console.log("📱 Abriendo WhatsApp con URL:", whatsappUrl);
-    window.open(whatsappUrl, '_blank');
-    mostrarToast("📱 Abriendo WhatsApp para enviar comprobante");
-}
