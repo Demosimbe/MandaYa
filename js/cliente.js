@@ -442,11 +442,13 @@ function initMap() {
         dragging: true,
         tap: true,
         inertia: false
-    }).setView([18.6456, -91.8249], 13);
+    }).setView([18.6456, -91.8249], 15);   // ← Zoom inicial mejorado (antes 13)
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-        maxZoom: 19
+    // Tile layer recomendado para mejor detalle en alto zoom
+    L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors',
+        maxZoom: 19,
+        className: 'map-tiles'
     }).addTo(map);
 
     limitarMapaACarmen(map);
@@ -456,17 +458,7 @@ function initMap() {
         return limitarCoordenadasACarmen(lat, lng);
     }
 
-    // ==================== FUNCIONES DE UTILIDAD ====================
-function actualizarRutaYTarifaDebounced() {
-    if (debounceTimer) {
-        clearTimeout(debounceTimer);
-    }
-    debounceTimer = setTimeout(() => {
-        actualizarRutaYTarifa();
-        debounceTimer = null;
-    }, 500);
-}
-
+   
    // ==================== ICONOS ====================
    const originIcon = L.divIcon({
        html: `
@@ -653,6 +645,17 @@ destMarker.on('mouseout', function() {
         origen: getOriginCoords(),
         destino: getDestCoords()
     });
+} // ← Cierre de initMap()
+
+// ==================== FUNCIONES DE UTILIDAD ====================
+function actualizarRutaYTarifaDebounced() {
+    if (debounceTimer) {
+        clearTimeout(debounceTimer);
+    }
+    debounceTimer = setTimeout(() => {
+        actualizarRutaYTarifa();
+        debounceTimer = null;
+    }, 500);
 }
 
 function actualizarTarjetaProgreso(distanciaKm, estado, destinoTexto) {

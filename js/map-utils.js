@@ -271,40 +271,35 @@ function limitarMapaACarmen(map) {
     // 🔒 LÍMITES DUROS
     map.setMaxBounds(bounds);
 
-    // 🔒 Hace que el usuario NO pueda arrastrar fuera
+    // Evita que el mapa se "escape" de los límites
     map.options.maxBoundsViscosity = 1.0;
 
-    // Zoom permitido
+    // ==================== ZOOM ====================
     map.setMinZoom(12);
-    map.setMaxZoom(18);
+    map.setMaxZoom(19);        // ← Subido a 19 (recomendado)
 
-    // 🔒 CORREGIR automáticamente si algo mueve el mapa fuera
+    // 🔒 CORREGIR automáticamente si el usuario intenta salir de los límites
     map.on('moveend', function () {
-
         if (!bounds.contains(map.getCenter())) {
-
-            map.panInsideBounds(bounds, {
-                animate: false
+            map.panInsideBounds(bounds, { 
+                animate: true 
             });
-
         }
-
     });
 
-    // 🔒 Evitar zoom raro
+    // 🔒 Control de Zoom (evita zoom raro)
     map.on('zoomend', function () {
-
-        if (map.getZoom() > 18) {
-            map.setZoom(18);
+        const currentZoom = map.getZoom();
+        
+        if (currentZoom > 19) {
+            map.setZoom(19);
         }
-
-        if (map.getZoom() < 12) {
+        if (currentZoom < 12) {
             map.setZoom(12);
         }
-
     });
 
-    console.log('🗺️ Mapa BLOQUEADO a Ciudad del Carmen');
+    console.log('🗺️ Mapa BLOQUEADO a Ciudad del Carmen (Zoom máx: 19)');
 }
 
 // Función para limitar coordenadas dentro de los límites de Ciudad del Carmen

@@ -378,7 +378,7 @@ function initMap() {
     const cdDelCarmen = { lat: 18.6456, lng: -91.8249 };
     
     map = L.map('map', {
-     maxBoundsViscosity: 1.0,
+        maxBoundsViscosity: 1.0,
         rotate: true,
         rotateControl: true,
         zoomControl: true,
@@ -387,15 +387,18 @@ function initMap() {
         dragging: true,
         tap: true,
         inertia: false
-    }).setView([cdDelCarmen.lat, cdDelCarmen.lng], 13);
-    
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-        maxZoom: 19
+    }).setView([cdDelCarmen.lat, cdDelCarmen.lng], 15);   // ← Zoom inicial mejorado
+
+    // Tile Layer con MEJOR DETALLE (recomendado)
+    L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors',
+        maxZoom: 19,
+        className: 'map-tiles'
     }).addTo(map);
-    
+
     limitarMapaACarmen(map);
-    
+
+    // ==================== INTERVALOS ====================
     if (cargaPedidosInterval) clearInterval(cargaPedidosInterval);
     cargaPedidosInterval = setInterval(() => { 
         if (isOnline) cargarPedidos(); 
@@ -415,7 +418,7 @@ function initMap() {
     map.getContainer().style.transform = 'rotate(0deg)';
     mapRotationAngle = 0;
 
-    console.log("🗺️ Mapa de Delivery inicializado con rotación activada");
+    console.log("🗺️ Mapa de Delivery inicializado con alto detalle (Zoom máx 19)");
 }
 
 // ==================== CIERRE DE SESIÓN CORREGIDO ====================
