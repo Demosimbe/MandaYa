@@ -1051,49 +1051,50 @@ function startLocationTracking() {
         return true;
     };
     
-    // ========== MÉTODO 1: GET CURRENT POSITION (UBICACIÓN INICIAL) ==========
-    navigator.geolocation.getCurrentPosition(
-        async (pos) => {
-            try {
+
+       // ========== MÉTODO 1: GET CURRENT POSITION (UBICACIÓN INICIAL PRECISA) ==========
+    try {
+        // Usar la función de ubicación precisa
+        const coordsPrecisos = await obtenerUbicacionPrecisa();
+        console.log(`📍 Ubicación precisa obtenida: ${coordsPrecisos.lat}, ${coordsPrecisos.lng} (Precisión: ${coordsPrecisos.accuracy}m)`);
+        
+        await procesarYGuardarUbicacion(coordsPrecisos, false);
+        mostrarToast(`✅ Ubicación detectada (precisión ${coordsPrecisos.accuracy}m)`);
+        
+    } catch (error) {
+        console.error("❌ Error obteniendo ubicación precisa:", error);
+        mostrarToast("⚠️ No se pudo obtener ubicación precisa. Verifica el GPS.", true);
+        
+        // Fallback: usar getCurrentPosition normal
+        navigator.geolocation.getCurrentPosition(
+            async (pos) => {
                 const coords = { 
                     lat: pos.coords.latitude, 
-                    lng: pos.coords.longitude 
+                    lng: pos.coords.longitude,
+                    accuracy: pos.coords.accuracy
                 };
-                
-                console.log("📍 Ubicación inicial obtenida:", coords.lat.toFixed(4), coords.lng.toFixed(4));
-                
                 await procesarYGuardarUbicacion(coords, false);
-                mostrarToast("✅ Ubicación detectada");
-                
-            } catch (error) {
-                console.error("❌ Error procesando ubicación inicial:", error);
-                mostrarToast("⚠️ Error al procesar ubicación", true);
-            } finally {
+                mostrarToast("✅ Ubicación detectada (modo estándar)");
                 window.iniciandoLocalizacion = false;
-            }
-        },
-        (err) => {
-            console.error("Error en ubicación inicial:", err);
-            window.iniciandoLocalizacion = false;
-            
-            if (err.code === 1) {
-                mostrarToast("❌ Permite el acceso a tu ubicación en la configuración", true);
-            } else {
-                mostrarToast("⚠️ No se pudo obtener ubicación. Reintentando...", true);
-                // Reintentar después de 3 segundos
-                setTimeout(() => {
-                    if (!ultimaUbicacionEnviada && isOnline) {
-                        obtenerUbicacionAlternativa();
-                    }
-                }, 3000);
-            }
-        },
-        { 
-            enableHighAccuracy: true, 
-            timeout: 10000,
-            maximumAge: 0
-        }
-    );
+            },
+            (err) => {
+                console.error("Error en ubicación fallback:", err);
+                window.iniciandoLocalizacion = false;
+                
+                if (err.code === 1) {
+                    mostrarToast("❌ Permite el acceso a tu ubicación en la configuración", true);
+                } else {
+                    mostrarToast("⚠️ No se pudo obtener ubicación. Reintentando...", true);
+                    setTimeout(() => {
+                        if (!ultimaUbicacionEnviada && isOnline) {
+                            obtenerUbicacionAlternativa();
+                        }
+                    }, 3000);
+                }
+            },
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        );
+    }
     
     // ========== MÉTODO 2: WATCH POSITION (CUANDO LA APP ESTÁ VISIBLE) ==========
     if (watchId) {
@@ -1124,8 +1125,8 @@ function startLocationTracking() {
         },
         { 
             enableHighAccuracy: true, 
-            maximumAge: 3000,
-            timeout: 10000
+            maximumAge: 0,
+            timeout: 15000
         }
     );
     
@@ -1196,6 +1197,41 @@ function startLocationTracking() {
     
     document.removeEventListener('visibilitychange', handleVisibilityChange);
     document.addEventListener('visibilitychange', handleVisibilityChange);
+}
+
+// ==================== OBTENER UBICACIÓN PRECISA ====================
+function obtenerUbicacionPrecisa() {
+    return new Promise((resolve, reject) => {
+        const opciones = {
+            enableHighAccuracy: true,
+            timeout: 15000,
+            maximumAge: 0
+        };
+        
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                const coords = {
+                    lat: position.coords.latitude,
+                    lng: position.coords.longitude,
+                    accuracy: position.coords.accuracy
+                };
+                console.log(`📍 Ubicación precisa: ${coords.lat}, ${coords.lng} (Precisión: ${coords.accuracy}m)`);
+                
+                // Si la precisión es mayor a 50m, intentar de nuevo
+                if (coords.accuracy > 50) {
+                    console.log("⚠️ Precisión baja, reintentando...");
+                    setTimeout(() => obtenerUbicacionPrecisa().then(resolve).catch(reject), 1000);
+                } else {
+                    resolve(coords);
+                }
+            },
+            (error) => {
+                console.error("Error obteniendo ubicación precisa:", error);
+                reject(error);
+            },
+            opciones
+        );
+    });
 }
 
 // ==================== AUTO-FOLLOW Y CONTROL DE MAPA ====================
