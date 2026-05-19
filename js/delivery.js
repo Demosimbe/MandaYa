@@ -387,12 +387,12 @@ function initMap() {
         dragging: true,
         tap: true,
         inertia: false
-    }).setView([cdDelCarmen.lat, cdDelCarmen.lng], 15);   // ← Zoom inicial mejorado
+    }).setView([cdDelCarmen.lat, cdDelCarmen.lng], 17);   // ← Zoom inicial recomendado
 
-    // Tile Layer con MEJOR DETALLE (recomendado)
-    L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap contributors',
-        maxZoom: 19,
+    // ==================== THUNDERFOREST ATLAS ====================
+    L.tileLayer('https://api.thunderforest.com/atlas/{z}/{x}/{y}.png?apikey=8c7f3b3f6cee40da9249810cdbbb8cae', {
+        attribution: '&copy; OpenStreetMap contributors & Thunderforest',
+        maxZoom: 22,
         className: 'map-tiles'
     }).addTo(map);
 
@@ -418,7 +418,7 @@ function initMap() {
     map.getContainer().style.transform = 'rotate(0deg)';
     mapRotationAngle = 0;
 
-    console.log("🗺️ Mapa de Delivery inicializado con alto detalle (Zoom máx 19)");
+    console.log("🗺️ Mapa Delivery inicializado con Thunderforest Outdoors (Zoom máx 22)");
 }
 
 // ==================== CIERRE DE SESIÓN CORREGIDO ====================

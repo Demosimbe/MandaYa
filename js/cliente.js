@@ -442,12 +442,12 @@ function initMap() {
         dragging: true,
         tap: true,
         inertia: false
-    }).setView([18.6456, -91.8249], 15);   // ← Zoom inicial mejorado (antes 13)
+    }).setView([18.6456, -91.8249], 17);   // ← Zoom inicial mejorado (antes 13)
 
-    // Tile layer recomendado para mejor detalle en alto zoom
-    L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap contributors',
-        maxZoom: 19,
+ // ==================== THUNDERFOREST ATLAS ====================
+    L.tileLayer('https://api.thunderforest.com/atlas/{z}/{x}/{y}.png?apikey=8c7f3b3f6cee40da9249810cdbbb8cae', {
+        attribution: '&copy; OpenStreetMap contributors & Thunderforest',
+        maxZoom: 22,
         className: 'map-tiles'
     }).addTo(map);
 
