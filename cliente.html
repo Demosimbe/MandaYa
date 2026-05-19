@@ -117,7 +117,29 @@
             gap: 10px;
             z-index: 1000;
         }
+
+        /* Eliminar rayas blancas al hacer zoom */
+        .leaflet-container {
+            background-color: #e8e4d8 !important;
+        }
         
+        .leaflet-tile-container {
+            background-color: #e8e4d8 !important;
+        }
+        
+        .leaflet-tile-pane {
+            background-color: #e8e4d8 !important;
+        }
+        
+        /* Evitar que se vea blanco entre tiles */
+        .leaflet-tile {
+            visibility: visible !important;
+        }
+        
+        .leaflet-zoom-animated {
+            transition: transform 0.2s ease-out;
+        }
+                
         .map-btn {
             background: white;
             padding: 12px;

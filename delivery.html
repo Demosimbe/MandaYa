@@ -312,6 +312,28 @@
         @keyframes slideUp { from { transform: translateY(30px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
         @keyframes shakeToast { 0%, 100% { transform: translateX(-50%) translateY(0); } 25% { transform: translateX(-52%) translateY(0); } 75% { transform: translateX(-48%) translateY(0); } }
         .toast-error-shake { animation: shakeToast 0.3s ease-in-out !important; }
+
+        /* Eliminar rayas blancas al hacer zoom */
+        .leaflet-container {
+            background-color: #e8e4d8 !important;
+        }
+        
+        .leaflet-tile-container {
+            background-color: #e8e4d8 !important;
+        }
+        
+        .leaflet-tile-pane {
+            background-color: #e8e4d8 !important;
+        }
+        
+        /* Evitar que se vea blanco entre tiles */
+        .leaflet-tile {
+            visibility: visible !important;
+        }
+        
+        .leaflet-zoom-animated {
+            transition: transform 0.2s ease-out;
+        }
         
         /* Botones del mapa - contenedor compacto */
         .map-buttons-container {
