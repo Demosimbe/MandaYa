@@ -19,12 +19,241 @@
     <script src="https://cdn.jsdelivr.net/npm/leaflet-rotate@0.1.4/leaflet-rotate.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     
-    <style>
+ <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
         .sidebar { box-shadow: -4px 0 15px rgba(0, 0, 0, 0.1); background: white; }
         #map { height: 100vh; width: 100%; z-index: 1; }
+
+         /* ========== MODO OSCURO ========== */
+        :root {
+            --bg-primary: #ffffff;
+            --bg-secondary: #f8fafc;
+            --bg-card: #ffffff;
+            --text-primary: #1f2937;
+            --text-secondary: #6b7280;
+            --border-color: #e5e7eb;
+            --sidebar-bg: #ffffff;
+        }
         
+        body.dark-mode {
+            --bg-primary: #0f0f0f;
+            --bg-secondary: #1a1a1a;
+            --bg-card: #1e1e1e;
+            --text-primary: #f3f4f6;
+            --text-secondary: #9ca3af;
+            --border-color: #2d2d2d;
+            --sidebar-bg: #121212;
+        }
+        
+        body.dark-mode .sidebar,
+        body.dark-mode #mobileSidebar,
+        body.dark-mode .bg-white,
+        body.dark-mode .bg-gray-50,
+        body.dark-mode .bg-gray-100 {
+            background-color: var(--sidebar-bg) !important;
+        }
+        
+        body.dark-mode .bg-gray-800 {
+            background-color: #1e1e1e !important;
+        }
+        
+        body.dark-mode .bg-gray-700 {
+            background-color: #2a2a2a !important;
+        }
+        
+        /* ========== CORREGIDO: BARRA SUPERIOR GRIS ========== */
+        body.dark-mode .sticky.top-0,
+        body.dark-mode .sticky.top-0.z-20,
+        body.dark-mode .sticky.top-0.z-20.bg-\[\#FF6200\],
+        body.dark-mode .sidebar .sticky,
+        body.dark-mode #mobileSidebar .sticky,
+        body.dark-mode [class*="bg-\\[#FF6200\\]"],
+        body.dark-mode [style*="background-color:#FF6200"],
+        body.dark-mode [style*="background:#FF6200"] {
+            background-color: #2d2d2d !important;
+        }
+        
+        /* Forzar textos blancos en la barra superior */
+        body.dark-mode .sticky.top-0 *,
+        body.dark-mode .sticky.top-0 .text-white,
+        body.dark-mode .sticky.top-0 h1,
+        body.dark-mode .sticky.top-0 p,
+        body.dark-mode .sticky.top-0 i,
+        body.dark-mode #mobileSidebar .sticky *,
+        body.dark-mode #mobileSidebar .sticky .text-white {
+            color: #ffffff !important;
+        }
+        
+        /* Botones de la barra superior - mantener transparentes */
+        body.dark-mode .sticky.top-0 button,
+        body.dark-mode #mobileSidebar .sticky button {
+            background-color: transparent !important;
+        }
+        
+        body.dark-mode .border-gray-200,
+        body.dark-mode .border-gray-300,
+        body.dark-mode .border-gray-700 {
+            border-color: var(--border-color) !important;
+        }
+        
+        body.dark-mode .text-gray-600,
+        body.dark-mode .text-gray-500,
+        body.dark-mode .text-gray-400 {
+            color: var(--text-secondary) !important;
+        }
+        
+        body.dark-mode .text-gray-800,
+        body.dark-mode .text-gray-900 {
+            color: var(--text-primary) !important;
+        }
+        
+        body.dark-mode .pedido-card {
+            background-color: #1e1e1e !important;
+            border-color: #2d2d2d !important;
+        }
+        
+        body.dark-mode .pedido-card:hover {
+            background-color: #2a2a2a !important;
+        }
+        
+        /* Mapa sin filtro */
+        body.dark-mode #map {
+            filter: none;
+        }
+        
+        /* ========== TEXTOS BLANCOS EN MODO OSCURO ========== */
+        
+        /* Títulos principales */
+        body.dark-mode h2,
+        body.dark-mode .text-xl,
+        body.dark-mode .font-semibold,
+        body.dark-mode .sidebar h2,
+        body.dark-mode .p-5 .text-xl {
+            color: #ffffff !important;
+        }
+        
+        /* Nombre del delivery */
+        body.dark-mode #userInfo .font-medium,
+        body.dark-mode #userInfo span,
+        body.dark-mode #userInfo div:not(.text-gray-400) {
+            color: #f3f4f6 !important;
+        }
+        
+        /* Texto "Delivery • Gana con cada envío" */
+        body.dark-mode .sidebar .text-xs,
+        body.dark-mode .sidebar .opacity-90 {
+            color: #d1d5db !important;
+        }
+        
+        /* Botón "Conectarse" */
+        body.dark-mode #onlineToggle span,
+        body.dark-mode #onlineToggleMobile span {
+            color: white !important;
+        }
+        
+        /* Texto "No hay pedidos disponibles" */
+        body.dark-mode .text-center.text-gray-400,
+        body.dark-mode .text-center .text-gray-400,
+        body.dark-mode .py-12 .text-gray-400,
+        body.dark-mode .py-8 .text-gray-400 {
+            color: #9ca3af !important;
+        }
+        
+        /* Iconos junto a los títulos */
+        body.dark-mode h2 i,
+        body.dark-mode .flex.items-center.gap-2 i {
+            color: #f97316 !important;
+        }
+        
+        /* Botones de historial y salir */
+        body.dark-mode .border-t button,
+        body.dark-mode .border-t .text-gray-500 {
+            color: #9ca3af !important;
+        }
+        
+        body.dark-mode .border-t button:hover {
+            color: #f97316 !important;
+        }
+        
+        /* Badge de estado del delivery */
+        body.dark-mode #estadoDeliveryBadge span {
+            background-color: #2a2a2a !important;
+            color: #fbbf24 !important;
+        }
+        
+        /* Estadísticas (Entregas, Ganado, Calificación) */
+        body.dark-mode #statsPanel .text-gray-500 {
+            color: #9ca3af !important;
+        }
+        
+        body.dark-mode #statsPanel .text-orange-500 {
+            color: #f97316 !important;
+        }
+        
+        body.dark-mode #statsPanel .text-green-500 {
+            color: #22c55e !important;
+        }
+        
+        body.dark-mode #statsPanel .text-blue-500 {
+            color: #3b82f6 !important;
+        }
+        
+        /* Badge superior "Tu ubicación se comparte" */
+        body.dark-mode .badge-top {
+            background: rgba(0, 0, 0, 0.85) !important;
+            color: white !important;
+        }
+        
+        body.dark-mode .badge-top i {
+            color: #f97316 !important;
+        }
+        
+        /* Botón flotante de modo oscuro */
+        .dark-mode-toggle {
+            position: fixed;
+            bottom: 140px;
+            right: 16px;
+            width: 44px;
+            height: 44px;
+            background: #FF6200;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 1001;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            transition: all 0.3s ease;
+        }
+        
+        .dark-mode-toggle:hover {
+            transform: scale(1.1);
+        }
+        
+        .dark-mode-toggle i {
+            font-size: 20px;
+            color: white;
+        }
+        
+        @media (max-width: 640px) {
+            .dark-mode-toggle {
+                bottom: 140px;
+                width: 40px;
+                height: 40px;
+            }
+            .dark-mode-toggle i {
+                font-size: 18px;
+            }
+        }
+        
+        /* Transición suave entre modos */
+        body, .sidebar, #mobileSidebar, .pedido-card, button, .map-btn {
+            transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+        }
+        
+        /* ========== FIN MODO OSCURO ========== */
+       
         .toast-message {
             position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(20px);
             background: #1f2937; color: white; padding: 14px 28px; border-radius: 50px;
@@ -117,6 +346,116 @@
             .map-btn { padding: 10px; width: 40px; height: 40px; }
             .map-btn i { font-size: 16px; }
         }
+        
+        /* Mejoras para móvil */
+        @media (max-width: 640px) {
+            .map-btn {
+                width: 48px;
+                height: 48px;
+                min-width: 48px;
+                min-height: 48px;
+            }
+            
+            .map-btn i {
+                font-size: 20px;
+            }
+            
+            .btn-delivery-action {
+                padding: 14px !important;
+                font-size: 16px !important;
+                min-height: 52px !important;
+                border-radius: 14px !important;
+            }
+            
+            .pedido-card {
+                padding: 16px !important;
+                margin-bottom: 12px !important;
+            }
+            
+            .pedido-card .text-sm {
+                font-size: 14px !important;
+            }
+            
+            #mobileSidebar {
+                max-height: 75vh !important;
+                border-radius: 24px 24px 0 0 !important;
+            }
+        }
+
+           /* ========== MODAL DE NUEVO PEDIDO URGENTE ========== */
+           .urgent-modal-overlay {
+               position: fixed;
+               top: 0;
+               left: 0;
+               right: 0;
+               bottom: 0;
+               background: rgba(0, 0, 0, 0.95);
+               z-index: 20000;
+               display: flex;
+               align-items: center;
+               justify-content: center;
+               animation: fadeIn 0.3s ease-out;
+           }
+           
+           .urgent-modal-card {
+               background: linear-gradient(135deg, #FF6200, #FF8C00);
+               border-radius: 32px;
+               max-width: 90%;
+               width: 340px;
+               padding: 24px;
+               text-align: center;
+               animation: slideUpUrgent 0.4s ease-out;
+               box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+           }
+           
+           @keyframes slideUpUrgent {
+               from {
+                   transform: translateY(100px);
+                   opacity: 0;
+               }
+               to {
+                   transform: translateY(0);
+                   opacity: 1;
+               }
+           }
+           
+           .urgent-pulse {
+               animation: urgentPulse 0.8s ease-in-out infinite;
+           }
+           
+           @keyframes urgentPulse {
+               0% { transform: scale(1); }
+               50% { transform: scale(1.1); }
+               100% { transform: scale(1); }
+           }
+           
+           .countdown-timer {
+               font-size: 48px;
+               font-weight: bold;
+               font-family: monospace;
+               background: rgba(0,0,0,0.5);
+               display: inline-block;
+               padding: 8px 24px;
+               border-radius: 50px;
+               margin: 16px 0;
+           }
+           
+           .btn-aceptar-urgente {
+               background: white;
+               color: #FF6200;
+               font-size: 20px;
+               font-weight: bold;
+               padding: 16px;
+               border-radius: 50px;
+               width: 100%;
+               margin-top: 16px;
+               transition: all 0.2s ease;
+           }
+           
+           .btn-aceptar-urgente:active {
+               transform: scale(0.98);
+           }
+           
     </style>
 </head>
 <body class="h-screen overflow-hidden flex flex-row">
@@ -153,7 +492,7 @@
         </div>
         
         <!-- Contenedor de botones del mapa (lado derecho, ordenados de abajo hacia arriba) -->
-        <div class="map-buttons-container">
+        <div class="map-buttons-container">  
             <!-- Centrar mapa (abajo del todo) -->
             <div class="map-btn" onclick="centrarMapa()" title="Centrar mapa">
                 <i class="fas fa-location-dot text-[#FF6200]"></i>
@@ -174,7 +513,7 @@
                 <i class="fas fa-undo-alt text-blue-500"></i>
             </div>
         </div>
-        
+
         <!-- Botón toggle sidebar mobile (solo se ve en móvil) -->
         <button onclick="toggleMobileSidebar()" class="fixed bottom-20 left-4 bg-[#FF6200] text-white p-3 rounded-full shadow-lg z-[1000] lg:hidden">
             <i class="fas fa-list text-lg"></i>
@@ -184,19 +523,26 @@
     <!-- ==================== SIDEBAR DESKTOP (DERECHA en PC) ==================== -->
     <div class="hidden lg:flex w-96 bg-white sidebar flex-col h-full overflow-auto z-10 relative shadow-xl order-last lg:order-last">
         <div class="bg-[#FF6200] text-white p-5 flex items-center justify-between sticky top-0 z-20">
-            <div class="flex items-center gap-3">
-                <div class="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
-                    <i class="fas fa-motorcycle text-white text-xl"></i>
-                </div>
-                <div>
-                    <h1 class="font-bold text-xl">MandaYa</h1>
-                    <p class="text-xs opacity-90">Delivery • Gana con cada envío</p>
-                </div>
-            </div>
-            <button onclick="verPerfil()" class="text-white hover:bg-white/20 rounded-full p-2 transition-all">
-                <i class="fas fa-user-circle text-3xl"></i>
-            </button>
+    <div class="flex items-center gap-3">
+        <div class="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
+            <i class="fas fa-motorcycle text-white text-xl"></i>
         </div>
+        <div>
+            <h1 class="font-bold text-xl">MandaYa</h1>
+            <p class="text-xs opacity-90">Delivery • Gana con cada envío</p>
+        </div>
+    </div>
+    <div class="flex items-center gap-2">
+        <!-- Botón modo oscuro -->
+        <button id="btnDarkMode" onclick="toggleDarkMode()" class="hover:bg-white/20 rounded-full p-2 transition-all w-10 h-10 flex items-center justify-center">
+            <i id="darkModeIcon" class="fas fa-moon text-xl"></i>
+        </button>
+        <!-- Botón perfil -->
+        <button onclick="verPerfil()" class="hover:bg-white/20 rounded-full p-2 transition-all">
+            <i class="fas fa-user-circle text-3xl"></i>
+        </button>
+    </div>
+</div>
 
         <div id="userInfo" class="bg-gray-50 p-4 border-b"></div>
 

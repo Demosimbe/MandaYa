@@ -21,6 +21,10 @@ let cargaPedidosInterval = null;
 let ultimaUbicacionEnviada = null;
 let intervaloActualizacionRuta = null;  // Intervalo para actualizar ruta en tiempo real
 let ultimoRecalculoRuta = 0; 
+let audioContextInicializado = false;
+let sonidoUrgente = null;
+let modalUrgenteActivo = false;
+let timeoutPedidoUrgente = null;
 
 // ✅ NUEVAS VARIABLES PARA BACKUP Y AUTO-FOLLOW
 let backupIntervalId = null;      // Intervalo de respaldo para pantalla bloqueada
@@ -171,6 +175,120 @@ function loadUser() {
         document.getElementById("onlineToggle").classList.add("bg-green-500");
         document.getElementById("onlineStatusText").innerHTML = '<i class="fas fa-circle online-dot mr-1"></i> En línea';
     }
+}
+
+function mostrarModalNuevoPedidoUrgente(pedido) {
+    // Evitar múltiples modales
+    if (modalUrgenteActivo) return;
+    modalUrgenteActivo = true;
+    
+    // Limpiar modal existente
+    const modalExistente = document.getElementById('urgentModal');
+    if (modalExistente) modalExistente.remove();
+    
+    // Crear modal
+    const modal = document.createElement('div');
+    modal.id = 'urgentModal';
+    modal.className = 'urgent-modal-overlay';
+    modal.innerHTML = `
+        <div class="urgent-modal-card">
+            <div class="urgent-pulse">
+                <i class="fas fa-motorcycle text-white text-6xl mb-3"></i>
+            </div>
+            <h2 class="text-white text-2xl font-bold mb-1">🔥 ¡NUEVO PEDIDO!</h2>
+            <p class="text-white/80 text-sm mb-3">Tienes <span id="countdownSegundos" class="font-bold text-xl">20</span> segundos para aceptar</p>
+            
+            <div class="bg-white/20 rounded-xl p-3 mb-4 text-left">
+                <div class="flex justify-between mb-2">
+                    <span class="text-white/80 text-xs">CLIENTE</span>
+                    <span class="text-white font-bold text-sm">${sanitizarHTML(pedido.clienteNombre || 'Cliente')}</span>
+                </div>
+                <div class="flex justify-between mb-2">
+                    <span class="text-white/80 text-xs">DISTANCIA</span>
+                    <span class="text-white font-bold text-sm">${pedido.distanciaReal || '0'} km</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-white/80 text-xs">PAGO</span>
+                    <span class="text-white font-bold text-sm">$${pedido.tarifa || '0'} MXN</span>
+                </div>
+                <div class="h-px bg-white/30 my-2"></div>
+                <div class="flex items-start gap-2">
+                    <i class="fas fa-circle text-[10px] text-white mt-1"></i>
+                    <span class="text-white text-xs flex-1">${sanitizarHTML(pedido.origen || 'Origen no especificado')}</span>
+                </div>
+                <div class="flex items-start gap-2 mt-2">
+                    <i class="fas fa-square text-[10px] text-white mt-1"></i>
+                    <span class="text-white text-xs flex-1">${sanitizarHTML(pedido.destino || 'Destino no especificado')}</span>
+                </div>
+            </div>
+            
+            <div id="cuentaRegresiva" class="countdown-timer text-white">20</div>
+            
+            <button id="btnAceptarUrgente" class="btn-aceptar-urgente">
+                <i class="fas fa-hand-paper mr-2"></i> ACEPTAR PEDIDO
+            </button>
+            
+            <button id="btnRechazarUrgente" class="text-white/70 text-sm mt-3 w-full py-2">
+                Rechazar
+            </button>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // Reproducir sonido fuerte
+    reproducirSonidoUrgente();
+    
+    // Iniciar cuenta regresiva de 20 segundos
+    let segundos = 20;
+    const countdownElement = document.getElementById('cuentaRegresiva');
+    const segundosElement = document.getElementById('countdownSegundos');
+    
+    const intervaloCuenta = setInterval(() => {
+        segundos--;
+        if (countdownElement) countdownElement.innerText = segundos;
+        if (segundosElement) segundosElement.innerText = segundos;
+        
+        if (segundos <= 0) {
+            clearInterval(intervaloCuenta);
+            cerrarModalUrgente();
+            mostrarToast("⏰ Tiempo agotado. El pedido pasará a otro delivery.", true);
+            modalUrgenteActivo = false;
+        }
+    }, 1000);
+    
+    // Evento: Aceptar pedido
+    document.getElementById('btnAceptarUrgente').onclick = async () => {
+        clearInterval(intervaloCuenta);
+        cerrarModalUrgente();
+        modalUrgenteActivo = false;
+        
+        // Llamar a la función existente agarrarPedido
+        await agarrarPedido(pedido.id);
+    };
+    
+    // Evento: Rechazar pedido
+    document.getElementById('btnRechazarUrgente').onclick = () => {
+        clearInterval(intervaloCuenta);
+        cerrarModalUrgente();
+        modalUrgenteActivo = false;
+        mostrarToast("❌ Pedido rechazado", false);
+    };
+    
+    // Guardar timeout por si acaso
+    if (timeoutPedidoUrgente) clearTimeout(timeoutPedidoUrgente);
+    timeoutPedidoUrgente = setTimeout(() => {
+        if (modalUrgenteActivo) {
+            cerrarModalUrgente();
+            modalUrgenteActivo = false;
+        }
+    }, 20000);
+}
+
+function cerrarModalUrgente() {
+    const modal = document.getElementById('urgentModal');
+    if (modal) modal.remove();
+    if (timeoutPedidoUrgente) clearTimeout(timeoutPedidoUrgente);
 }
 
 // ==================== INICIALIZACIÓN DEL MAPA ====================
@@ -384,6 +502,90 @@ async function dibujarRutaRecogida(pedido) {
     mostrarToast(`📍 Ruta de RECOGIDA - Dirígete a: ${sanitizarHTML(pedido.destino)}`);
 }
 
+function inicializarSonidoUrgente() {
+    if (audioContextInicializado) return;
+    
+    try {
+        // Crear sonido con Web Audio API (más confiable)
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        const ctx = new AudioContext();
+        
+        // Generar tono de sirena (sube y baja)
+        const now = ctx.currentTime;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        
+        osc.frequency.value = 880;
+        gain.gain.value = 0;
+        
+        osc.start();
+        
+        // Subir volumen gradualmente
+        gain.gain.linearRampToValueAtTime(0.5, now + 0.1);
+        
+        // Cambiar frecuencia (efecto sirena)
+        osc.frequency.linearRampToValueAtTime(660, now + 0.3);
+        osc.frequency.linearRampToValueAtTime(880, now + 0.6);
+        osc.frequency.linearRampToValueAtTime(660, now + 0.9);
+        osc.frequency.linearRampToValueAtTime(880, now + 1.2);
+        
+        // Bajar volumen
+        gain.gain.linearRampToValueAtTime(0, now + 1.8);
+        osc.stop(now + 2);
+        
+        setTimeout(() => ctx.close(), 2500);
+        
+        audioContextInicializado = true;
+    } catch(e) {
+        console.log("Error reproduciendo sonido:", e);
+    }
+}
+
+function reproducirSonidoUrgente() {
+    try {
+        // Método 1: Web Audio API
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        const ctx = new AudioContext();
+        
+        if (ctx.state === 'suspended') {
+            ctx.resume();
+        }
+        
+        const now = ctx.currentTime;
+        const osc1 = ctx.createOscillator();
+        const osc2 = ctx.createOscillator();
+        const gain = ctx.createGain();
+        
+        osc1.connect(gain);
+        osc2.connect(gain);
+        gain.connect(ctx.destination);
+        
+        osc1.frequency.value = 880;
+        osc2.frequency.value = 660;
+        gain.gain.value = 0.5;
+        
+        osc1.start();
+        osc2.start();
+        
+        gain.gain.exponentialRampToValueAtTime(0.00001, now + 1.5);
+        osc1.stop(now + 1.5);
+        osc2.stop(now + 1.5);
+        
+        setTimeout(() => ctx.close(), 2000);
+        
+    } catch(e) {
+        console.log("Error en sonido:", e);
+    }
+    
+    // Método 2: Vibración fuerte
+    if (window.navigator && window.navigator.vibrate) {
+        window.navigator.vibrate([300, 100, 300, 100, 500, 200, 300]);
+    }
+}
+
 // ==================== RUTA DE ENTREGA (origen -> destino) ====================
 async function dibujarRutaEntrega(pedido) {
     // ✅ Validar que estamos en el pedido correcto
@@ -475,6 +677,66 @@ async function dibujarRutaEntrega(pedido) {
     }, 5000);
 }
 
+// ==================== MODO OSCURO ====================
+function toggleDarkMode() {
+    const body = document.body;
+    const btn = document.querySelector('.dark-mode-toggle i');
+    
+    if (body.classList.contains('dark-mode')) {
+        body.classList.remove('dark-mode');
+        localStorage.setItem('delivery_dark_mode', 'false');
+        if (btn) {
+            btn.classList.remove('fa-sun');
+            btn.classList.add('fa-moon');
+        }
+        mostrarToast("☀️ Modo claro activado");
+    } else {
+        body.classList.add('dark-mode');
+        localStorage.setItem('delivery_dark_mode', 'true');
+        if (btn) {
+            btn.classList.remove('fa-moon');
+            btn.classList.add('fa-sun');
+        }
+        mostrarToast("🌙 Modo oscuro activado");
+    }
+    
+    setTimeout(() => {
+        if (typeof map !== 'undefined' && map) {
+            map.invalidateSize();
+        }
+    }, 100);
+}
+
+// Cargar preferencia de modo oscuro al iniciar
+function cargarModoOscuro() {
+    const darkMode = localStorage.getItem('delivery_dark_mode');
+    const btn = document.querySelector('.dark-mode-toggle i');
+    
+    if (darkMode === 'true') {
+        document.body.classList.add('dark-mode');
+        if (btn) {
+            btn.classList.remove('fa-moon');
+            btn.classList.add('fa-sun');
+        }
+    } else {
+        // Por defecto, detectar si es de noche (20:00 - 06:00)
+        const hora = new Date().getHours();
+        if (hora >= 20 || hora < 6) {
+            document.body.classList.add('dark-mode');
+            if (btn) {
+                btn.classList.remove('fa-moon');
+                btn.classList.add('fa-sun');
+            }
+            localStorage.setItem('delivery_dark_mode', 'true');
+        }
+    }
+}
+
+// Ejecutar al cargar la página
+document.addEventListener('DOMContentLoaded', () => {
+    cargarModoOscuro();
+});
+
 // ==================== MARCAR PAQUETE COMO RECOGIDO ====================
 async function marcarPaqueteRecogido(pedidoId) {
     const supabase = supabaseClient;
@@ -547,7 +809,7 @@ function startLocationTracking() {
     window.iniciandoLocalizacion = true;
     mostrarToast("📍 Iniciando seguimiento de ubicación...");
     
-    // ========== FUNCIÓN REUTILIZABLE PARA PROCESAR UBICACIÓN ==========
+       // ========== FUNCIÓN REUTILIZABLE PARA PROCESAR UBICACIÓN ==========
     const procesarYGuardarUbicacion = async (coords, esBackup = false) => {
         // Validar límites de Ciudad del Carmen
         if (coords.lat < 18.58 || coords.lat > 18.70 || 
@@ -584,10 +846,68 @@ function startLocationTracking() {
             userMarker.setLatLng([coords.lat, coords.lng]);
         }
         
-        // Auto-follow: centrar mapa en la moto (si está activado)
+        // ========== ZOOM DINÁMICO INTELIGENTE ==========
         if (autoFollow && userMarker) {
-            const zoom = zoomDinamico ? (map.getZoom() < 15 ? 16 : map.getZoom()) : 16;
-            map.setView([coords.lat, coords.lng], zoom);
+            // Calcular velocidad
+            let velocidad = 0;
+            let distanciaAlDestino = null;
+            
+            if (zoomDinamico) {
+                velocidad = calcularVelocidadAproximada(coords.lat, coords.lng);
+                
+                // Calcular distancia al destino si hay pedido activo
+                if (misPedidosActivos.length > 0) {
+                    const pedidoActivo = misPedidosActivos[0];
+                    if (pedidoActivo.estado === 'asignado' && pedidoActivo.origenCoords) {
+                        distanciaAlDestino = calcularDistanciaEntrePuntos(coords, pedidoActivo.origenCoords);
+                    } else if (pedidoActivo.estado === 'recogido' && pedidoActivo.destinoCoords) {
+                        distanciaAlDestino = calcularDistanciaEntrePuntos(coords, pedidoActivo.destinoCoords);
+                    }
+                }
+                
+                // Calcular zoom según velocidad y distancia
+                let zoom = 16; // Zoom por defecto
+                
+                // Ajustar por velocidad
+                if (velocidad > 50) {
+                    zoom = 13;
+                } else if (velocidad > 30) {
+                    zoom = 14;
+                } else if (velocidad > 15) {
+                    zoom = 15;
+                } else {
+                    zoom = 16;
+                }
+                
+                // Ajustar por distancia al destino (si existe)
+                if (distanciaAlDestino !== null && distanciaAlDestino > 0) {
+                    if (distanciaAlDestino < 0.2) {
+                        zoom = 18; // Muy cerca - zoom máximo
+                    } else if (distanciaAlDestino < 0.5) {
+                        zoom = 17; // Cerca
+                    } else if (distanciaAlDestino < 1) {
+                        zoom = 16; // Normal
+                    } else if (distanciaAlDestino < 2) {
+                        zoom = 15; // Alejar un poco
+                    } else {
+                        zoom = 14; // Más lejos
+                    }
+                }
+                
+                // Limitar zoom entre 13 y 18
+                zoom = Math.min(18, Math.max(13, zoom));
+                
+                // Mostrar información en consola (útil para debugging)
+                if (velocidad > 1) {
+                    console.log(`🏍️ Vel: ${velocidad.toFixed(1)} km/h | Zoom: ${zoom} | Destino: ${distanciaAlDestino?.toFixed(2) || '?'} km`);
+                }
+                
+                map.setView([coords.lat, coords.lng], zoom);
+            } else {
+                // Zoom dinámico desactivado - zoom fijo
+                const zoom = map.getZoom() < 15 ? 16 : map.getZoom();
+                map.setView([coords.lat, coords.lng], zoom);
+            }
         }
         
         // Guardar en Supabase
@@ -926,13 +1246,11 @@ function centrarMapa() {
 }
 
 async function cargarPedidos(force = false) {
-    // ✅ Si no es forzado y la página está oculta, salir
     if (!force && !paginaVisible) {
         console.log("📴 Página oculta, no se cargan pedidos");
         return;
     }
     
-    // ✅ Throttling INTELIGENTE: 2 segundos si está online, 5 si está offline
     const ahora = Date.now();
     let tiempoEspera = 5000;
     
@@ -944,7 +1262,7 @@ async function cargarPedidos(force = false) {
         }
         
         if (ahora - ultimaPeticionPedidos < tiempoEspera) {
-            console.log(`⏳ Throttling: cargarPedidos - demasiado rápido (${sanitizarHTML(tiempoEspera/1000)}s)`);
+            console.log(`⏳ Throttling: cargarPedidos - demasiado rápido`);
             return;
         }
     }
@@ -957,7 +1275,6 @@ async function cargarPedidos(force = false) {
     }
     
     try {
-        // ✅ Cargar pedidos pendientes
         const { data: pedidosPendientes, error: errorPendientes } = await supabase
             .from('pedidos')
             .select('*')
@@ -966,7 +1283,6 @@ async function cargarPedidos(force = false) {
         
         if (errorPendientes) throw errorPendientes;
         
-        // ✅ Cargar pedidos asignados a este delivery
         const { data: pedidosAsignados, error: errorAsignados } = await supabase
             .from('pedidos')
             .select('*')
@@ -976,37 +1292,35 @@ async function cargarPedidos(force = false) {
         
         if (errorAsignados) throw errorAsignados;
         
-        // ✅ Guardar cantidad anterior de pedidos disponibles para notificación
-        const pedidosAnteriores = pedidosDisponibles.length;
+        // ✅ Guardar IDs anteriores para detectar nuevos
+        const idsPedidosAnteriores = new Set(pedidosDisponibles.map(p => p.id));
         
-        // ✅ Convertir pedidos
         const nuevosDisponibles = (pedidosPendientes || []).map(p => convertirPedidoDeSupabase(p));
         const nuevosActivos = (pedidosAsignados || []).map(p => convertirPedidoDeSupabase(p));
         
-        // ✅ Guardar estado anterior para detectar cambios
         const estadoAnteriorActivo = misPedidosActivos.length > 0 ? misPedidosActivos[0]?.estado : null;
         
         pedidosDisponibles = nuevosDisponibles;
         misPedidosActivos = nuevosActivos;
         
-        // ✅ NOTIFICAR SI HAY NUEVOS PEDIDOS (y no hay pedido activo)
-        if (!misPedidosActivos.length && pedidosDisponibles.length > pedidosAnteriores && pedidosDisponibles.length > 0) {
-            console.log("🔔 ¡Nuevo pedido disponible!");
-            notificarNuevoPedido();
-            mostrarToast("🔔 ¡Nuevo pedido disponible! Revísalo", false);
+        // ✅ Detectar pedidos NUEVOS
+        const nuevosPedidos = nuevosDisponibles.filter(p => !idsPedidosAnteriores.has(p.id));
+        
+        // ✅ NOTIFICAR SOLO si hay NUEVOS pedidos Y no hay pedido activo
+        if (!misPedidosActivos.length && nuevosPedidos.length > 0) {
+            console.log("🔔 ¡NUEVO PEDIDO DETECTADO!", nuevosPedidos[0]);
+            mostrarModalNuevoPedidoUrgente(nuevosPedidos[0]);
         }
         
-        // ✅ Actualizar UI
         actualizarListaPedidos();
         
-        // ✅ Manejar cambios de estado para rutas
+        // ... resto del código (manejo de rutas, etc.) se mantiene igual
+        
         if (misPedidosActivos.length > 0) {
             const pedidoActivo = misPedidosActivos[0];
             const estadoActual = pedidoActivo.estado;
             
-            // 🔄 SIEMPRE recalcular ruta si hay pedido activo (para actualizar con nueva ubicación)
             if (estadoActual === 'asignado' && pedidoActivo.origenCoords) {
-                // Verificar si la ruta actual es válida o necesita recálculo por movimiento
                 const necesitaRecalculo = !currentRoutingControl || 
                                           ultimaEtapa !== 'recogida' ||
                                           ultimoPedidoDibujado !== pedidoActivo.id;
@@ -1033,18 +1347,16 @@ async function cargarPedidos(force = false) {
             }
         }
         
-        // ✅ Actualizar color del marcador y badge
         await actualizarColorMarcador();
         await actualizarBadgeEstado();
 
-        // ✅ INICIAR/DETENER ACTUALIZACIÓN DE RUTA EN TIEMPO REAL
         if (misPedidosActivos.length > 0) {
             iniciarActualizacionRutaTiempoReal();
         } else {
             detenerActualizacionRutaTiempoReal();
         }
           
-        console.log(`📦 ${sanitizarHTML(pedidosDisponibles.length)} pedidos disponibles, ${sanitizarHTML(misPedidosActivos.length)} activos`);
+        console.log(`📦 ${pedidosDisponibles.length} pedidos disponibles, ${misPedidosActivos.length} activos`);
         
     } catch(e) {
         console.error('Error cargando pedidos:', e);
@@ -1628,69 +1940,129 @@ function calcularDistanciaPuntoALinea(punto, lineaInicio, lineaFin) {
 }
 
 async function toggleOnline() {
-    isOnline = !isOnline;
-    const btn = document.getElementById("onlineToggle");
-    const span = document.getElementById("onlineStatusText");
+    // Prevenir múltiples clics rápidos
+    if (window.togglingOnline) {
+        console.log("⏳ Ya se está procesando el cambio de estado");
+        return;
+    }
+    window.togglingOnline = true;
     
-    if(isOnline) {
-        // ✅ Cambiar UI inmediatamente (sin esperar)
-        btn.classList.remove("bg-gray-500");
-        btn.classList.add("bg-green-500", "hover:bg-green-600");
-        span.innerHTML = '<i class="fas fa-circle online-dot mr-1"></i> En línea';
-        mostrarToast("✅ Conectado - Buscando ubicación...");
-        
-        if(currentUser) {
-            currentUser.online = true;
-            localStorage.setItem('sesion_activa', JSON.stringify(currentUser));
+    const nuevoEstado = !isOnline;
+    const btn = document.getElementById("onlineToggle");
+    const btnMobile = document.getElementById("onlineToggleMobile");
+    const span = document.getElementById("onlineStatusText");
+    const spanMobile = document.getElementById("onlineStatusTextMobile");
+    
+    // Feedback háptico en móvil
+    if (window.innerWidth < 768 && window.navigator.vibrate) {
+        window.navigator.vibrate(nuevoEstado ? 50 : 50);
+    }
+    
+    // Mostrar loading en el botón
+    const textoOriginal = span?.innerHTML;
+    if (span) span.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Procesando...';
+    if (spanMobile) spanMobile.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Procesando...';
+    
+    try {
+        if (nuevoEstado) {
+            // ========== CONECTARSE ==========
             
-            // ✅ No esperar a Supabase para continuar
-            setDeliveryOnlineSupabase(currentUser.id, true).catch(console.error);
+            // 1. Cambiar UI inmediatamente
+            if (btn) {
+                btn.classList.remove("bg-gray-500");
+                btn.classList.add("bg-green-500", "hover:bg-green-600");
+            }
+            if (btnMobile) {
+                btnMobile.classList.remove("bg-gray-500");
+                btnMobile.classList.add("bg-green-500", "hover:bg-green-600");
+            }
             
-            // ✅ Obtener ubicación INMEDIATAMENTE
-            if (userMarker) {
-                const coords = userMarker.getLatLng();
-                await guardarUbicacionEnSupabase(currentUser.id, currentUser.nombre, coords.lat, coords.lng, true);
-                mostrarToast("📍 Ubicación compartida");
+            // 2. Actualizar estado local
+            isOnline = true;
+            if (currentUser) {
+                currentUser.online = true;
+                const sesionGuardar = { ...currentUser };
+                delete sesionGuardar.password_hash;
+                localStorage.setItem('sesion_activa', JSON.stringify(sesionGuardar));
+                localStorage.setItem('sesion_segura', JSON.stringify(sesionGuardar));
+            }
+            
+            // 3. Actualizar en Supabase (no esperar)
+            setDeliveryOnlineSupabase(currentUser?.id, true).catch(err => {
+                console.warn("⚠️ Error actualizando online en Supabase:", err);
+            });
+            
+            // 4. Iniciar localización (FUNDAMENTAL)
+            if (!userMarker) {
+                mostrarToast("📍 Obteniendo tu ubicación...");
+                await startLocationTracking();
             } else {
-                // ✅ Si no hay marcador, forzar obtención de ubicación
-                setTimeout(() => {
-                    if (!userMarker) {
-                        startLocationTracking();
-                    }
-                }, 500);
+                // Ya hay marcador, solo actualizar ubicación
+                const coords = userMarker.getLatLng();
+                if (coords && currentUser) {
+                    await guardarUbicacionEnSupabase(
+                        currentUser.id, 
+                        currentUser.nombre, 
+                        coords.lat, 
+                        coords.lng, 
+                        true
+                    );
+                }
             }
-        }
-        
-        // ✅ Cargar pedidos inmediatamente (sin esperar throttling)
-        await cargarPedidos(true);
-        
-        // ✅ Iniciar intervalo de actualización de ubicación (cada 8 segundos, no 4)
-        if(ubicacionInterval) clearInterval(ubicacionInterval);
-        ubicacionInterval = setInterval(async () => {
-            if(userMarker && currentUser && isOnline && ultimaUbicacionEnviada) {
-                await guardarUbicacionConThrottle(
-                    currentUser.id, 
-                    currentUser.nombre, 
-                    ultimaUbicacionEnviada.lat, 
-                    ultimaUbicacionEnviada.lng, 
-                    true
-                );
+            
+            // 5. Cargar pedidos disponibles
+            await cargarPedidos(true);
+            
+            // 6. Iniciar intervalo de actualización de ubicación (cada 8 segundos)
+            if (ubicacionInterval) clearInterval(ubicacionInterval);
+            ubicacionInterval = setInterval(async () => {
+                if (isOnline && currentUser && ultimaUbicacionEnviada) {
+                    await guardarUbicacionConThrottle(
+                        currentUser.id, 
+                        currentUser.nombre, 
+                        ultimaUbicacionEnviada.lat, 
+                        ultimaUbicacionEnviada.lng, 
+                        true
+                    );
+                }
+            }, 8000);
+            
+            // 7. Actualizar texto final
+            if (span) span.innerHTML = '<i class="fas fa-circle online-dot mr-1"></i> En línea';
+            if (spanMobile) spanMobile.innerHTML = '<i class="fas fa-circle online-dot mr-1"></i> En línea';
+            mostrarToast("✅ En línea - Recibirás pedidos");
+            
+        } else {
+            // ========== DESCONECTARSE ==========
+            
+            // 1. Cambiar UI
+            if (btn) {
+                btn.classList.remove("bg-green-500", "hover:bg-green-600");
+                btn.classList.add("bg-gray-500");
             }
-        }, 8000); // ✅ Reducido de 4s a 8s
-        
-    } else {
-        btn.classList.remove("bg-green-500", "hover:bg-green-600");
-        btn.classList.add("bg-gray-500");
-        span.innerHTML = 'Conectarse';
-        mostrarToast("📴 Offline - No recibirás pedidos");
-        
-        if(currentUser) {
-            currentUser.online = false;
-            localStorage.setItem('sesion_activa', JSON.stringify(currentUser));
+            if (btnMobile) {
+                btnMobile.classList.remove("bg-green-500", "hover:bg-green-600");
+                btnMobile.classList.add("bg-gray-500");
+            }
             
-            setDeliveryOnlineSupabase(currentUser.id, false).catch(console.error);
+            // 2. Actualizar estado local
+            isOnline = false;
+            if (currentUser) {
+                currentUser.online = false;
+                const sesionGuardar = { ...currentUser };
+                delete sesionGuardar.password_hash;
+                localStorage.setItem('sesion_activa', JSON.stringify(sesionGuardar));
+                localStorage.setItem('sesion_segura', JSON.stringify(sesionGuardar));
+            }
             
-            if (userMarker && ultimaUbicacionEnviada) {
+            // 3. Detener intervalo de ubicación
+            if (ubicacionInterval) {
+                clearInterval(ubicacionInterval);
+                ubicacionInterval = null;
+            }
+            
+            // 4. Guardar estado offline en Supabase
+            if (currentUser && ultimaUbicacionEnviada) {
                 await guardarUbicacionEnSupabase(
                     currentUser.id, 
                     currentUser.nombre, 
@@ -1699,10 +2071,60 @@ async function toggleOnline() {
                     false
                 );
             }
+            setDeliveryOnlineSupabase(currentUser?.id, false).catch(console.error);
+            
+            // 5. Actualizar texto final
+            if (span) span.innerHTML = 'Conectarse';
+            if (spanMobile) spanMobile.innerHTML = 'Conectarse';
+            mostrarToast("📴 Fuera de línea - No recibirás pedidos");
         }
-        if(ubicacionInterval) clearInterval(ubicacionInterval);
+        
+        // 8. Actualizar color del marcador (verde disponible / naranja ocupado)
+        await actualizarColorMarcador();
+        
+        // 9. Forzar actualización de la lista de pedidos (para mostrar/ocultar botones)
+        if (typeof actualizarListaPedidos === 'function') {
+            actualizarListaPedidos();
+        }
+        
+    } catch (error) {
+        console.error("❌ Error en toggleOnline:", error);
+        mostrarToast("⚠️ Error al cambiar estado. Reintenta.", true);
+        
+        // Revertir UI en caso de error
+        if (nuevoEstado) {
+            // Intentó conectarse pero falló
+            if (btn) {
+                btn.classList.remove("bg-green-500", "hover:bg-green-600");
+                btn.classList.add("bg-gray-500");
+            }
+            if (btnMobile) {
+                btnMobile.classList.remove("bg-green-500", "hover:bg-green-600");
+                btnMobile.classList.add("bg-gray-500");
+            }
+            if (span) span.innerHTML = 'Conectarse';
+            if (spanMobile) spanMobile.innerHTML = 'Conectarse';
+            isOnline = false;
+            if (currentUser) currentUser.online = false;
+        } else {
+            // Intentó desconectarse pero falló - mantener como estaba
+            if (btn) {
+                btn.classList.remove("bg-gray-500");
+                btn.classList.add("bg-green-500", "hover:bg-green-600");
+            }
+            if (btnMobile) {
+                btnMobile.classList.remove("bg-gray-500");
+                btnMobile.classList.add("bg-green-500", "hover:bg-green-600");
+            }
+            if (span) span.innerHTML = '<i class="fas fa-circle online-dot mr-1"></i> En línea';
+            if (spanMobile) spanMobile.innerHTML = '<i class="fas fa-circle online-dot mr-1"></i> En línea';
+            isOnline = true;
+            if (currentUser) currentUser.online = true;
+        }
+        
+    } finally {
+        window.togglingOnline = false;
     }
-    await actualizarColorMarcador();
 }
 
 async function verHistorial() {
@@ -2100,21 +2522,27 @@ function mostrarModalConfirmacionDelivery(titulo, mensaje, onConfirm, onCancel) 
     });
 }
 
+// En delivery.js, modificar actualizarColorMarcador()
 async function actualizarColorMarcador() {
     if (!userMarker || !currentUser) return;
     
     const tienePedido = await deliveryTienePedidoActivo(currentUser.id);
-
+    const isDarkMode = document.body.classList.contains('dark-mode');
+    
     let color;
     let estadoTexto;
     
     if (tienePedido) {
-        color = '#FF6200';
+        color = '#FF6200'; // Naranja - visible en ambos modos
         estadoTexto = '🟠 En una entrega';
     } else {
-        color = '#10B981';
+        color = '#10B981'; // Verde
         estadoTexto = '🟢 Disponible';
     }
+    
+    // Ajustar color del texto según modo oscuro
+    const textBg = isDarkMode ? 'rgba(0,0,0,0.9)' : 'rgba(0,0,0,0.85)';
+    const borderColor = isDarkMode ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.2)';
     
     const nombreMostrar = obtenerPrimerNombre(currentUser.nombre);
     
@@ -2122,18 +2550,17 @@ async function actualizarColorMarcador() {
         html: `
             <div style="text-align: center;">
                 <div style="
-                    background: rgba(0, 0, 0, 0.85);
+                    background: ${textBg};
                     color: white;
                     font-size: 11px;
                     font-weight: bold;
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
                     padding: 3px 8px;
                     border-radius: 14px;
                     margin-bottom: 4px;
                     white-space: nowrap;
                     display: inline-block;
                     box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-                    border: 0.5px solid rgba(255,255,255,0.2);
+                    border: 0.5px solid ${borderColor};
                 ">
                     ${sanitizarHTML(nombreMostrar)}
                 </div>
@@ -2160,7 +2587,6 @@ async function actualizarColorMarcador() {
     
     userMarker.setIcon(nuevoIcono);
     userMarker.setPopupContent(`🏍️ <b>${sanitizarHTML(currentUser.nombre)}</b><br>${estadoTexto}`);
-    console.log(`🎨 Marcador actualizado: ${sanitizarHTML(tienePedido ? 'NARANJA' : 'VERDE')} - ${sanitizarHTML(nombreMostrar)}`);
 }
 
 async function actualizarEstadoYColor() { await actualizarColorMarcador();}
@@ -2317,6 +2743,37 @@ function applyMapRotationDelivery() {
     }, 80);
 }
 
+// Calcular velocidad aproximada entre dos puntos
+let ultimaPosicionZoom = null;
+let ultimoTiempoZoom = null;
+
+function calcularVelocidadAproximada(lat, lng) {
+    if (!ultimaPosicionZoom || !ultimoTiempoZoom) {
+        ultimaPosicionZoom = { lat, lng };
+        ultimoTiempoZoom = Date.now();
+        return 0;
+    }
+    
+    // Calcular distancia en km
+    const distancia = calcularDistanciaEntrePuntos(
+        { lat: ultimaPosicionZoom.lat, lng: ultimaPosicionZoom.lng },
+        { lat, lng }
+    );
+    
+    // Calcular tiempo en horas
+    const tiempoHoras = (Date.now() - ultimoTiempoZoom) / 3600000;
+    
+    // Velocidad en km/h
+    let velocidad = tiempoHoras > 0 ? distancia / tiempoHoras : 0;
+    
+    // Actualizar para próxima vez
+    ultimaPosicionZoom = { lat, lng };
+    ultimoTiempoZoom = Date.now();
+    
+    // Limitar a máximo 120 km/h (evita picos)
+    return Math.min(velocidad, 120);
+}
+
 function actualizarRotacionMarcadores() {
     if (userMarker && typeof userMarker.setRotationAngle === 'function') {
         userMarker.setRotationAngle(mapRotationAngle);
@@ -2335,6 +2792,7 @@ window.rotateMapLeft = rotateMapLeft;
 window.rotateMapRight = rotateMapRight;
 window.resetMapRotation = resetMapRotation;
 window.toggleOnline = toggleOnline;
+window.toggleDarkMode = toggleDarkMode;
 window.verHistorial = verHistorial;
 window.verPerfil = verPerfil;
 window.cerrarSesion = cerrarSesion;
@@ -2352,3 +2810,5 @@ window.toggleAutoFollow = toggleAutoFollow;
 window.toggleZoomDinamico = toggleZoomDinamico;
 window.centrarEnMiUbicacion = centrarEnMiUbicacion;
 window.eliminarPedidoHistorial = eliminarPedidoHistorial;
+window.mostrarModalNuevoPedidoUrgente = mostrarModalNuevoPedidoUrgente;
+window.reproducirSonidoUrgente = reproducirSonidoUrgente;
