@@ -277,7 +277,10 @@ function agregarMapaMapTiler(map) {
         maxZoom: 20,
         crossOrigin: true,
         attribution: '&copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-        className: 'map-tiles'
+        className: 'map-tiles',
+        keepBuffer: 3,              // Mantiene tiles extras para evitar espacios
+        updateWhenZooming: false    // Evita recargar durante el zoom
+
     }).addTo(map);
 
     console.log("🗺️ MapTiler Streets activado (@2x - alta calidad)");
@@ -322,7 +325,6 @@ function limitarCoordenadasACarmen(lat, lng) {
 }
 
 // ==================== EXPORTAR FUNCIONES GLOBALMENTE ====================
-// ==================== EXPORTAR FUNCIONES ====================
 window.agregarMapaMapTiler = agregarMapaMapTiler;
 window.limitarMapaACarmen = limitarMapaACarmen;
 window.limitarCoordenadasACarmen = limitarCoordenadasACarmen;
