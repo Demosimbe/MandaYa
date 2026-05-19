@@ -22,6 +22,7 @@ export default defineConfig({
   root: '.',
   build: {
     outDir: 'dist',
+    emptyOutDir: true,
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'index.html'),
@@ -32,16 +33,24 @@ export default defineConfig({
   },
   server: {
     port: 3000,
-    open: true,
-    cors: true
+    open: true
   }
 });
 
-// Copiar assets después del build
-import { writeFileSync } from 'fs';
+// Copiar archivos estáticos después del build
 process.on('exit', () => {
-  console.log('📦 Copiando archivos estáticos a dist/...');
+  console.log('📦 Copiando js, img, manifest y service-worker a dist...');
+  
   if (existsSync('js')) copyFolderSync('js', 'dist/js');
   if (existsSync('img')) copyFolderSync('img', 'dist/img');
-  console.log('✅ Build completado!');
+  
+  // Copiar archivos raíz importantes
+  const rootFiles = ['manifest.json', 'service-worker.js'];
+  rootFiles.forEach(file => {
+    if (existsSync(file)) {
+      copyFileSync(file, `dist/${file}`);
+    }
+  });
+  
+  console.log('✅ Build completado y archivos copiados!');
 });
