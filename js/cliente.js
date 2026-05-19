@@ -646,7 +646,7 @@ function actualizarRutaYTarifaDebounced() {
     }, 500);
 }
 
-function actualizarTarjetaProgreso(distanciaKm, estado, destinoTexto) {
+function actualizarTarjetaProgreso(distanciaKm = null, tipoRuta = null, destinoTexto = null) {
     const card = document.getElementById('progressCard');
     if (!card) return;
 
@@ -703,7 +703,7 @@ function actualizarTarjetaProgreso(distanciaKm, estado, destinoTexto) {
         if (calificarContainer) calificarContainer.classList.remove('hidden');
     }
     
-    // ✅ APLICAR COLORES DIRECTAMENTE CON JAVASCRIPT
+    // Aplicar colores
     card.style.background = cardBg;
     card.style.borderLeft = `4px solid ${cardBorderLeft}`;
     
@@ -721,25 +721,51 @@ function actualizarTarjetaProgreso(distanciaKm, estado, destinoTexto) {
         }
     });
     
-    // Actualizar barra de progreso (0% a 100% según puntos)
+    // Actualizar barra de progreso
     const porcentaje = (puntosActivos / 4) * 100;
     barra.style.width = `${porcentaje}%`;
     barra.style.backgroundColor = colorBarra;
     
-    // Textos según estado y distancia
+    // ========== NUEVO: MOSTRAR ETA (TIEMPO ESTIMADO) ==========
+    const etaContainer = document.getElementById('etaInfo');
+    const etaValue = document.getElementById('etaValue');
+    
+    if (distanciaKm !== undefined && distanciaKm !== null && (estadoGeneral === 'asignado' || estadoGeneral === 'enCamino')) {
+        const etaMinutos = calcularETA(distanciaKm);
+        if (etaValue) etaValue.innerHTML = etaMinutos;
+        if (etaContainer) etaContainer.classList.remove('hidden');
+        
+        // Mostrar distancia + ETA juntos si existe el elemento
+        if (distanciaElem) {
+            let distanciaTexto = distanciaKm < 0.1 ? '< 100 m' : `${distanciaKm.toFixed(1)} km`;
+            distanciaElem.innerHTML = `${distanciaTexto} • ⏱️ ${etaMinutos}`;
+        }
+    } else {
+        // Ocultar ETA si no hay distancia
+        if (etaContainer) etaContainer.classList.add('hidden');
+        if (distanciaElem && estadoGeneral !== 'buscando' && estadoGeneral !== 'entregado') {
+            // Mantener solo distancia si existe
+            if (distanciaKm !== undefined && distanciaKm !== null && distanciaElem) {
+                let distanciaTexto = distanciaKm < 0.1 ? '< 100 m' : `${distanciaKm.toFixed(1)} km`;
+                distanciaElem.innerHTML = distanciaTexto;
+            } else if (distanciaElem && estadoGeneral === 'buscando') {
+                distanciaElem.innerHTML = '';
+            }
+        }
+    }
+    
+    // ========== TEXTOS SEGÚN ESTADO ==========
     if (estadoGeneral === 'buscando') {
         estadoElem.innerText = '⏳ Buscando delivery...';
-        distanciaElem.innerText = '';
+        if (distanciaElem && !distanciaElem.innerHTML) distanciaElem.innerText = '';
         mensajeElem.innerText = 'Estamos buscando un delivery disponible. En breve alguien tomará tu pedido.';
+        
     } else if (estadoGeneral === 'asignado') {
         estadoElem.innerText = '🚚 Delivery asignado';
-        if (distanciaKm !== undefined) {
-            let distanciaTexto = distanciaKm < 0.1 ? '< 100 m' : `${distanciaKm.toFixed(1)} km`;
-            distanciaElem.innerText = distanciaTexto;
+        if (distanciaKm !== undefined && distanciaKm !== null) {
             if (distanciaKm < 0.15) {
-                estadoElem.innerText = '🚚 LLEGANDO A RECOGER';
+                estadoElem.innerText = '🚚 ¡LLEGANDO A RECOGER!';
                 mensajeElem.innerText = '¡El delivery está llegando al origen!';
-                // Vibración y zoom (si no se ha hecho)
                 if (ultimaDistanciaLlegada !== 'llegando') {
                     if (window.navigator.vibrate) window.navigator.vibrate(500);
                     mostrarToast('🔔 ¡El delivery está llegando!', false);
@@ -755,13 +781,12 @@ function actualizarTarjetaProgreso(distanciaKm, estado, destinoTexto) {
         } else {
             mensajeElem.innerText = 'Delivery en camino al origen';
         }
+        
     } else if (estadoGeneral === 'enCamino') {
         estadoElem.innerText = '📦 En camino a entregar';
-        if (distanciaKm !== undefined) {
-            let distanciaTexto = distanciaKm < 0.1 ? '< 100 m' : `${distanciaKm.toFixed(1)} km`;
-            distanciaElem.innerText = distanciaTexto;
+        if (distanciaKm !== undefined && distanciaKm !== null) {
             if (distanciaKm < 0.15) {
-                estadoElem.innerText = '🎉 LLEGANDO A DESTINO';
+                estadoElem.innerText = '🎉 ¡LLEGANDO A DESTINO!';
                 mensajeElem.innerText = '¡Tu paquete está por llegar!';
                 if (ultimaDistanciaLlegada !== 'llegando') {
                     if (window.navigator.vibrate) window.navigator.vibrate(500);
@@ -778,11 +803,13 @@ function actualizarTarjetaProgreso(distanciaKm, estado, destinoTexto) {
         } else {
             mensajeElem.innerText = 'Delivery en camino a tu destino';
         }
+        
     } else if (estadoGeneral === 'entregado') {
         estadoElem.innerText = '✅ Entregado';
-        distanciaElem.innerText = '';
+        if (distanciaElem) distanciaElem.innerText = '';
+        if (etaContainer) etaContainer.classList.add('hidden');
         mensajeElem.innerText = '¡Envío completado! Gracias por usar MandaYa.';
-        // Lanzar confeti solo una vez
+        
         if (window.confetiLanzado !== true) {
             window.confetiLanzado = true;
             lanzarConfeti();
@@ -790,7 +817,7 @@ function actualizarTarjetaProgreso(distanciaKm, estado, destinoTexto) {
         setTimeout(() => {
             ocultarTarjetaProgreso();
             pedidoActual = null;
-            window.confetiLanzado = false; // Reset para futuros pedidos
+            window.confetiLanzado = false;
         }, 8000);
     }
 }

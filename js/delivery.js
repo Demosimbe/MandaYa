@@ -870,6 +870,7 @@ async function marcarPaqueteRecogido(pedidoId) {
         
           // ✅ Forzar recarga para obtener el nuevo estado 'recogido'
         await cargarPedidos(true);
+        await actualizarBotonesFlotantes();
         
         // ✅ Buscar el pedido actualizado y dibujar ruta de entrega
         const pedidoActualizado = misPedidosActivos.find(p => p.id === pedidoId);
@@ -1441,7 +1442,8 @@ async function cargarPedidos(force = false) {
         } else {
             detenerActualizacionRutaTiempoReal();
         }
-          
+           await actualizarBotonesFlotantes();
+
         console.log(`📦 ${pedidosDisponibles.length} pedidos disponibles, ${misPedidosActivos.length} activos`);
         
     } catch(e) {
@@ -1605,6 +1607,7 @@ async function agarrarPedido(pedidoId) {
         // ========== 7. ACTUALIZAR LISTAS ==========
         // Recargar pedidos desde Supabase
         await cargarPedidos(true);
+        await actualizarBotonesFlotantes();
         
         // Actualizar color del marcador (a naranja porque está ocupado)
         await actualizarColorMarcador();
@@ -1695,6 +1698,7 @@ async function completarPedido(pedidoId) {
         
         // Recargar pedidos FORZADAMENTE
         await cargarPedidos(true);
+        await actualizarBotonesFlotantes();
         
         // Actualizar color del marcador
         await actualizarColorMarcador();
@@ -1780,6 +1784,205 @@ function actualizarListaPedidos() {
             `;
         }).join('');
     }
+}
+
+// ==================== BOTONES FLOTANTES DEL MAPA (ARRIBA CENTRADOS) ====================
+
+// Función para mostrar/ocultar botones según el estado del pedido
+function actualizarBotonesFlotantes() {
+    const btnRecoger = document.getElementById('btnRecogerPaquete');
+    const btnEntregar = document.getElementById('btnEntregarPaquete');
+    const btnDetalles = document.getElementById('btnVerDetallesPedido');
+    
+    if (!btnRecoger || !btnEntregar) return;
+    
+    // Verificar si hay pedido activo
+    if (misPedidosActivos.length === 0) {
+        btnRecoger.style.display = 'none';
+        btnEntregar.style.display = 'none';
+        if (btnDetalles) btnDetalles.style.display = 'none';
+        return;
+    }
+    
+    const pedidoActivo = misPedidosActivos[0];
+    
+    // Mostrar botón de detalles siempre que hay pedido activo
+    if (btnDetalles) btnDetalles.style.display = 'flex';
+    
+    // Estado 'asignado' -> mostrar botón RECOGER
+    if (pedidoActivo.estado === 'asignado') {
+        btnRecoger.style.display = 'flex';
+        btnEntregar.style.display = 'none';
+        
+        // Agregar efecto de pulso para llamar la atención
+        btnRecoger.classList.add('btn-pulse');
+        setTimeout(() => {
+            btnRecoger.classList.remove('btn-pulse');
+        }, 3000);
+        
+    } 
+    // Estado 'recogido' -> mostrar botón ENTREGAR
+    else if (pedidoActivo.estado === 'recogido') {
+        btnRecoger.style.display = 'none';
+        btnEntregar.style.display = 'flex';
+        
+        // Agregar efecto de pulso para llamar la atención
+        btnEntregar.classList.add('btn-pulse');
+        setTimeout(() => {
+            btnEntregar.classList.remove('btn-pulse');
+        }, 3000);
+    } 
+    else {
+        btnRecoger.style.display = 'none';
+        btnEntregar.style.display = 'none';
+    }
+}
+
+// Función para marcar paquete recogido DESDE EL MAPA
+async function marcarPaqueteRecogidoDesdeMapa() {
+    if (misPedidosActivos.length === 0) {
+        mostrarToast("❌ No hay pedido activo para recoger", true);
+        return;
+    }
+    
+    const pedidoActivo = misPedidosActivos[0];
+    
+    if (pedidoActivo.estado !== 'asignado') {
+        mostrarToast(`❌ El pedido ya fue ${pedidoActivo.estado === 'recogido' ? 'recogido' : 'entregado'}`, true);
+        return;
+    }
+    
+    // Confirmación rápida con vibración
+    if (window.navigator.vibrate) window.navigator.vibrate(50);
+    
+    const confirmado = await mostrarModalConfirmacionDelivery(
+        "📦 ¿Ya recogiste el paquete?",
+        `Confirma que tienes el paquete del pedido #${pedidoActivo.id} en tu poder.`,
+        async () => {
+            if (window.navigator.vibrate) window.navigator.vibrate(100);
+            await marcarPaqueteRecogido(pedidoActivo.id);
+            
+            // Ocultar botón después de la acción
+            const btnRecoger = document.getElementById('btnRecogerPaquete');
+            if (btnRecoger) btnRecoger.style.display = 'none';
+            
+            mostrarToast("✅ ¡Paquete recogido! Ahora dirígete al destino.", false);
+        }
+    );
+}
+
+// Función para completar pedido DESDE EL MAPA
+async function completarPedidoDesdeMapa() {
+    if (misPedidosActivos.length === 0) {
+        mostrarToast("❌ No hay pedido activo para entregar", true);
+        return;
+    }
+    
+    const pedidoActivo = misPedidosActivos[0];
+    
+    if (pedidoActivo.estado !== 'recogido') {
+        mostrarToast(`❌ Primero debes marcar el paquete como recogido`, true);
+        return;
+    }
+    
+    if (window.navigator.vibrate) window.navigator.vibrate(50);
+    
+    const confirmado = await mostrarModalConfirmacionDelivery(
+        "🏁 ¿Ya entregaste el paquete?",
+        `Confirma la entrega del pedido #${pedidoActivo.id} y recibirás $${pedidoActivo.tarifa} MXN.`,
+        async () => {
+            if (window.navigator.vibrate) window.navigator.vibrate(200);
+            await completarPedido(pedidoActivo.id);
+            
+            // Ocultar botones después de la acción
+            const btnEntregar = document.getElementById('btnEntregarPaquete');
+            const btnDetalles = document.getElementById('btnVerDetallesPedido');
+            if (btnEntregar) btnEntregar.style.display = 'none';
+            if (btnDetalles) btnDetalles.style.display = 'none';
+            
+            mostrarToast(`🎉 ¡Pedido #${pedidoActivo.id} entregado! Ganaste $${pedidoActivo.tarifa} MXN`, false);
+        }
+    );
+}
+
+// Ver detalles del pedido activo
+function verDetallesPedidoActivo() {
+    if (misPedidosActivos.length === 0) {
+        mostrarToast("No hay pedido activo", true);
+        return;
+    }
+    
+    const pedido = misPedidosActivos[0];
+    
+    const modal = document.createElement('div');
+    modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0,0,0,0.95);
+        z-index: 20000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+    `;
+    
+    modal.innerHTML = `
+        <div style="background: linear-gradient(135deg, #1e1e1e, #2a2a2a); border-radius: 32px; max-width: 400px; width: 100%; padding: 24px;">
+            <div style="text-align: center; margin-bottom: 20px;">
+                <i class="fas fa-receipt" style="color: #FF6200; font-size: 48px;"></i>
+                <h3 style="color: white; font-size: 22px; font-weight: bold; margin-top: 8px;">Detalle del pedido</h3>
+            </div>
+            
+            <div style="background: #2a2a2a; border-radius: 20px; padding: 16px; margin-bottom: 16px;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 12px;">
+                    <span style="color: #9ca3af;">N° Pedido:</span>
+                    <span style="color: white; font-weight: bold;">#${pedido.id}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 12px;">
+                    <span style="color: #9ca3af;">Cliente:</span>
+                    <span style="color: white; font-weight: bold;">${pedido.clienteNombre || 'Cliente'}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 12px;">
+                    <span style="color: #9ca3af;">Tipo:</span>
+                    <span style="color: white; font-weight: bold; text-transform: capitalize;">${pedido.tipo || 'Paquete'}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 12px;">
+                    <span style="color: #9ca3af;">Distancia:</span>
+                    <span style="color: white; font-weight: bold;">${pedido.distanciaReal} km</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <span style="color: #9ca3af;">Pago:</span>
+                    <span style="color: #FF6200; font-weight: bold; font-size: 18px;">$${pedido.tarifa} MXN</span>
+                </div>
+            </div>
+            
+            <div style="background: #2a2a2a; border-radius: 20px; padding: 16px; margin-bottom: 16px;">
+                <div style="display: flex; gap: 12px; margin-bottom: 16px;">
+                    <i class="fas fa-circle" style="color: #10B981; font-size: 12px; margin-top: 4px;"></i>
+                    <div>
+                        <div style="color: #9ca3af; font-size: 12px;">RECOGER EN</div>
+                        <div style="color: white; font-size: 14px;">${pedido.origen || 'No especificado'}</div>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 12px;">
+                    <i class="fas fa-square" style="color: #3B82F6; font-size: 12px; margin-top: 4px;"></i>
+                    <div>
+                        <div style="color: #9ca3af; font-size: 12px;">ENTREGAR EN</div>
+                        <div style="color: white; font-size: 14px;">${pedido.destino || 'No especificado'}</div>
+                    </div>
+                </div>
+            </div>
+            
+            <button onclick="this.parentElement.parentElement.remove()" style="width: 100%; background: #FF6200; border: none; padding: 14px; border-radius: 50px; color: white; font-weight: bold; font-size: 16px; cursor: pointer;">
+                CERRAR
+            </button>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
 }
 
 // ==================== ACTUALIZAR RUTA EN TIEMPO REAL ====================
@@ -2098,6 +2301,7 @@ async function toggleOnline() {
             
             // 5. Cargar pedidos disponibles
             await cargarPedidos(true);
+            await actualizarBotonesFlotantes();
             
             // 6. Iniciar intervalo de actualización de ubicación (cada 8 segundos)
             if (ubicacionInterval) clearInterval(ubicacionInterval);
@@ -2910,3 +3114,7 @@ window.centrarEnMiUbicacion = centrarEnMiUbicacion;
 window.eliminarPedidoHistorial = eliminarPedidoHistorial;
 window.mostrarModalNuevoPedidoUrgente = mostrarModalNuevoPedidoUrgente;
 window.reproducirSonidoUrgente = reproducirSonidoUrgente;
+window.marcarPaqueteRecogidoDesdeMapa = marcarPaqueteRecogidoDesdeMapa;
+window.completarPedidoDesdeMapa = completarPedidoDesdeMapa;
+window.verDetallesPedidoActivo = verDetallesPedidoActivo;
+window.actualizarBotonesFlotantes = actualizarBotonesFlotantes;
