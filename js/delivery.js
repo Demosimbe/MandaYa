@@ -3108,9 +3108,10 @@ window.cerrarModalPerfilDelivery = cerrarModalPerfilDelivery;
 window.limpiarIntervalosDelivery = limpiarIntervalosDelivery;
 window.notificarNuevoPedido = notificarNuevoPedido;
 // Exportar funciones
-window.toggleAutoFollow = toggleAutoFollow;
+window.toggleAutoFollow = toggleAutoFollow; 
 window.toggleZoomDinamico = toggleZoomDinamico;
 window.centrarEnMiUbicacion = centrarEnMiUbicacion;
+
 window.eliminarPedidoHistorial = eliminarPedidoHistorial;
 window.mostrarModalNuevoPedidoUrgente = mostrarModalNuevoPedidoUrgente;
 window.reproducirSonidoUrgente = reproducirSonidoUrgente;

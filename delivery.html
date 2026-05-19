@@ -699,12 +699,18 @@
                 </div>
             </div>
         </div>
-        
+
         <!-- Contenedor de botones del mapa (lado derecho, ordenados de abajo hacia arriba) -->
         <div class="map-buttons-container">  
             <!-- Centrar mapa (abajo del todo) -->
             <div class="map-btn" onclick="centrarMapa()" title="Centrar mapa">
                 <i class="fas fa-location-dot text-[#FF6200]"></i>
+            </div>
+            
+            <!-- AUTO-FOLLOW (seguimiento automático) - NUEVO BOTÓN -->
+            <div class="map-btn" id="btnAutoFollow" onclick="toggleAutoFollow()" 
+                 style="background: #FF6200; color: white;" title="Seguimiento automático">
+                <i class="fas fa-location-arrow"></i>
             </div>
             
             <!-- Rotar izquierda -->
@@ -722,37 +728,36 @@
                 <i class="fas fa-undo-alt text-blue-500"></i>
             </div>
         </div>
-
+        
         <!-- Botón toggle sidebar mobile (solo se ve en móvil) -->
         <button onclick="toggleMobileSidebar()" class="fixed bottom-20 left-4 bg-[#FF6200] text-white p-3 rounded-full shadow-lg z-[1000] lg:hidden">
             <i class="fas fa-list text-lg"></i>
         </button>
-    </div>
-
+       
     <!-- ==================== SIDEBAR DESKTOP (DERECHA en PC) ==================== -->
-    <div class="hidden lg:flex w-96 bg-white sidebar flex-col h-full overflow-auto z-10 relative shadow-xl order-last lg:order-last">
-        <div class="bg-[#FF6200] text-white p-5 flex items-center justify-between sticky top-0 z-20">
-    <div class="flex items-center gap-3">
-        <div class="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
-            <i class="fas fa-motorcycle text-white text-xl"></i>
-        </div>
-        <div>
-            <h1 class="font-bold text-xl">MandaYa</h1>
-            <p class="text-xs opacity-90">Delivery • Gana con cada envío</p>
-        </div>
-    </div>
-    <div class="flex items-center gap-2">
-        <!-- Botón modo oscuro -->
-        <button id="btnDarkMode" onclick="toggleDarkMode()" class="hover:bg-white/20 rounded-full p-2 transition-all w-10 h-10 flex items-center justify-center">
-            <i id="darkModeIcon" class="fas fa-moon text-xl"></i>
-        </button>
-        <!-- Botón perfil -->
-        <button onclick="verPerfil()" class="hover:bg-white/20 rounded-full p-2 transition-all">
-            <i class="fas fa-user-circle text-3xl"></i>
-        </button>
-    </div>
-</div>
-
+        <div class="hidden lg:flex w-96 bg-white sidebar flex-col h-full overflow-auto z-10 relative shadow-xl order-last lg:order-last">      
+            <div class="bg-[#FF6200] text-white p-5 flex items-center justify-between sticky top-0 z-20">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
+                        <i class="fas fa-motorcycle text-white text-xl"></i>
+                    </div>
+                    <div>
+                        <h1 class="font-bold text-xl">MandaYa</h1>
+                        <p class="text-xs opacity-90">Delivery • Gana con cada envío</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <!-- Botón modo oscuro -->
+                    <button id="btnDarkMode" onclick="toggleDarkMode()" class="hover:bg-white/20 rounded-full p-2 transition-all w-10 h-10 flex items-center justify-center">
+                        <i id="darkModeIcon" class="fas fa-moon text-xl"></i>
+                    </button>
+                    <!-- Botón perfil -->
+                    <button onclick="verPerfil()" class="hover:bg-white/20 rounded-full p-2 transition-all">
+                        <i class="fas fa-user-circle text-3xl"></i>
+                    </button>
+                </div>
+            </div>
+                
         <div id="userInfo" class="bg-gray-50 p-4 border-b"></div>
 
         <div class="p-4 border-b bg-white">
@@ -946,6 +951,37 @@
             if (map) map.setView([18.6456, -91.8249], 13);
             mostrarToast("📍 Mapa centrado en Ciudad del Carmen");
         }
+
+        // ==================== MANEJAR ROTACIÓN DE PANTALLA ====================
+function manejarRotacion() {
+    setTimeout(() => {
+        if (typeof map !== 'undefined' && map && typeof map.invalidateSize === 'function') {
+            map.invalidateSize();
+            console.log("🔄 Mapa redimensionado después de rotación");
+            
+            // Centrar en la ubicación actual si hay marcador
+            if (typeof userMarker !== 'undefined' && userMarker && autoFollow) {
+                const latLng = userMarker.getLatLng();
+                map.setView([latLng.lat, latLng.lng], map.getZoom());
+            } else if (typeof deliveryMarker !== 'undefined' && deliveryMarker && autoFollowDelivery) {
+                const latLng = deliveryMarker.getLatLng();
+                map.setView([latLng.lat, latLng.lng], followZoomLevel || 16);
+            }
+        }
+    }, 100);
+}
+
+// Detectar rotación del dispositivo
+window.addEventListener('orientationchange', function() {
+    console.log("🔄 Dispositivo rotado (orientationchange)");
+    manejarRotacion();
+});
+
+// También detectar cambio de tamaño (útil para algunos navegadores)
+window.addEventListener('resize', function() {
+    console.log("📱 Pantalla redimensionada (resize)");
+    manejarRotacion();
+});
     </script>
 </body>
 </html>

@@ -862,14 +862,27 @@ function mostrarModalCalificacion() {
     const modal = document.createElement('div');
     modal.className = 'fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[10002] p-4';
     modal.innerHTML = `
-        <div class="bg-gray-800 rounded-2xl max-w-sm w-full p-6 text-center">
+        <div class="bg-gray-800 rounded-2xl max-w-sm w-full p-6 text-center relative">
+            <!-- ✅ BOTÓN CERRAR (X) - Arriba derecha -->
+            <button onclick="this.closest('.fixed').remove()" 
+                    class="absolute top-3 right-3 text-gray-400 hover:text-white transition-all text-xl w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-700">
+                <i class="fas fa-times"></i>
+            </button>
+            
             <h3 class="text-white text-lg font-bold mb-4">Califica el servicio</h3>
+            
             <div class="flex justify-center gap-3 mb-4" id="estrellasCalificacion">
                 ${[1,2,3,4,5].map(i => `<i class="fas fa-star text-3xl text-gray-500 cursor-pointer hover:text-yellow-400 transition-all" data-puntuacion="${i}"></i>`).join('')}
             </div>
+            
             <textarea id="comentarioCalificacion" class="w-full bg-gray-700 text-white rounded-lg p-2 text-sm" rows="2" placeholder="Opcional: deja un comentario"></textarea>
+            
             <button id="enviarCalificacion" class="mt-4 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-xl w-full">Enviar calificación</button>
-            <button onclick="this.parentElement.parentElement.remove()" class="mt-2 text-gray-400 text-sm">Cerrar</button>
+            
+            <!-- ✅ Botón cerrar adicional abajo (opcional) -->
+            <button onclick="this.closest('.fixed').remove()" class="mt-2 text-gray-400 hover:text-white text-sm w-full py-1 transition-all">
+                Cerrar sin calificar
+            </button>
         </div>
     `;
     document.body.appendChild(modal);
@@ -913,12 +926,18 @@ function mostrarModalCalificacion() {
             });
         }
         
-        // ✅ Mostrar mensaje de agradecimiento
+        // Mostrar mensaje de agradecimiento
         mostrarToast(`✅ ¡Gracias por tu calificación de ${puntuacion} estrellas! 🌟`);
         
-        // ✅ Cambiar el contenido del modal a un mensaje de agradecimiento
+        // Cambiar el contenido del modal a un mensaje de agradecimiento
         modal.innerHTML = `
-            <div class="bg-gray-800 rounded-2xl max-w-sm w-full p-6 text-center">
+            <div class="bg-gray-800 rounded-2xl max-w-sm w-full p-6 text-center relative">
+                <!-- ✅ También agregar X aquí -->
+                <button onclick="this.closest('.fixed').remove()" 
+                        class="absolute top-3 right-3 text-gray-400 hover:text-white transition-all text-xl w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-700">
+                    <i class="fas fa-times"></i>
+                </button>
+                
                 <div class="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
                     <i class="fas fa-heart text-3xl text-green-500"></i>
                 </div>
@@ -927,13 +946,16 @@ function mostrarModalCalificacion() {
                 <div class="mt-4 flex justify-center gap-1 text-yellow-400 text-xl">
                     ${'★'.repeat(puntuacion)}${'☆'.repeat(5 - puntuacion)}
                 </div>
+                <button onclick="this.closest('.fixed').remove()" class="mt-4 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-xl w-full">
+                    Cerrar
+                </button>
             </div>
         `;
         
-        // ✅ Cerrar el modal automáticamente después de 2 segundos
+        // ✅ Cerrar el modal automáticamente después de 4 segundos (pero la X también funciona)
         setTimeout(() => {
-            modal.remove();
-        }, 2000);
+            if (modal && modal.remove) modal.remove();
+        }, 4000);
     };
 }
     

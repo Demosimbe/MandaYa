@@ -871,6 +871,37 @@
     
     iniciarSincronizacion();
     window.addEventListener('beforeunload', function() { detenerSincronizacion(); });
+
+    // ==================== MANEJAR ROTACIÓN DE PANTALLA ====================
+function manejarRotacion() {
+    setTimeout(() => {
+        if (typeof map !== 'undefined' && map && typeof map.invalidateSize === 'function') {
+            map.invalidateSize();
+            console.log("🔄 Mapa redimensionado después de rotación");
+            
+            // Centrar en la ubicación actual si hay marcador
+            if (typeof userMarker !== 'undefined' && userMarker && autoFollow) {
+                const latLng = userMarker.getLatLng();
+                map.setView([latLng.lat, latLng.lng], map.getZoom());
+            } else if (typeof deliveryMarker !== 'undefined' && deliveryMarker && autoFollowDelivery) {
+                const latLng = deliveryMarker.getLatLng();
+                map.setView([latLng.lat, latLng.lng], followZoomLevel || 16);
+            }
+        }
+    }, 100);
+}
+
+// Detectar rotación del dispositivo
+window.addEventListener('orientationchange', function() {
+    console.log("🔄 Dispositivo rotado (orientationchange)");
+    manejarRotacion();
+});
+
+// También detectar cambio de tamaño (útil para algunos navegadores)
+window.addEventListener('resize', function() {
+    console.log("📱 Pantalla redimensionada (resize)");
+    manejarRotacion();
+});
 </script>
 </body>
 </html>
