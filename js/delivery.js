@@ -680,22 +680,31 @@ async function dibujarRutaEntrega(pedido) {
 // ==================== MODO OSCURO ====================
 function toggleDarkMode() {
     const body = document.body;
-    const btn = document.querySelector('.dark-mode-toggle i');
+    const iconDesktop = document.getElementById('darkModeIcon');
+    const iconMobile = document.getElementById('darkModeIconMobile');
     
     if (body.classList.contains('dark-mode')) {
         body.classList.remove('dark-mode');
         localStorage.setItem('delivery_dark_mode', 'false');
-        if (btn) {
-            btn.classList.remove('fa-sun');
-            btn.classList.add('fa-moon');
+        if (iconDesktop) {
+            iconDesktop.classList.remove('fa-sun');
+            iconDesktop.classList.add('fa-moon');
+        }
+        if (iconMobile) {
+            iconMobile.classList.remove('fa-sun');
+            iconMobile.classList.add('fa-moon');
         }
         mostrarToast("☀️ Modo claro activado");
     } else {
         body.classList.add('dark-mode');
         localStorage.setItem('delivery_dark_mode', 'true');
-        if (btn) {
-            btn.classList.remove('fa-moon');
-            btn.classList.add('fa-sun');
+        if (iconDesktop) {
+            iconDesktop.classList.remove('fa-moon');
+            iconDesktop.classList.add('fa-sun');
+        }
+        if (iconMobile) {
+            iconMobile.classList.remove('fa-moon');
+            iconMobile.classList.add('fa-sun');
         }
         mostrarToast("🌙 Modo oscuro activado");
     }
@@ -707,25 +716,32 @@ function toggleDarkMode() {
     }, 100);
 }
 
-// Cargar preferencia de modo oscuro al iniciar
 function cargarModoOscuro() {
     const darkMode = localStorage.getItem('delivery_dark_mode');
-    const btn = document.querySelector('.dark-mode-toggle i');
+    const iconDesktop = document.getElementById('darkModeIcon');
+    const iconMobile = document.getElementById('darkModeIconMobile');
     
     if (darkMode === 'true') {
         document.body.classList.add('dark-mode');
-        if (btn) {
-            btn.classList.remove('fa-moon');
-            btn.classList.add('fa-sun');
+        if (iconDesktop) {
+            iconDesktop.classList.remove('fa-moon');
+            iconDesktop.classList.add('fa-sun');
+        }
+        if (iconMobile) {
+            iconMobile.classList.remove('fa-moon');
+            iconMobile.classList.add('fa-sun');
         }
     } else {
-        // Por defecto, detectar si es de noche (20:00 - 06:00)
         const hora = new Date().getHours();
         if (hora >= 20 || hora < 6) {
             document.body.classList.add('dark-mode');
-            if (btn) {
-                btn.classList.remove('fa-moon');
-                btn.classList.add('fa-sun');
+            if (iconDesktop) {
+                iconDesktop.classList.remove('fa-moon');
+                iconDesktop.classList.add('fa-sun');
+            }
+            if (iconMobile) {
+                iconMobile.classList.remove('fa-moon');
+                iconMobile.classList.add('fa-sun');
             }
             localStorage.setItem('delivery_dark_mode', 'true');
         }
