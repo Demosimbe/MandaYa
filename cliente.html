@@ -106,6 +106,171 @@
         
         @keyframes shakeToast { 0%, 100% { transform: translateX(-50%) translateY(0); } 25% { transform: translateX(-52%) translateY(0); } 75% { transform: translateX(-48%) translateY(0); } }
         .toast-error-shake { animation: shakeToast 0.3s ease-in-out !important; }
+
+        /* ==================== MODO OSCURO PARA CLIENTE ==================== */
+        :root {
+            --cliente-bg-primary: #ffffff;
+            --cliente-bg-secondary: #f8fafc;
+            --cliente-bg-card: #ffffff;
+            --cliente-text-primary: #1f2937;
+            --cliente-text-secondary: #6b7280;
+            --cliente-border-color: #e5e7eb;
+            --cliente-sidebar-bg: #ffffff;
+        }
+        
+        body.dark-mode {
+            --cliente-bg-primary: #0f0f0f;
+            --cliente-bg-secondary: #1a1a1a;
+            --cliente-bg-card: #1e1e1e;
+            --cliente-text-primary: #f3f4f6;
+            --cliente-text-secondary: #9ca3af;
+            --cliente-border-color: #2d2d2d;
+            --cliente-sidebar-bg: #121212;
+        }
+        
+        body.dark-mode .sidebar,
+        body.dark-mode #mobileSidebar,
+        body.dark-mode .bg-white,
+        body.dark-mode .bg-gray-50,
+        body.dark-mode .bg-gray-100 {
+            background-color: var(--cliente-sidebar-bg) !important;
+        }
+        
+        body.dark-mode .bg-gray-800 {
+            background-color: #1e1e1e !important;
+        }
+        
+        body.dark-mode .bg-gray-700 {
+            background-color: #2a2a2a !important;
+        }
+        
+        /* Barra superior negra en modo oscuro */
+        body.dark-mode .bg-black {
+            background-color: #1a1a1a !important;
+        }
+        
+        body.dark-mode .sticky.top-0,
+        body.dark-mode .sticky.top-0.z-20,
+        body.dark-mode .sidebar .sticky,
+        body.dark-mode #mobileSidebar .sticky {
+            background-color: #1a1a1a !important;
+        }
+        
+        /* Forzar textos blancos en la barra superior */
+        body.dark-mode .sticky.top-0 *,
+        body.dark-mode .sticky.top-0 .text-white,
+        body.dark-mode .sticky.top-0 h1,
+        body.dark-mode .sticky.top-0 p,
+        body.dark-mode .sticky.top-0 i,
+        body.dark-mode #mobileSidebar .sticky *,
+        body.dark-mode #mobileSidebar .sticky .text-white {
+            color: #ffffff !important;
+        }
+        
+        body.dark-mode .border-gray-200,
+        body.dark-mode .border-gray-300,
+        body.dark-mode .border-gray-700 {
+            border-color: var(--cliente-border-color) !important;
+        }
+        
+        body.dark-mode .text-gray-600,
+        body.dark-mode .text-gray-500,
+        body.dark-mode .text-gray-400 {
+            color: var(--cliente-text-secondary) !important;
+        }
+        
+        body.dark-mode .text-gray-800,
+        body.dark-mode .text-gray-900 {
+            color: var(--cliente-text-primary) !important;
+        }
+        
+        body.dark-mode .text-gray-700 {
+            color: #9ca3af !important;
+        }
+        
+        /* Tarjeta de progreso en modo oscuro */
+        body.dark-mode #progressCard {
+            background: #1e1e1e !important;
+            border: 1px solid #2d2d2d !important;
+        }
+        
+        body.dark-mode #progressCard .text-gray-400 {
+            color: #9ca3af !important;
+        }
+        
+        body.dark-mode #progressCard .bg-gray-200 {
+            background-color: #2d2d2d !important;
+        }
+        
+        /* Panel de estado en modo oscuro */
+        body.dark-mode .bg-gray-100,
+        body.dark-mode .estado-panel {
+            background-color: #1e1e1e !important;
+            border-color: #2d2d2d !important;
+        }
+        
+        body.dark-mode #panelEstadoPedido,
+        body.dark-mode #panelEstadoPedidoMobile {
+            background-color: #1e1e1e !important;
+            border-color: #2d2d2d !important;
+        }
+        
+        /* Botones del mapa en modo oscuro */
+        body.dark-mode .map-btn {
+            background: #2a2a2a !important;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3) !important;
+        }
+        
+        body.dark-mode .map-btn:hover {
+            background: #3a3a3a !important;
+        }
+        
+        /* Selector de modo (Origen/Destino) en modo oscuro */
+        body.dark-mode .select-mode-badge {
+            background: #2a2a2a !important;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3) !important;
+        }
+        
+        body.dark-mode .mode-btn.inactive {
+            background: #3a3a3a !important;
+            color: #9ca3af !important;
+        }
+        
+        body.dark-mode .mode-btn.active {
+            background: #FF6200 !important;
+            color: white !important;
+        }
+        
+        /* Delivery info en modo oscuro */
+        body.dark-mode .delivery-info {
+            background: #2a2a2a !important;
+            color: white !important;
+        }
+        
+        body.dark-mode .delivery-info .text-gray-500 {
+            color: #9ca3af !important;
+        }
+        
+        /* Modal de pago en modo oscuro (ya están oscuros por defecto) */
+        body.dark-mode .bg-gray-800 {
+            background-color: #1e1e1e !important;
+        }
+        
+        body.dark-mode .bg-gray-700 {
+            background-color: #2a2a2a !important;
+        }
+        
+        /* Mapa sin filtro en modo oscuro */
+        body.dark-mode #map {
+            filter: none !important;
+        }
+        
+        /* Transición suave */
+        body, .sidebar, #mobileSidebar, .bg-white, .bg-gray-100, .bg-gray-50, 
+        .pedido-card, button, .map-btn, #progressCard, .estado-panel {
+            transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+        }
+            
         
         /* Botones del mapa - contenedor compacto */
         .map-buttons-container {
@@ -167,6 +332,13 @@
                     <p class="text-xs opacity-90">Envíos rápidos y seguros</p>
                 </div>
             </div>
+
+            <div class="flex items-center gap-2">
+                 
+            <button id="btnDarkMode" onclick="toggleDarkMode()" class="hover:bg-white/20 rounded-full p-2 transition-all w-10 h-10 flex items-center justify-center">
+                 <i id="darkModeIcon" class="fas fa-moon text-xl"></i>
+            </button>
+
             <button onclick="verPerfil()" class="text-white hover:bg-white/20 rounded-full p-2 transition-all">
                 <i class="fas fa-user-circle text-3xl"></i>
             </button>
@@ -446,6 +618,12 @@
                 <i class="fas fa-undo-alt text-blue-500"></i>
             </div>
         </div>
+
+          <div class="flex items-center gap-2">
+        <!-- ✅ Botón modo oscuro para móvil (NUEVO) -->
+        <button id="btnDarkModeMobile" onclick="toggleDarkMode()" class="hover:bg-white/20 rounded-full p-2 transition-all w-8 h-8 flex items-center justify-center">
+            <i id="darkModeIconMobile" class="fas fa-moon text-base"></i>
+        </button>
         
         <!-- Botón toggle sidebar mobile -->
         <button onclick="toggleMobileSidebar()" class="fixed bottom-20 left-4 bg-[#FF6200] text-white p-3 rounded-full shadow-lg z-[1000] lg:hidden">
@@ -871,6 +1049,83 @@
     
     iniciarSincronizacion();
     window.addEventListener('beforeunload', function() { detenerSincronizacion(); });
+
+    // ==================== MODO OSCURO PARA CLIENTE ====================
+function toggleDarkMode() {
+    const body = document.body;
+    const iconDesktop = document.getElementById('darkModeIcon');
+    const iconMobile = document.getElementById('darkModeIconMobile');
+    
+    if (body.classList.contains('dark-mode')) {
+        body.classList.remove('dark-mode');
+        localStorage.setItem('cliente_dark_mode', 'false');
+        if (iconDesktop) {
+            iconDesktop.classList.remove('fa-sun');
+            iconDesktop.classList.add('fa-moon');
+        }
+        if (iconMobile) {
+            iconMobile.classList.remove('fa-sun');
+            iconMobile.classList.add('fa-moon');
+        }
+        mostrarToast("☀️ Modo claro activado", false);
+    } else {
+        body.classList.add('dark-mode');
+        localStorage.setItem('cliente_dark_mode', 'true');
+        if (iconDesktop) {
+            iconDesktop.classList.remove('fa-moon');
+            iconDesktop.classList.add('fa-sun');
+        }
+        if (iconMobile) {
+            iconMobile.classList.remove('fa-moon');
+            iconMobile.classList.add('fa-sun');
+        }
+        mostrarToast("🌙 Modo oscuro activado", false);
+    }
+    
+    // Forzar redimensionamiento del mapa después de cambiar modo
+    setTimeout(() => {
+        if (typeof map !== 'undefined' && map && typeof map.invalidateSize === 'function') {
+            map.invalidateSize();
+        }
+    }, 100);
+}
+
+// Cargar modo oscuro guardado al iniciar
+function cargarModoOscuroCliente() {
+    const darkMode = localStorage.getItem('cliente_dark_mode');
+    const iconDesktop = document.getElementById('darkModeIcon');
+    const iconMobile = document.getElementById('darkModeIconMobile');
+    
+    if (darkMode === 'true') {
+        document.body.classList.add('dark-mode');
+        if (iconDesktop) {
+            iconDesktop.classList.remove('fa-moon');
+            iconDesktop.classList.add('fa-sun');
+        }
+        if (iconMobile) {
+            iconMobile.classList.remove('fa-moon');
+            iconMobile.classList.add('fa-sun');
+        }
+    } else {
+        // Opcional: modo oscuro automático por hora (20:00 a 6:00)
+        const hora = new Date().getHours();
+        if (hora >= 20 || hora < 6) {
+            document.body.classList.add('dark-mode');
+            if (iconDesktop) {
+                iconDesktop.classList.remove('fa-moon');
+                iconDesktop.classList.add('fa-sun');
+            }
+            if (iconMobile) {
+                iconMobile.classList.remove('fa-moon');
+                iconMobile.classList.add('fa-sun');
+            }
+            localStorage.setItem('cliente_dark_mode', 'true');
+        }
+    }
+}
+
+// Ejecutar al cargar la página
+cargarModoOscuroCliente();
 
     // ==================== MANEJAR ROTACIÓN DE PANTALLA ====================
 function manejarRotacion() {
