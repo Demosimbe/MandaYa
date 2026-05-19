@@ -209,6 +209,7 @@ function crearMarcadorDelivery(lat, lng, nombre, color, tienePedido = null) {
                     align-items: center;
                     justify-content: center;
                     margin: 0 auto;
+                    transition: transform 0.05s linear;
                 ">
                     <i class="fas fa-motorcycle" style="color:white; font-size:18px;"></i>
                 </div>
@@ -219,13 +220,21 @@ function crearMarcadorDelivery(lat, lng, nombre, color, tienePedido = null) {
         popupAnchor: [0, -25]
     });
     
-    const marker = L.marker([lat, lng], { icon: iconoConNombre });
+    // ✅ IMPORTANTE: Agregar rotationOrigin para que la rotación sea centrada
+    const marker = L.marker([lat, lng], { 
+        icon: iconoConNombre,
+        rotationOrigin: 'center center'
+    });
     
     if (estadoTexto) {
         marker.bindPopup(`<b>🏍️ ${sanitizarHTML(nombre)}</b><br>${sanitizarHTML(estadoTexto)}`);
     } else {
         marker.bindPopup(`<b>🏍️ ${sanitizarHTML(nombre)}</b>`);
     }
+    
+    // Guardar referencia al nombre para actualizar después
+    marker.deliveryNombre = nombre;
+    marker.deliveryColor = colorFinal;
     
     return marker;
 }

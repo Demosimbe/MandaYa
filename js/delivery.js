@@ -40,6 +40,15 @@ let ultimoPedidoDibujado = null;
 let ultimaEtapa = null;
 let dibujandoRuta = false;
 let ultimaPeticionPedidos = 0;
+let velocidadAnimacionVariable = true;
+
+// ==================== SMOOTH TRACKING (TIPO UBER) ====================
+let smoothAnimationFrame = null;
+let posicionActual = null;        // Posición actual interpolada
+let posicionDestino = null;       // Posición destino (real del GPS)
+let velocidadAnimacion = 0.15;    // Velocidad de interpolación (0-1, más bajo = más suave)
+let ultimoAngulo = 0;              // Último ángulo para rotación suave
+let anguloActual = 0;              // Ángulo actual (para interpolación)
 
 // Control de página visible
 let paginaVisible = true;
@@ -289,6 +298,72 @@ function cerrarModalUrgente() {
     const modal = document.getElementById('urgentModal');
     if (modal) modal.remove();
     if (timeoutPedidoUrgente) clearTimeout(timeoutPedidoUrgente);
+}
+
+// ==================== CÁLCULO DE ÁNGULO PARA ROTACIÓN ====================
+function calcularAnguloEntrePuntos(puntoA, puntoB) {
+    const deltaX = puntoB.lng - puntoA.lng;
+    const deltaY = puntoB.lat - puntoA.lat;
+    let angulo = Math.atan2(deltaY, deltaX) * 180 / Math.PI;
+    // Ajustar para que 0° sea hacia arriba (norte)
+    angulo = (angulo + 90) % 360;
+    return angulo;
+}
+
+// Interpolación de ángulos (evita saltos bruscos entre 359° y 1°)
+function interpolarAngulo(anguloActual, anguloDestino, velocidad) {
+    let diff = anguloDestino - anguloActual;
+    // Normalizar a [-180, 180]
+    while (diff > 180) diff -= 360;
+    while (diff < -180) diff += 360;
+    const nuevoAngulo = anguloActual + diff * velocidad;
+    // Normalizar a [0, 360]
+    return ((nuevoAngulo % 360) + 360) % 360;
+}
+
+// ==================== ANIMACIÓN SMOOTH DEL MARCADOR ====================
+function iniciarAnimacionSmooth() {
+    if (smoothAnimationFrame) {
+        cancelAnimationFrame(smoothAnimationFrame);
+        smoothAnimationFrame = null;
+    }
+    
+    function animar() {
+        if (userMarker && posicionActual && posicionDestino) {
+            // Interpolar posición
+            const distanciaX = (posicionDestino.lng - posicionActual.lng) * velocidadAnimacion;
+            const distanciaY = (posicionDestino.lat - posicionActual.lat) * velocidadAnimacion;
+            
+            // Si está muy cerca, ir directamente al destino
+            const distanciaTotal = Math.hypot(posicionDestino.lng - posicionActual.lng, posicionDestino.lat - posicionActual.lat);
+            
+            if (distanciaTotal < 0.00001) {
+                // Ya llegó
+                posicionActual = { ...posicionDestino };
+            } else {
+                // Mover suavemente
+                posicionActual.lng += distanciaX;
+                posicionActual.lat += distanciaY;
+            }
+            
+            // Actualizar marcador en el mapa
+            userMarker.setLatLng([posicionActual.lat, posicionActual.lng]);
+            
+            // Calcular y aplicar rotación si tiene movimiento
+            if (distanciaTotal > 0.00001 && posicionDestino) {
+                const anguloDestino = calcularAnguloEntrePuntos(posicionActual, posicionDestino);
+                anguloActual = interpolarAngulo(anguloActual, anguloDestino, 0.2);
+                if (typeof userMarker.setRotationAngle === 'function') {
+                    userMarker.setRotationAngle(anguloActual);
+                }
+            }
+        }
+        
+        smoothAnimationFrame = requestAnimationFrame(animar);
+    }
+    
+    animar();
+    console.log("🏍️ Animación smooth iniciada");
 }
 
 // ==================== INICIALIZACIÓN DEL MAPA ====================
@@ -825,7 +900,7 @@ function startLocationTracking() {
     window.iniciandoLocalizacion = true;
     mostrarToast("📍 Iniciando seguimiento de ubicación...");
     
-       // ========== FUNCIÓN REUTILIZABLE PARA PROCESAR UBICACIÓN ==========
+          // ========== FUNCIÓN REUTILIZABLE PARA PROCESAR UBICACIÓN ==========
     const procesarYGuardarUbicacion = async (coords, esBackup = false) => {
         // Validar límites de Ciudad del Carmen
         if (coords.lat < 18.58 || coords.lat > 18.70 || 
@@ -849,8 +924,9 @@ function startLocationTracking() {
         };
         ultimaUbicacionEnviada = ubicacionConTimestamp;
         
-        // Crear o actualizar marcador
+        // ========== SMOOTH TRACKING: Crear o actualizar marcador ==========
         if (!userMarker) {
+            // Crear marcador inicial
             userMarker = crearMarcadorDelivery(
                 coords.lat, 
                 coords.lng, 
@@ -858,8 +934,23 @@ function startLocationTracking() {
                 isOnline ? '#10B981' : '#9CA3AF'
             );
             userMarker.addTo(map);
+            
+            // Inicializar posiciones para smooth tracking
+            posicionActual = { lat: coords.lat, lng: coords.lng };
+            posicionDestino = { lat: coords.lat, lng: coords.lng };
+            
+            // Iniciar animación smooth
+            iniciarAnimacionSmooth();
         } else {
-            userMarker.setLatLng([coords.lat, coords.lng]);
+            // Actualizar destino para smooth tracking (la animación lo moverá suavemente)
+            posicionDestino = { lat: coords.lat, lng: coords.lng };
+            
+            // Actualizar velocidad de animación según velocidad real (más rápido = mayor velocidad)
+            if (typeof velocidadAnimacionVariable !== 'undefined' && velocidadAnimacionVariable) {
+                const velocidad = calcularVelocidadAproximada(coords.lat, coords.lng);
+                // Velocidad de interpolación: entre 0.1 (lento) y 0.35 (rápido)
+                velocidadAnimacion = Math.min(0.35, Math.max(0.1, velocidad / 80));
+            }
         }
         
         // ========== ZOOM DINÁMICO INTELIGENTE ==========
@@ -918,11 +1009,20 @@ function startLocationTracking() {
                     console.log(`🏍️ Vel: ${velocidad.toFixed(1)} km/h | Zoom: ${zoom} | Destino: ${distanciaAlDestino?.toFixed(2) || '?'} km`);
                 }
                 
-                map.setView([coords.lat, coords.lng], zoom);
+                // Centrar en la posición ACTUAL (interpolada) no en el destino GPS
+                if (posicionActual) {
+                    map.setView([posicionActual.lat, posicionActual.lng], zoom);
+                } else {
+                    map.setView([coords.lat, coords.lng], zoom);
+                }
             } else {
                 // Zoom dinámico desactivado - zoom fijo
                 const zoom = map.getZoom() < 15 ? 16 : map.getZoom();
-                map.setView([coords.lat, coords.lng], zoom);
+                if (posicionActual) {
+                    map.setView([posicionActual.lat, posicionActual.lng], zoom);
+                } else {
+                    map.setView([coords.lat, coords.lng], zoom);
+                }
             }
         }
         
@@ -2642,6 +2742,13 @@ function limpiarIntervalosDelivery() {
         watchId = null;
     }
 
+    // ✅ NUEVO: Limpiar animación smooth (requestAnimationFrame)
+    if (smoothAnimationFrame) {
+        cancelAnimationFrame(smoothAnimationFrame);
+        smoothAnimationFrame = null;
+        console.log("✅ smoothAnimationFrame limpiado");
+    }
+
     // Limpiar rutas y marcadores del mapa
     limpiarRutasYMarcadores();
     // Detener actualización de ruta en tiempo real
@@ -2671,6 +2778,11 @@ function limpiarIntervalosDelivery() {
             }
         }
     }
+
+    // Resetear variables de smooth tracking
+    posicionActual = null;
+    posicionDestino = null;
+    anguloActual = 0;
 
     console.log("✅ Todos los recursos de delivery liberados correctamente");
 }
