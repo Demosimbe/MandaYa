@@ -1,3 +1,10 @@
+// Registrar Service Worker
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/service-worker.js')
+        .then(reg => console.log('✅ Service Worker cliente registrado', reg))
+        .catch(err => console.log('❌ Service Worker error:', err));
+}
+
 import './shared.js';
 import './security.js';
 import './config.js';

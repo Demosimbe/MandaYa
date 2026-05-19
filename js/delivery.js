@@ -1,3 +1,10 @@
+// Registrar Service Worker (al inicio del archivo)
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/service-worker.js')
+        .then(reg => console.log('✅ Service Worker registrado', reg))
+        .catch(err => console.log('❌ Service Worker error:', err));
+}
+
 // delivery.js - Al principio
 import './shared.js';
 import './security.js';
