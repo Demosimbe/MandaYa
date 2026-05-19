@@ -278,9 +278,11 @@ function agregarMapaMapTiler(map) {
         crossOrigin: true,
         attribution: '&copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
         className: 'map-tiles',
-        keepBuffer: 3,              // Mantiene tiles extras para evitar espacios
-        updateWhenZooming: false,    // Evita recargar durante el zoom
-        errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==' // Tile transparente en vez de blanco
+        keepBuffer: 5,           // Mantiene tiles extras alrededor
+        updateWhenZooming: true, // Actualiza durante el zoom
+        updateInterval: 100,     // Intervalo de actualización
+        errorTileUrl: '',        // Sin tile de error por defecto
+        detectRetina: true       // Para pantallas de alta resolución 
     }).addTo(map);
 
     console.log("🗺️ MapTiler Streets activado (@2x - alta calidad)");
