@@ -261,6 +261,28 @@ function convertirPedidoDeSupabase(pedidoSupabase) {
     };
 }
 
+// ==================== MAPTILER STREETS (Rápido y detallado) ====================
+function agregarMapaMapTiler(map) {
+    // Eliminar capas anteriores si existen
+    map.eachLayer(layer => {
+        if (layer instanceof L.TileLayer) {
+            map.removeLayer(layer);
+        }
+    });
+
+    L.tileLayer('https://api.maptiler.com/maps/streets/{z}/{x}/{y}@2x.png?key=FkgfUUjgN8tdGOCLlns5', {
+        tileSize: 512,
+        zoomOffset: -1,
+        minZoom: 12,
+        maxZoom: 20,
+        crossOrigin: true,
+        attribution: '&copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+        className: 'map-tiles'
+    }).addTo(map);
+
+    console.log("🗺️ MapTiler Streets activado (@2x - alta calidad)");
+}
+
 function limitarMapaACarmen(map) {
     const southWest = L.latLng(18.58, -91.88);
     const northEast = L.latLng(18.70, -91.75);
@@ -270,7 +292,7 @@ function limitarMapaACarmen(map) {
     map.options.maxBoundsViscosity = 1.0;
 
     map.setMinZoom(12);
-    map.setMaxZoom(22);        // ← Máximo para Outdoors
+    map.setMaxZoom(20);        // ← Óptimo para MapTiler Streets
 
     map.on('moveend', function () {
         if (!bounds.contains(map.getCenter())) {
@@ -278,13 +300,7 @@ function limitarMapaACarmen(map) {
         }
     });
 
-    map.on('zoomend', function () {
-        const currentZoom = map.getZoom();
-        if (currentZoom > 22) map.setZoom(22);
-        if (currentZoom < 12) map.setZoom(12);
-    });
-
-    console.log('🗺️ Mapa BLOQUEADO a Ciudad del Carmen (Outdoors - Zoom máx 22)');
+    console.log('🗺️ Mapa limitado a Ciudad del Carmen (MapTiler Streets)');
 }
 
 // Función para limitar coordenadas dentro de los límites de Ciudad del Carmen
@@ -306,6 +322,8 @@ function limitarCoordenadasACarmen(lat, lng) {
 }
 
 // ==================== EXPORTAR FUNCIONES GLOBALMENTE ====================
+// ==================== EXPORTAR FUNCIONES ====================
+window.agregarMapaMapTiler = agregarMapaMapTiler;
 window.limitarMapaACarmen = limitarMapaACarmen;
 window.limitarCoordenadasACarmen = limitarCoordenadasACarmen;
 window.getRealDistanceAndTime = getRealDistanceAndTime;

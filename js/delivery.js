@@ -373,11 +373,13 @@ function iniciarAnimacionSmooth() {
     console.log("🏍️ Animación smooth iniciada");
 }
 
-// ==================== INICIALIZACIÓN DEL MAPA ====================
+// ==================== INICIALIZACIÓN DEL MAPA (Delivery) ====================
 function initMap() {
     const cdDelCarmen = { lat: 18.6456, lng: -91.8249 };
     
+    // Crear mapa con optimizaciones de rendimiento
     map = L.map('map', {
+        preferCanvas: true,           // ← CLAVE para que no se sienta lento
         maxBoundsViscosity: 1.0,
         rotate: true,
         rotateControl: true,
@@ -386,16 +388,13 @@ function initMap() {
         touchZoom: true,
         dragging: true,
         tap: true,
-        inertia: false
-    }).setView([cdDelCarmen.lat, cdDelCarmen.lng], 17);   // ← Zoom inicial recomendado
+        inertia: true,                // Suavizado al soltar el dedo
+        zoomSnap: 0.5,
+        wheelPxPerZoomLevel: 80
+    }).setView([cdDelCarmen.lat, cdDelCarmen.lng], 16);
 
-    // ==================== THUNDERFOREST ATLAS ====================
-    L.tileLayer('https://api.thunderforest.com/atlas/{z}/{x}/{y}.png?apikey=8c7f3b3f6cee40da9249810cdbbb8cae', {
-        attribution: '&copy; OpenStreetMap contributors & Thunderforest',
-        maxZoom: 22,
-        className: 'map-tiles'
-    }).addTo(map);
-
+    // ✅ MapTiler Streets
+    agregarMapaMapTiler(map);
     limitarMapaACarmen(map);
 
     // ==================== INTERVALOS ====================
@@ -404,7 +403,7 @@ function initMap() {
         if (isOnline) cargarPedidos(); 
     }, 5000);
 
-    // ==================== ROTACIÓN ====================
+    // ==================== ROTACIÓN DEL MAPA ====================
     map.on('rotate', function() {
         const transform = map.getContainer().style.transform || '';
         const match = transform.match(/rotate\(([-0-9.]+)deg\)/);
@@ -418,8 +417,14 @@ function initMap() {
     map.getContainer().style.transform = 'rotate(0deg)';
     mapRotationAngle = 0;
 
-    console.log("🗺️ Mapa Delivery inicializado con Thunderforest Outdoors (Zoom máx 22)");
-}
+    // ==================== FORZAR TAMAÑO CORRECTO (Muy importante) ====================
+    setTimeout(() => {
+        map.invalidateSize();
+        console.log("🔄 Mapa Delivery redimensionado correctamente");
+    }, 500);
+
+    console.log("🗺️ Mapa Delivery inicializado correctamente con MapTiler Streets");
+} // ← Fin de initMap()
 
 // ==================== CIERRE DE SESIÓN CORREGIDO ====================
 function cerrarSesion() {

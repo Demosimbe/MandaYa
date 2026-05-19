@@ -1,4 +1,13 @@
 // js/shared.js - Utilidades compartidas
+// Al inicio de app.js o shared.js
+const originalError = console.error;
+console.error = function(...args) {
+  if (args[0] && typeof args[0] === 'string' && 
+      args[0].includes('The message port closed before a response was received')) {
+    return;
+  }
+  originalError.apply(console, args);
+};
 
 window.addEventListener('error', (e) => {
     if (e.message && e.message.includes('message port closed')) {

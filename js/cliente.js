@@ -427,12 +427,14 @@ function bloquearUIporPedidoActivo(bloquear) {
     }
 }
 
-// ==================== INICIALIZACIÓN ====================
+// ==================== INICIALIZACIÓN DEL MAPA ====================
 function initMap() {
     // ✅ Inicializar coordenadas por defecto ANTES de crear el mapa
     initDefaultCoords();
     
+    // Crear mapa con optimizaciones de rendimiento
     map = L.map('map', {
+        preferCanvas: true,           // ← Muy importante para fluidez
         maxBoundsViscosity: 1.0,
         rotate: true,
         rotateControl: true,
@@ -441,18 +443,15 @@ function initMap() {
         touchZoom: true,
         dragging: true,
         tap: true,
-        inertia: false
-    }).setView([18.6456, -91.8249], 17);   // ← Zoom inicial mejorado (antes 13)
+        inertia: true,                // Suavizado al mover
+        zoomSnap: 0.5,
+        wheelPxPerZoomLevel: 80
+    }).setView([18.6456, -91.8249], 16);   // Zoom inicial bueno para CD del Carmen
 
- // ==================== THUNDERFOREST ATLAS ====================
-    L.tileLayer('https://api.thunderforest.com/atlas/{z}/{x}/{y}.png?apikey=8c7f3b3f6cee40da9249810cdbbb8cae', {
-        attribution: '&copy; OpenStreetMap contributors & Thunderforest',
-        maxZoom: 22,
-        className: 'map-tiles'
-    }).addTo(map);
-
+   // ✅ MapTiler Streets
+    agregarMapaMapTiler(map);
     limitarMapaACarmen(map);
-
+    
     // ✅ Función auxiliar para limitar coordenadas
     function limitarCoord(lat, lng) {
         return limitarCoordenadasACarmen(lat, lng);
@@ -481,44 +480,33 @@ function initMap() {
    });
    
 // ==================== MARCADORES ====================
-const origenInicial = getOriginCoords();
-originMarker = L.marker([origenInicial.lat, origenInicial.lng], {
-    icon: originIcon,
-    draggable: true,
-    rotationAngle: 0,
-    rotationOrigin: 'center center'
-}).addTo(map);
-
-const destinoInicial = getDestCoords();
-destMarker = L.marker([destinoInicial.lat, destinoInicial.lng], {
-    icon: destIcon,
-    draggable: true,
-    rotationAngle: 0,
-    rotationOrigin: 'center center'
-}).addTo(map);
-
-// ✅ POPUP AL PASAR EL CURSOR (HOVER) - SIN HACER CLICK
-originMarker.bindPopup('📍 <b>Origen</b><br>Arrástrame para cambiar');
-destMarker.bindPopup('🏁 <b>Destino</b><br>Arrástrame para cambiar');
-
-// Abrir popup al pasar el mouse
-originMarker.on('mouseover', function() {
-    this.openPopup();
-});
-
-destMarker.on('mouseover', function() {
-    this.openPopup();
-});
-
-// Cerrar popup al salir el mouse
-originMarker.on('mouseout', function() {
-    this.closePopup();
-});
-
-destMarker.on('mouseout', function() {
-    this.closePopup();
-});
-       
+    const origenInicial = getOriginCoords();
+    originMarker = L.marker([origenInicial.lat, origenInicial.lng], {
+        icon: originIcon,
+        draggable: true,
+        rotationAngle: 0,
+        rotationOrigin: 'center center'
+    }).addTo(map);
+    
+    const destinoInicial = getDestCoords();
+    destMarker = L.marker([destinoInicial.lat, destinoInicial.lng], {
+        icon: destIcon,
+        draggable: true,
+        rotationAngle: 0,
+        rotationOrigin: 'center center'
+    }).addTo(map);
+    
+    // ✅ POPUP AL PASAR EL CURSOR (HOVER) - SIN HACER CLICK
+    originMarker.bindPopup('📍 <b>Origen</b><br>Arrástrame para cambiar');
+    destMarker.bindPopup('🏁 <b>Destino</b><br>Arrástrame para cambiar');
+    
+    // Abrir popup al pasar el mouse
+    originMarker.on('mouseover', function() { this.openPopup(); });
+    destMarker.on('mouseover', function() { this.openPopup(); });
+    // Cerrar popup al salir el mouse
+    originMarker.on('mouseout', function() { this.closePopup(); });
+    destMarker.on('mouseout', function() { this.closePopup(); });
+    
     // ==================== DRAG EVENTS ====================
     originMarker.on('drag', function(e) {
         const latlng = e.target.getLatLng();
@@ -575,6 +563,7 @@ destMarker.on('mouseout', function() {
         actualizarRutaYTarifaDebounced();
         mostrarToast("🏁 Destino actualizado");
     });
+
 
     // ==================== CLICK EN MAPA ====================
     map.on('click', (e) => {
@@ -634,18 +623,17 @@ destMarker.on('mouseout', function() {
         if (destinoMobile) destinoMobile.value = addr;
     });
 
-    // ✅ Pequeño delay para asegurar que el mapa está listo
+   // ==================== FORZAR TAMAÑO CORRECTO (IMPORTANTE) ====================
     setTimeout(() => {
-        actualizarRutaYTarifaDebounced();
-        map.invalidateSize(); // Forzar resize por si acaso
+        map.invalidateSize();
+        if (typeof actualizarRutaYTarifaDebounced === 'function') {
+            actualizarRutaYTarifaDebounced();
+        }
+        console.log("🔄 Mapa redimensionado y optimizado");
     }, 500);
 
-    console.log("🗺️ Mapa Cliente inicializado con rotación activada");
-    console.log("📍 Coordenadas iniciales:", {
-        origen: getOriginCoords(),
-        destino: getDestCoords()
-    });
-} // ← Cierre de initMap()
+    console.log("🗺️ Mapa Cliente inicializado correctamente con MapTiler Streets");
+} // ← Fin de initMap()
 
 // ==================== FUNCIONES DE UTILIDAD ====================
 function actualizarRutaYTarifaDebounced() {
