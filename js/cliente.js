@@ -18,10 +18,13 @@ let originMarker = null;
 let destMarker = null;
 let routeLine = null;
 let deliveryMarker = null;
+let deliveryRouteLine = null;
 let clienteRouteControl = null;
 // ✅ NUEVAS VARIABLES PARA AUTO-FOLLOW DEL DELIVERY
 let autoFollowDelivery = true;      // Seguir al delivery automáticamente
-let followZoomLevel = 16;           // Nivel de zoom al seguir el delivery
+let followZoomLevel = 18;           // Nivel de zoom al seguir el delivery
+let ultimaPosicionFollow = null;
+
 
 // ==================== COORDENADAS (SOLO UNA DECLARACIÓN) ====================
 window.originCoords = null;
@@ -457,7 +460,6 @@ function initMap() {
         return limitarCoordenadasACarmen(lat, lng);
     }
 
-   
    // ==================== ICONOS ====================
    const originIcon = L.divIcon({
        html: `
@@ -563,7 +565,6 @@ function initMap() {
         actualizarRutaYTarifaDebounced();
         mostrarToast("🏁 Destino actualizado");
     });
-
 
     // ==================== CLICK EN MAPA ====================
     map.on('click', (e) => {
@@ -853,9 +854,7 @@ function lanzarConfeti() {
     }
 }
 
-function calificarServicio() {
-    mostrarModalCalificacion();
-}
+function calificarServicio() { mostrarModalCalificacion();}
 
 function mostrarModalCalificacion() {
     // Crear modal simple para calificar
@@ -978,20 +977,6 @@ function setSelectMode(mode) {
     }
 }
 
-function centrarEnDelivery() {
-    if (deliveryMarker) {
-        const latLng = deliveryMarker.getLatLng();
-        map.setView([latLng.lat, latLng.lng], 16);
-        mostrarToast("📍 Centrando en la ubicación del delivery");
-        
-        // Opcional: abrir popup del delivery
-        deliveryMarker.openPopup();
-        setTimeout(() => deliveryMarker.closePopup(), 3000);
-    } else {
-        mostrarToast("❌ No hay delivery activo para centrar", true);
-    }
-}
-
 // Mostrar el botón cuando hay delivery asignado
 function mostrarBotonCentrarDelivery(mostrar) {
     const btn = document.getElementById('btnCentrarDelivery');
@@ -1029,69 +1014,36 @@ async function dibujarRutaDeliveryEnCliente(ubicacionDelivery, destinoCoords, ti
         mostrarToast("❌ No se puede mostrar la ruta del delivery", true);
         return;
     }
-    
-    // ✅ Limpiar ruta anterior de forma más segura
-    if (clienteRouteControl) {
-        try {
-            // Intentar remover el control del mapa
-            if (clienteRouteControl._map) {
-                map.removeControl(clienteRouteControl);
-            }
-            // También limpiar event listeners si es posible
-            if (clienteRouteControl.getPlan) {
-                clienteRouteControl.getPlan().setWaypoints([]);
-            }
-        } catch(e) {
-            console.warn("Error limpiando ruta anterior:", e);
-        }
-        clienteRouteControl = null;
+
+    // 1. Borrar ruta anterior si existe
+    if (deliveryRouteLine) {
+        try { map.removeLayer(deliveryRouteLine); } catch(e) {}
+        deliveryRouteLine = null;
     }
-    
-    let waypoints = [];
-    let color = '#FF6200';
-    
-    if (tipo === 'recogida') {
-        waypoints = [
-            L.latLng(ubicacionDelivery.lat, ubicacionDelivery.lng),
-            L.latLng(destinoCoords.lat, destinoCoords.lng)
-        ];
-        color = '#10B981';
-        console.log("🟢 Waypoints RECOGIDA:", waypoints);
-    } else if (tipo === 'entrega') {
-        waypoints = [
-            L.latLng(ubicacionDelivery.lat, ubicacionDelivery.lng),
-            L.latLng(destinoCoords.lat, destinoCoords.lng)
-        ];
-        color = '#FF6200';
-        console.log("🟠 Waypoints ENTREGA:", waypoints);
+
+    // 2. Determinar color según tipo
+    const color = (tipo === 'recogida') ? '#10B981' : '#FF6200';
+
+    // 3. Dibujar nueva ruta real usando OSRM (misma función que usas en actualizarRutaYTarifa)
+    const routeResult = await drawRealRoute(
+        map,
+        { lat: ubicacionDelivery.lat, lng: ubicacionDelivery.lng },
+        { lat: destinoCoords.lat, lng: destinoCoords.lng },
+        color,
+        4
+    );
+
+    // 4. Guardar la nueva línea para poder borrarla después
+    if (routeResult && routeResult.line) {
+        deliveryRouteLine = routeResult.line;
     }
-    
-    clienteRouteControl = L.Routing.control({
-        waypoints: waypoints,
-        routeWhileDragging: false,
-        showAlternatives: false,
-        fitSelectedRoutes: true,
-        lineOptions: {
-            styles: [{ color: color, weight: 4, opacity: 0.8 }]
-        },
-        router: L.Routing.osrmv1({
-            serviceUrl: 'https://router.project-osrm.org/route/v1'
-        }),
-        show: false,
-        addWaypoints: false
-    }).addTo(map);
-    
-    // ✅ Ajustar el mapa a la ruta
-    setTimeout(() => {
+
+    // 5. Ajustar vista si no se está siguiendo automáticamente
+    if (!autoFollowDelivery && deliveryRouteLine) {
         try {
-            if (waypoints.length >= 2) {
-                map.fitBounds(L.latLngBounds(waypoints), { padding: [50, 50] });
-            }
-        } catch(e) {
-            console.warn("Error ajustando bounds:", e);
-        }
-        map.invalidateSize();
-    }, 300);
+            map.fitBounds(deliveryRouteLine.getBounds(), { padding: [50, 50] });
+        } catch(e) {}
+    }
 }
 
 function verRutaCompleta() {
@@ -2058,7 +2010,6 @@ function cerrarModalTransferencia() {
     if (btnMobile) btnMobile.disabled = false;
 }
 
-
 function copiarDatosBancarios() {
     const datos = `BBVA México\nCuenta: 1234 5678 9012 3456\nCLABE: 012 345 6789 01234567 8\nBeneficiario: MandaYa Servicios`;
     navigator.clipboard.writeText(datos);
@@ -2241,27 +2192,53 @@ function seguirUbicacionDelivery(deliveryId) {
         }
         
         if (ubicacion) {
-            // ✅ 6. Actualizar marcador de seguimiento
-            if (deliveryMarker) {
-                try { map.removeLayer(deliveryMarker); } catch(e) {}
-            }
-            
+
+    // ✅ 6. Actualizar marcador de seguimiento
+        if (!deliveryMarker) {
+            // 🆕 Crear marcador SOLO una vez
             deliveryMarker = crearMarcadorDelivery(
-                ubicacion.lat, 
-                ubicacion.lng, 
-                deliveryNombre, 
-                '#FF6200'  // Color naranja para el delivery asignado
+                ubicacion.lat,
+                ubicacion.lng,
+                deliveryNombre,
+                '#FF6200'
             );
+        
             deliveryMarker.addTo(map);
-            
-            // ✅ NUEVO: AUTO-FOLLOW DEL DELIVERY (cliente puede activar/desactivar)
-            if (typeof autoFollowDelivery !== 'undefined' && autoFollowDelivery) {
-                const zoom = typeof followZoomLevel !== 'undefined' ? followZoomLevel : 16;
-                map.setView([ubicacion.lat, ubicacion.lng], zoom);
-                console.log("📍 Auto-follow: centrando en delivery");
+        
+        } else {
+        
+            // 🔄 Solo mover marcador existente
+            deliveryMarker.setLatLng([
+                ubicacion.lat,
+                ubicacion.lng
+            ]);      
+        }
+                
+        // ==================== AUTO-FOLLOW ===================       
+        if ( typeof autoFollowDelivery !== 'undefined' && autoFollowDelivery ) {
+                const nuevaPosicion = L.latLng(
+                ubicacion.lat,
+                ubicacion.lng
+            );
+        
+            // ✅ Evitar vibración GPS
+            if (!ultimaPosicionFollow || nuevaPosicion.distanceTo(ultimaPosicionFollow) > 8) {
+                map.panTo(
+                    nuevaPosicion,
+                    {
+                        animate: true,
+                        duration: 0.5,
+                        easeLinearity: 0.25,
+                        noMoveStart: true
+                    }
+                );
+        
+                ultimaPosicionFollow =
+                    nuevaPosicion;
             }
-            
-            // ✅ 7. Determinar destino según estado
+        }
+           
+    // ✅ 7. Determinar destino según estado
             let destinoCoords = null;
             let tipoRuta = null;
             let destinoFinalNombre = '';
@@ -2282,7 +2259,7 @@ function seguirUbicacionDelivery(deliveryId) {
                 }
             }
             
-            // ✅ 8. Calcular distancia actual al destino
+    // ✅ 8. Calcular distancia actual al destino
             let distanciaActual = null;
             if (destinoCoords) {
                 distanciaActual = calcularDistanciaEntrePuntos(ubicacion, destinoCoords);
@@ -2301,9 +2278,9 @@ function seguirUbicacionDelivery(deliveryId) {
             const necesitaRedibujar = !rutaYaDibujada || 
                                       ultimoEstadoPedido !== estadoActual ||
                                       (distanciaCambioSignificativo && tiempoDesdeUltimoRecalculo > 8000) ||
-                                      tiempoDesdeUltimoRecalculo > 15000; // cada 15 segundos forzado
+                                      tiempoDesdeUltimoRecalculo >  30000; // cada 30 segundos forzado
             
-            // ✅ 10. Redibujar ruta si es necesario
+    // ✅ 10. Redibujar ruta si es necesario
             if (destinoCoords && necesitaRedibujar) {
                 console.log(`🔄 Redibujando ruta (${tipoRuta}) - Motivo: ${!rutaYaDibujada ? 'sin ruta' : ultimoEstadoPedido !== estadoActual ? 'cambio estado' : 'recalculo distancia'}`);
                 await dibujarRutaDeliveryEnCliente(ubicacion, destinoCoords, tipoRuta);
@@ -2323,7 +2300,7 @@ function seguirUbicacionDelivery(deliveryId) {
                 }  
             }
             
-            // ✅ 11. Actualizar información de distancia y ETA en la UI
+    // ✅ 11. Actualizar información de distancia y ETA en la UI
             if (distanciaActual !== null) {
                 const deliveryEstado = document.getElementById("deliveryEstado");
                 const etaElement = document.getElementById("etaValue");
@@ -2339,7 +2316,7 @@ function seguirUbicacionDelivery(deliveryId) {
                     }
                 }
                 
-                // ✅ Mostrar ETA (tiempo estimado)
+    // ✅ Mostrar ETA (tiempo estimado)
                 if (etaElement && etaContainer) {
                     const etaMinutos = calcularETA(distanciaActual);
                     etaElement.innerHTML = etaMinutos;
@@ -2348,7 +2325,7 @@ function seguirUbicacionDelivery(deliveryId) {
             }
         }
         
-        // ✅ 12. Verificar si el pedido ya fue completado
+    // ✅ 12. Verificar si el pedido ya fue completado
         if (supabase && pedidoActual) {
             const { data: pedidoActualizado } = await supabase
                 .from('pedidos')
@@ -2362,7 +2339,7 @@ function seguirUbicacionDelivery(deliveryId) {
                 clearInterval(ubicacionInterval);
                 ubicacionInterval = null;
                 
-                // ✅ Ocultar botón de centrar
+    // ✅ Ocultar botón de centrar
                 mostrarBotonCentrarDelivery(false);
                 
                 ocultarDeliveryInfo();
@@ -2389,19 +2366,19 @@ function seguirUbicacionDelivery(deliveryId) {
                 ultimoEstadoPedido = null;
                 rutaDestinoActual = null;
                 
-                // ✅ ACTUALIZAR pedidoActual con el estado completado ANTES de llamar a actualizarTarjetaProgreso
+    // ✅ ACTUALIZAR pedidoActual con el estado completado ANTES de llamar a actualizarTarjetaProgreso
                 pedidoActual.estado = 'completado';
                 
-                // ✅ FORZAR ACTUALIZACIÓN DE LA TARJETA DE PROGRESO (esto mostrará confeti y botón calificar)
+    // ✅ FORZAR ACTUALIZACIÓN DE LA TARJETA DE PROGRESO (esto mostrará confeti y botón calificar)
                 actualizarTarjetaProgreso();
                 
-                // ✅ LANZAR CONFETI DIRECTAMENTE POR SI ACASO
+    // ✅ LANZAR CONFETI DIRECTAMENTE POR SI ACASO
                 if (!window.confetiLanzado) {
                     window.confetiLanzado = true;
                     lanzarConfeti();
                 }
                 
-                // ✅ MOSTRAR BOTÓN CALIFICAR DIRECTAMENTE
+    // ✅ MOSTRAR BOTÓN CALIFICAR DIRECTAMENTE
                 const calificarContainer = document.getElementById("calificarContainer");
                 if (calificarContainer) {
                     calificarContainer.classList.remove("hidden");
@@ -3403,32 +3380,53 @@ function applyMapRotation() {
     }, 100);
 }
 
-// ==================== AUTO-FOLLOW DEL DELIVERY ====================
+// ==================== TOGGLE AUTO-FOLLOW (VERSIÓN PRO) ====================
 function toggleAutoFollowDelivery() {
-    autoFollowDelivery = !autoFollowDelivery;
-    const btn = document.getElementById("btnAutoFollowDelivery");
-    
-    if (autoFollowDelivery) {
-        mostrarToast("🚗 Seguimiento del delivery ACTIVADO - El mapa seguirá al repartidor", false);
-        if (btn) {
-            btn.classList.add("active");
-            btn.style.background = "#FF6200";
-            const icon = btn.querySelector("i");
-            if (icon) icon.style.color = "white";
-        }
-        if (deliveryMarker) {
-            const latLng = deliveryMarker.getLatLng();
-            map.setView([latLng.lat, latLng.lng], followZoomLevel);
-        }
-    } else {
-        mostrarToast("📍 Seguimiento DESACTIVADO - Puedes mover el mapa libremente", false);
-        if (btn) {
-            btn.classList.remove("active");
-            btn.style.background = "white";
-            const icon = btn.querySelector("i");
-            if (icon) icon.style.color = "#FF6200";
-        }
+    if (!deliveryMarker || !map) {
+        mostrarToast("📍 No hay delivery activo", true);
+        return;
     }
+
+    autoFollowDelivery = !autoFollowDelivery;
+    const btn = document.getElementById("btnCentrarDelivery");
+
+    if (autoFollowDelivery) {
+        // === ACTIVADO - ROJO + ZOOM PRO ===
+        if (btn) {
+            btn.classList.remove("bg-orange-500");
+            btn.classList.add("!bg-red-600", "ring-2", "ring-red-300", "shadow-xl");
+        }
+        
+        mostrarToast("🛵 Seguimiento automático ACTIVADO (Vista Pro)", false);
+
+        // Zoom más cercano (más profesional)
+        map.flyTo(deliveryMarker.getLatLng(), 20, { 
+            duration: 1.6,
+            easeLinearity: 0.25
+        });
+
+    } else {
+        // === DESACTIVADO ===
+        if (btn) {
+            btn.classList.remove("!bg-red-600", "ring-2", "ring-red-300", "shadow-xl");
+            btn.classList.add("bg-orange-500");
+        }
+        
+        mostrarToast("📍 Seguimiento automático DESACTIVADO", false);
+
+       // Zoom más cómodo al desactivar
+        map.flyTo(deliveryMarker.getLatLng(), 18, { duration: 1.3 });
+    }
+}
+
+// ==================== CENTRAR EN DELIVERY ====================
+function centrarEnDelivery() {
+    if (!deliveryMarker) {
+        mostrarToast("📍 No hay delivery activo", true);
+        return;
+    }
+    map.flyTo(deliveryMarker.getLatLng(), followZoomLevel || 17, { duration: 1.3 });
+    mostrarToast("📍 Centrado en el delivery 🛵");
 }
 
 // ==================== LIMPIAR RECURSOS ====================
@@ -3544,6 +3542,7 @@ window.limpiarTodosLosIntervalos = limpiarTodosLosIntervalos;
 window.confirmarPagoTransferenciaFinal = confirmarPagoTransferenciaFinal;
 window.enviarComprobanteWhatsApp = enviarComprobanteWhatsApp;
 window.toggleAutoFollowDelivery = toggleAutoFollowDelivery;
+window.centrarEnDelivery = centrarEnDelivery;   // por si acaso
 
 console.log("✅ Cliente inicializado correctamente");
 
