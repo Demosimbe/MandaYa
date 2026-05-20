@@ -3217,74 +3217,6 @@ function cerrarModalResumen() {
     if (modal) modal.remove();
 }
 
-// ==================== BÚSQUEDA DE DIRECCIONES ====================
-
-async function buscarDirecciones(query, tipo) {
-    if (!query || query.length < 3) {
-        document.getElementById(`${tipo}Sugerencias`).classList.add('hidden');
-        return;
-    }
-    
-    try {
-        const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query + ', Ciudad del Carmen, Campeche')}&limit=5&addressdetails=1`);
-        const data = await response.json();
-        
-        const sugerenciasDiv = document.getElementById(`${tipo}Sugerencias`);
-        
-        if (data.length === 0) {
-            sugerenciasDiv.classList.add('hidden');
-            return;
-        }
-        
-      sugerenciasDiv.innerHTML = data.map(lugar => {
-          const nombreSanitizado = window.sanitizarHTML(lugar.display_name.split(',')[0]);
-          const direccionSanitizada = window.sanitizarHTML(
-              lugar.display_name.split(',').slice(1, 3).join(',')
-          );
-          const direccionCompletaSanitizada = window.sanitizarHTML(lugar.display_name);
-          return `
-              <div class="sugerencia-item p-3 hover:bg-gray-100 cursor-pointer border-b border-gray-100 flex items-start gap-2" 
-                   onclick="seleccionarDireccion('${tipo}', ${lugar.lat}, ${lugar.lon}, '${direccionCompletaSanitizada.replace(/'/g, "\\'")}')">
-                  <i class="fas fa-map-marker-alt text-gray-400 mt-0.5 text-xs"></i>
-                  <div class="flex-1">
-                      <div class="text-sm font-medium text-gray-800">${nombreSanitizado}</div>
-                      <div class="text-xs text-gray-500">${direccionSanitizada}</div>
-                  </div>
-              </div>
-          `;
-      }).join('');
-              
-        sugerenciasDiv.classList.remove('hidden');
-        
-    } catch(e) {
-        console.error('Error buscando direcciones:', e);
-    }
-}
-
-function seleccionarDireccion(tipo, lat, lng, direccion) {
-    const coords = { lat: parseFloat(lat), lng: parseFloat(lng) };
-    
-    if (coords.lat < 18.58 || coords.lat > 18.70 || coords.lng < -91.88 || coords.lng > -91.75) {
-        mostrarToast("❌ Ubicación fuera de Ciudad del Carmen", true);
-        document.getElementById(`${tipo}Sugerencias`).classList.add('hidden');
-        return;
-    }
-    
-    if (tipo === 'origen') {
-    originMarker.setLatLng([coords.lat, coords.lng]);
-    setOriginCoords(coords);  // ✅ Usa helper
-    document.getElementById("origen").value = direccion.split(',')[0];
-    } else {
-    destMarker.setLatLng([coords.lat, coords.lng]);
-    setDestCoords(coords);  // ✅ Usa helper
-    document.getElementById("destino").value = direccion.split(',')[0];
-    }
-    
-    document.getElementById(`${tipo}Sugerencias`).classList.add('hidden');
-    actualizarRutaYTarifaDebounced();
-    mostrarToast(`📍 ${tipo === 'origen' ? 'Origen' : 'Destino'} actualizado`);
-}
-
 // ==================== VER DELIVERYS EN LÍNEA ====================
 async function cargarDeliverysEnLinea() {
     // ✅ 1. Verificar si la página está visible
@@ -3484,7 +3416,6 @@ function toggleAutoFollowDelivery() {
             const icon = btn.querySelector("i");
             if (icon) icon.style.color = "white";
         }
-        // Centrar inmediatamente si hay delivery
         if (deliveryMarker) {
             const latLng = deliveryMarker.getLatLng();
             map.setView([latLng.lat, latLng.lng], followZoomLevel);
@@ -3500,56 +3431,84 @@ function toggleAutoFollowDelivery() {
     }
 }
 
-// ==================== LIMPIAR RECURSOS AL CERRAR PESTAÑA ====================
+// ==================== LIMPIAR RECURSOS ====================
 function limpiarTodosLosIntervalos() {
     console.log("🧹 Limpiando intervalos y recursos...");
     
-    // Limpiar intervalos principales
-    if (seguimientoInterval) {
-        clearInterval(seguimientoInterval);
-        seguimientoInterval = null;
-        console.log("✅ seguimientoInterval limpiado");
+    if (seguimientoInterval) clearInterval(seguimientoInterval);
+    if (ubicacionInterval) clearInterval(ubicacionInterval);
+    if (deliverysInterval) clearInterval(deliverysInterval);
+    if (busquedaTimeout) clearTimeout(busquedaTimeout);
+
+    if (clienteRouteControl) {
+        try { if (clienteRouteControl._map) map.removeControl(clienteRouteControl); } catch(e) {}
+        clienteRouteControl = null;
     }
-    
-    if (ubicacionInterval) { clearInterval(ubicacionInterval); ubicacionInterval = null; console.log("✅ ubicacionInterval limpiado"); }
-    if (deliverysInterval) { clearInterval(deliverysInterval); deliverysInterval = null; console.log("✅ deliverysInterval limpiado"); }
-    if (busquedaTimeout) { clearTimeout(busquedaTimeout); busquedaTimeout = null; }
-    
-    // Limpiar rutas del mapa para liberar memoria
-    if (clienteRouteControl) {try { if (clienteRouteControl._map) { map.removeControl(clienteRouteControl); } } catch(e) {} clienteRouteControl = null; }
-    // Eliminar marcadores
-    if (deliveryMarker) { try { map.removeLayer(deliveryMarker); } catch(e) {} deliveryMarker = null; }
-    console.log("✅ Todos los recursos liberados");
+    if (deliveryMarker) {
+        try { map.removeLayer(deliveryMarker); } catch(e) {}
+        deliveryMarker = null;
+    }
+    console.log("✅ Recursos liberados");
 }
 
- //Evento cuando la página se está cerrando (pestaña cerrada, navegador cerrado, refresh)
-window.addEventListener('beforeunload', function() {
- console.log("🚪 Pestaña cerrando - Limpiando recursos...");
-   limpiarTodosLosIntervalos();
+// ==================== EVENTOS DE CIERRE Y VISIBILIDAD ====================
+window.addEventListener('beforeunload', () => {
+    console.log("🚪 Cerrando pestaña - Limpiando...");
+    limpiarTodosLosIntervalos();
 });
 
- //Evento cuando la página se descarga completamente (último recurso)
-window.addEventListener('pagehide', function() {
-console.log("💀 Página descargada - Recursos liberados");
-  if (currentUser && currentUser.rol === 'cliente' && supabaseClient) {
-   console.log("👋 Cliente desconectado");
-  }
+window.addEventListener('pagehide', () => {
+    console.log("💀 Página descargada");
 });
 
-// Detectar cuando la pestaña está visible
 document.addEventListener('visibilitychange', () => {
     paginaVisible = !document.hidden;
     if (paginaVisible) {
-        console.log("🟢 Página visible - Reactivando actualizaciones");
-        // ✅ CORREGIDO: cliente.js NO tiene cargarPedidos()
+        console.log("🟢 Página visible");
         if (typeof cargarDeliverysEnLinea === 'function') cargarDeliverysEnLinea();
         if (typeof cargarPedidoActivoDesdeDB === 'function') cargarPedidoActivoDesdeDB();
-    } else {
-        console.log("🔴 Página oculta - Reduciendo actualizaciones");
     }
 });
 
-// ==================== EXPORTAR FUNCIONES GLOBALMENTE ====================
+// ==================== SELECCIONAR DIRECCIÓN DESKTOP ====================
+window.seleccionarDireccion = function(tipo, lat, lng, direccion) {
+    console.log(`📍 [Desktop] Seleccionando: ${direccion}`);
+    
+    const coords = { lat: parseFloat(lat), lng: parseFloat(lng) };
+    
+    if (isNaN(coords.lat) || isNaN(coords.lng)) {
+        mostrarToast("❌ Coordenadas inválidas", true);
+        return;
+    }
+    
+    if (coords.lat < 18.58 || coords.lat > 18.70 || coords.lng < -91.88 || coords.lng > -91.75) {
+        mostrarToast("❌ Ubicación fuera de Ciudad del Carmen", true);
+        document.getElementById(`${tipo}Sugerencias`)?.classList.add('hidden');
+        return;
+    }
+    
+    const direccionCorta = direccion.split(',')[0] || direccion;
+    
+    if (tipo === 'origen') {
+        if (originMarker) originMarker.setLatLng([coords.lat, coords.lng]);
+        setOriginCoords(coords);
+        document.getElementById("origen").value = direccionCorta;
+        document.getElementById("origenMobile").value = direccionCorta;
+        mostrarToast(`📍 Origen: ${direccionCorta}`);
+    } else if (tipo === 'destino') {
+        if (destMarker) destMarker.setLatLng([coords.lat, coords.lng]);
+        setDestCoords(coords);
+        document.getElementById("destino").value = direccionCorta;
+        document.getElementById("destinoMobile").value = direccionCorta;
+        mostrarToast(`🏁 Destino: ${direccionCorta}`);
+    }
+    
+    document.getElementById(`${tipo}Sugerencias`)?.classList.add('hidden');
+    if (map) map.setView([coords.lat, coords.lng], 17);
+    actualizarRutaYTarifaDebounced();
+};
+
+// ==================== EXPORTACIONES GLOBALES ====================
 window.verHistorial = verHistorial;
 window.mostrarResumenRuta = mostrarResumenRuta;
 window.centrarMapa = centrarMapa;
@@ -3579,12 +3538,155 @@ window.cerrarModalResumen = cerrarModalResumen;
 window.cerrarSesion = cerrarSesion;
 window.cerrarModalHistorial = cerrarModalHistorial;
 window.eliminarEnvio = eliminarEnvio;
-// ✅ MODALES ACTUALIZADOS
 window.mostrarModalConfirmacion = mostrarModalConfirmacion;
 window.cerrarModalConfirmacion = cerrarModalConfirmacion;
 window.limpiarTodosLosIntervalos = limpiarTodosLosIntervalos;
 window.confirmarPagoTransferenciaFinal = confirmarPagoTransferenciaFinal;
-window.enviarComprobanteWhatsApp = enviarComprobanteWhatsApp;  // ← AGREGAR ESTA LÍNEA
+window.enviarComprobanteWhatsApp = enviarComprobanteWhatsApp;
 window.toggleAutoFollowDelivery = toggleAutoFollowDelivery;
 
-console.log("✅ Cliente inicializado - Sistema de modales unificado activo");
+console.log("✅ Cliente inicializado correctamente");
+
+// ==================== BÚSQUEDA DESKTOP ====================
+async function buscarDirecciones(query, tipo) {
+    console.log(`🔍 Buscando en desktop: ${query} para ${tipo}`);
+    
+    if (!query || query.length < 3) {
+        document.getElementById(`${tipo}Sugerencias`)?.classList.add('hidden');
+        return;
+    }
+    
+    try {
+        const sugerenciasDiv = document.getElementById(`${tipo}Sugerencias`);
+        if (sugerenciasDiv) {
+            sugerenciasDiv.innerHTML = '<div class="p-3 text-center text-gray-500 text-sm"><i class="fas fa-spinner fa-spin"></i> Buscando...</div>';
+            sugerenciasDiv.classList.remove('hidden');
+        }
+        
+        const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query + ', Ciudad del Carmen, Campeche')}&limit=5&addressdetails=1`);
+        const data = await response.json();
+        
+        if (!sugerenciasDiv || data.length === 0) {
+            if (sugerenciasDiv) sugerenciasDiv.innerHTML = '<div class="p-3 text-center text-gray-500 text-sm">No se encontraron resultados</div>';
+            return;
+        }
+        
+        sugerenciasDiv.innerHTML = data.map(lugar => {
+            const latNum = parseFloat(lugar.lat);
+            const lngNum = parseFloat(lugar.lon);
+            
+            const nombreCompleto = lugar.display_name
+                .replace(/'/g, "\\'")
+                .replace(/"/g, '\\"')
+                .replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m] || m));
+
+            const nombre = (lugar.display_name.split(',')[0] || '').replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m] || m));
+            const direccion = (lugar.display_name.split(',').slice(1, 3).join(',') || '').replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m] || m));
+
+            return `
+                <div class="sugerencia-item p-3 hover:bg-gray-100 cursor-pointer border-b border-gray-100 flex items-start gap-2" 
+                     onclick="seleccionarDireccion('${tipo}', ${latNum}, ${lngNum}, '${nombreCompleto}')">
+                    <i class="fas fa-map-marker-alt text-gray-400 mt-0.5 text-xs"></i>
+                    <div class="flex-1">
+                        <div class="text-sm font-medium text-gray-800">${nombre}</div>
+                        <div class="text-xs text-gray-500">${direccion}</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+        
+        sugerenciasDiv.classList.remove('hidden');
+    } catch(e) {
+        console.error('Error buscando direcciones:', e);
+        const div = document.getElementById(`${tipo}Sugerencias`);
+        if (div) div.innerHTML = '<div class="p-3 text-center text-red-500 text-sm">Error al buscar</div>';
+    }
+}
+
+// ==================== BÚSQUEDA Y SELECCIÓN MÓVIL ====================
+window.buscarDireccionesMobile = async function(query, tipo) {
+    // ... (mantengo tu versión actualizada, está bien)
+    console.log(`🔍 Buscando en móvil: ${query} para ${tipo}`);
+    
+    if (!query || query.length < 3) {
+        document.getElementById(`${tipo}Sugerencias`)?.classList.add('hidden');
+        return;
+    }
+    
+    try {
+        const sugerenciasDiv = document.getElementById(`${tipo}Sugerencias`);
+        if (sugerenciasDiv) {
+            sugerenciasDiv.innerHTML = '<div class="p-3 text-center text-gray-500 text-sm"><i class="fas fa-spinner fa-spin"></i> Buscando...</div>';
+            sugerenciasDiv.classList.remove('hidden');
+        }
+        
+        const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query + ', Ciudad del Carmen, Campeche')}&limit=5&addressdetails=1`);
+        const data = await response.json();
+        
+        if (!sugerenciasDiv || data.length === 0) return;
+        
+        sugerenciasDiv.innerHTML = data.map(lugar => {
+            const latNum = parseFloat(lugar.lat);
+            const lngNum = parseFloat(lugar.lon);
+            
+            const nombreCompleto = lugar.display_name
+                .replace(/'/g, "\\'")
+                .replace(/"/g, '\\"')
+                .replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m] || m));
+
+            const nombre = (lugar.display_name.split(',')[0] || '').replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m] || m));
+            const direccion = (lugar.display_name.split(',').slice(1, 3).join(',') || '').replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m] || m));
+
+            return `
+                <div class="sugerencia-item p-3 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer border-b border-gray-100 dark:border-gray-700 flex items-start gap-2" 
+                     onclick="window.seleccionarDireccionMobile('${tipo}', ${latNum}, ${lngNum}, '${nombreCompleto}')">
+                    <i class="fas fa-map-marker-alt text-gray-400 mt-0.5 text-xs"></i>
+                    <div class="flex-1">
+                        <div class="text-sm font-medium text-gray-800 dark:text-gray-200">${nombre}</div>
+                        <div class="text-xs text-gray-500 dark:text-gray-400">${direccion}</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+        
+        sugerenciasDiv.classList.remove('hidden');
+    } catch(e) {
+        console.error('Error buscando direcciones:', e);
+    }
+};
+
+window.seleccionarDireccionMobile = function(tipo, lat, lng, direccion) {
+    console.log(`📍 [Mobile] Seleccionando: ${direccion}`);
+    
+    const coords = { lat: parseFloat(lat), lng: parseFloat(lng) };
+    
+    if (isNaN(coords.lat) || isNaN(coords.lng)) {
+        if (window.mostrarToast) window.mostrarToast("❌ Coordenadas inválidas", true);
+        return;
+    }
+    
+    if (coords.lat < 18.58 || coords.lat > 18.70 || coords.lng < -91.88 || coords.lng > -91.75) {
+        if (window.mostrarToast) window.mostrarToast("❌ Fuera de Ciudad del Carmen", true);
+        return;
+    }
+    
+    const direccionCorta = direccion.split(',')[0] || direccion;
+    
+    if (tipo.includes('origen')) {
+        if (originMarker) originMarker.setLatLng([coords.lat, coords.lng]);
+        setOriginCoords(coords);
+        document.getElementById("origen").value = direccionCorta;
+        document.getElementById("origenMobile").value = direccionCorta;
+    } else {
+        if (destMarker) destMarker.setLatLng([coords.lat, coords.lng]);
+        setDestCoords(coords);
+        document.getElementById("destino").value = direccionCorta;
+        document.getElementById("destinoMobile").value = direccionCorta;
+    }
+    
+    document.getElementById(`${tipo}Sugerencias`)?.classList.add('hidden');
+    if (map) map.setView([coords.lat, coords.lng], 17);
+    if (typeof actualizarRutaYTarifaDebounced === 'function') actualizarRutaYTarifaDebounced();
+    
+    mostrarToast(tipo.includes('origen') ? `📍 Origen: ${direccionCorta}` : `🏁 Destino: ${direccionCorta}`);
+};

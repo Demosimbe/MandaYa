@@ -23,7 +23,7 @@
     <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   
-    <style>
+<style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
         .sidebar { box-shadow: 4px 0 15px rgba(0, 0, 0, 0.1); background: white; }
@@ -176,7 +176,7 @@
         body.dark-mode .text-gray-600,
         body.dark-mode .text-gray-500,
         body.dark-mode .text-gray-400 {
-            color: var(--cliente-text-secondary) !important;
+            color: var(--cliente-text-primary) !important;
         }
         
         body.dark-mode .text-gray-800,
@@ -270,7 +270,138 @@
         .pedido-card, button, .map-btn, #progressCard, .estado-panel {
             transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
         }
-            
+        
+        /* ==================== CORRECCIONES: INPUTS Y SELECTS EN MODO OSCURO ==================== */
+        
+        /* Inputs y selects en modo oscuro */
+        body.dark-mode input,
+        body.dark-mode select,
+        body.dark-mode textarea {
+            color: #ffffff !important;
+            background-color: #2a2a2a !important;
+            border-color: #3a3a3a !important;
+        }
+        
+        /* Placeholders en modo oscuro */
+        body.dark-mode input::placeholder,
+        body.dark-mode textarea::placeholder {
+            color: #9ca3af !important;
+        }
+        
+        body.dark-mode input::-webkit-input-placeholder,
+        body.dark-mode textarea::-webkit-input-placeholder {
+            color: #9ca3af !important;
+        }
+        
+        body.dark-mode input::-moz-placeholder,
+        body.dark-mode textarea::-moz-placeholder {
+            color: #9ca3af !important;
+        }
+        
+        /* Inputs dentro de bg-gray-100 */
+        body.dark-mode .bg-gray-100 input,
+        body.dark-mode .bg-gray-100 select {
+            background-color: #2a2a2a !important;
+            color: #ffffff !important;
+        }
+        
+        /* Labels y textos secundarios */
+        body.dark-mode label,
+        body.dark-mode .text-sm.text-gray-600 {
+            color: #d1d5db !important;
+        }
+        
+        /* Select dropdown arrow personalizada */
+        body.dark-mode select {
+            background-color: #2a2a2a !important;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%239ca3af' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E") !important;
+            background-position: right 0.75rem center !important;
+            background-repeat: no-repeat !important;
+            background-size: 1.25em 1.25em !important;
+            appearance: none !important;
+            -webkit-appearance: none !important;
+        }
+        
+        /* Opciones del select */
+        body.dark-mode select option {
+            background-color: #2a2a2a !important;
+            color: #ffffff !important;
+        }
+        
+        /* Focus en inputs y selects */
+        body.dark-mode select:focus,
+        body.dark-mode input:focus {
+            border-color: #fcf9f8 !important;
+            outline: none !important;
+            box-shadow: 0 0 0 2px rgba(255, 98, 0, 0.2) !important;
+        }
+        
+        /* Sugerencias de búsqueda en modo oscuro */
+        body.dark-mode #origenSugerencias,
+        body.dark-mode #destinoSugerencias,
+        body.dark-mode #origenMobileSugerencias,
+        body.dark-mode #destinoMobileSugerencias {
+            background-color: #2a2a2a !important;
+            border-color: #3a3a3a !important;
+        }
+        
+        body.dark-mode .sugerencia-item {
+            border-bottom-color: #3a3a3a !important;
+        }
+
+        body.dark-mode #userInfo,
+        body.dark-mode #userInfoMobile,
+        body.dark-mode .font-semibold.text-gray-800 {
+        color: #ffffff !important;
+        }
+
+        body.dark-mode h2,
+        body.dark-mode .text-2xl.font-semibold {
+            color: #ffffff !important;
+        }
+        
+        body.dark-mode .sugerencia-item:hover {
+            background-color: #3a3a3a !important;
+        }
+        
+        body.dark-mode .sugerencia-item .text-gray-500,
+        body.dark-mode .sugerencia-item .text-xs {
+            color: #9ca3af !important;
+        }
+        
+        body.dark-mode .sugerencia-item .font-medium,
+        body.dark-mode .sugerencia-item .text-sm.font-medium {
+            color: #ffffff !important;
+        }
+        
+        /* Modal de confirmación en modo oscuro */
+        body.dark-mode #modalConfirmacion .bg-white {
+            background-color: #1e1e1e !important;
+        }
+        
+        body.dark-mode #modalConfirmacion .text-gray-600 {
+            color: #9ca3af !important;
+        }
+        
+        body.dark-mode #modalConfirmacion h3 {
+            color: #ffffff !important;
+        }
+        
+        /* Tarifa container en modo oscuro */
+        body.dark-mode #tarifaContainer,
+        body.dark-mode #tarifaContainerMobile {
+            background: linear-gradient(135deg, #0e0d0d, #27241f) !important;
+        }
+        
+        /* Botones de tipo envío móvil en modo oscuro */
+        body.dark-mode .tipo-mobile-btn:not(.bg-orange-500) {
+            background-color: #2a2a2a !important;
+            color: #ffffff !important;
+        }
+        
+        body.dark-mode .tipo-mobile-btn:not(.bg-orange-500):hover {
+            background-color: #3a3a3a !important;
+        }
         
         /* Botones del mapa - contenedor compacto */
         .map-buttons-container {
@@ -298,15 +429,15 @@
         }
 
         @keyframes confettiFall {
-    0% { 
-        transform: translateY(-20px) rotate(0deg); 
-        opacity: 1; 
-    }
-    100% { 
-        transform: translateY(100vh) rotate(360deg); 
-        opacity: 0; 
-    }
-}
+            0% { 
+                transform: translateY(-20px) rotate(0deg); 
+                opacity: 1; 
+            }
+            100% { 
+                transform: translateY(100vh) rotate(360deg); 
+                opacity: 0; 
+            }
+        }
         
         .map-btn:hover { background: #f3f4f6; transform: scale(1.05); }
         .map-btn i { font-size: 18px; }
@@ -320,105 +451,105 @@
 </head>
 <body class="h-screen overflow-hidden flex">
 
-    <!-- ==================== SIDEBAR DESKTOP ==================== -->
-    <div class="hidden lg:flex w-80 bg-white sidebar flex-col h-full overflow-y-hidden z-10 relative shadow-xl">
-        <div class="bg-black text-white p-5 flex items-center justify-between sticky top-0 z-20">
-            <div class="flex items-center gap-3">
-                <div class="w-12 h-12 bg-black rounded-full flex items-center justify-center">
-                    <img src="img/logo.png" class="w-12 h-12 object-cover" alt="Logo">
-                </div>
-                <div>
-                    <h1 class="font-bold text-2xl">MandaYa</h1>
-                    <p class="text-xs opacity-90">Envíos rápidos y seguros</p>
-                </div>
+   <!-- ==================== SIDEBAR DESKTOP ==================== -->
+<div class="hidden lg:flex w-80 bg-white sidebar flex-col h-full overflow-y-hidden z-10 relative shadow-xl">
+    <div class="bg-black text-white p-5 flex items-center justify-between sticky top-0 z-20">
+        <div class="flex items-center gap-3">
+            <div class="w-12 h-12 bg-black rounded-full flex items-center justify-center">
+                <img src="img/logo.png" class="w-12 h-12 object-cover" alt="Logo">
             </div>
-
-            <div class="flex items-center gap-2">
-                 
+            <div>
+                <h1 class="font-bold text-2xl">MandaYa</h1>
+                <p class="text-xs opacity-90">Envíos rápidos y seguros</p>
+            </div>
+        </div>
+        <div class="flex items-center gap-2">
+            <!-- Botón modo oscuro -->
             <button id="btnDarkMode" onclick="toggleDarkMode()" class="hover:bg-white/20 rounded-full p-2 transition-all w-10 h-10 flex items-center justify-center">
-                 <i id="darkModeIcon" class="fas fa-moon text-xl"></i>
+                <i id="darkModeIcon" class="fas fa-moon text-xl"></i>
             </button>
-
-            <button onclick="verPerfil()" class="text-white hover:bg-white/20 rounded-full p-2 transition-all">
+            <!-- Botón perfil -->
+            <button onclick="verPerfil()" class="hover:bg-white/20 rounded-full p-2 transition-all">
                 <i class="fas fa-user-circle text-3xl"></i>
             </button>
         </div>
+    </div>
 
-        <div id="userInfo" class="bg-gray-50 p-1 border-b"></div>
+    <div id="userInfo" class="bg-gray-50 p-1 border-b"></div>
 
-        <div class="p-5 flex-1 overflow-auto">
-            <h2 class="text-2xl font-semibold mb-2 mt-0">Solicita un envío</h2>
+    <div class="p-5 flex-1 overflow-auto">
+        <h2 class="text-2xl font-semibold mb-2 mt-0">Solicita un envío</h2>
 
-            <div class="space-y-4">
-                <div>
-                    <label class="text-sm text-gray-600 font-medium">📍 Punto de partida</label>
-                    <div class="mt-1 bg-gray-100 border border-gray-300 rounded-2xl py-2 px-3 flex items-center gap-3">
-                        <i class="fas fa-circle text-[#FF6200] text-sm"></i>
-                        <input type="text" id="origen" class="bg-transparent flex-1 outline-none text-sm" placeholder="Buscar dirección o arrastra el marcador" autocomplete="off">
-                    </div>
-                    <div id="origenSugerencias" class="hidden bg-white border border-gray-200 rounded-xl mt-1 max-h-48 overflow-auto shadow-lg z-50"></div>
+        <div class="space-y-4">
+            <div>
+                <label class="text-sm text-gray-600 font-medium">📍 Punto de partida</label>
+                <div class="mt-1 bg-gray-100 border border-gray-300 rounded-2xl py-2 px-3 flex items-center gap-3">
+                    <i class="fas fa-circle text-[#FF6200] text-sm"></i>
+                    <input type="text" id="origen" class="bg-transparent flex-1 outline-none text-sm" placeholder="Buscar dirección o arrastra el marcador" autocomplete="off">
                 </div>
-                
-                <div class="mt-3">
-                    <label class="text-sm text-gray-600 font-medium">🏁 Destino</label>
-                    <div class="mt-1 bg-gray-100 border border-gray-300 rounded-2xl py-2 px-3 flex items-center gap-3">
-                        <i class="fas fa-square text-blue-600 text-sm"></i>
-                        <input type="text" id="destino" class="bg-transparent flex-1 outline-none text-sm" placeholder="Buscar dirección o arrastra el marcador" autocomplete="off">
-                    </div>
-                    <div id="destinoSugerencias" class="hidden bg-white border border-gray-200 rounded-xl mt-1 max-h-48 overflow-auto shadow-lg z-50"></div>
+                <div id="origenSugerencias" class="hidden bg-white border border-gray-200 rounded-xl mt-1 max-h-48 overflow-auto shadow-lg z-50"></div>
+            </div>
+            
+            <div class="mt-3">
+                <label class="text-sm text-gray-600 font-medium">🏁 Destino</label>
+                <div class="mt-1 bg-gray-100 border border-gray-300 rounded-2xl py-2 px-3 flex items-center gap-3">
+                    <i class="fas fa-square text-blue-600 text-sm"></i>
+                    <input type="text" id="destino" class="bg-transparent flex-1 outline-none text-sm" placeholder="Buscar dirección o arrastra el marcador" autocomplete="off">
                 </div>
-                
-                <div id="tarifaContainer" class="hidden p-3 rounded-2xl text-center" style="background: linear-gradient(135deg, #FF6200, #FF8C00); color: white;">
-                    <i class="fas fa-tag mr-2"></i>
-                    Tarifa: <span id="tarifaValue" class="font-bold">$0</span>
-                    <button onclick="mostrarResumenRuta()" class="ml-3 text-xs bg-white/20 rounded-full px-2 py-1 hover:bg-white/30 transition-all">
-                        <i class="fas fa-info-circle"></i> Detalles
-                    </button>
-                </div>
-
-                <div>
-                    <label class="text-sm text-gray-600 font-medium">📦 ¿Qué vas a enviar?</label>
-                    <select id="tipoEnvio" class="w-full mt-1 bg-gray-100 border border-gray-300 rounded-2xl py-2 px-3 text-base outline-none">
-                        <option value="">Seleccionar</option>
-                        <option value="comida">🍔 Comida / Restaurante</option>
-                        <option value="paquete">📦 Paquete / Documentos</option>
-                        <option value="mercancia">📦 Mercancía / Productos</option>
-                        <option value="farmacia">💊 Farmacia / Medicamentos</option>
-                    </select>
-                </div>
-
-                <!-- Panel de estado del pedido (DESKTOP) -->
-                <div id="panelEstadoPedido" class="hidden mt-4 p-3 rounded-xl bg-gray-100 border border-gray-300 estado-panel">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <div class="flex items-center gap-2">
-                                <i id="estadoIcono" class="fas fa-clock text-yellow-500"></i>
-                                <span id="estadoTexto" class="font-semibold text-gray-800">Pedido pendiente</span>
-                            </div>
-                            <p class="text-xs text-gray-500 mt-1">ID: <span id="pedidoIdLabel">---</span></p>
-                        </div>
-                        <button id="btnCancelarPedido" class="bg-red-500 hover:bg-red-600 text-white text-sm px-3 py-1 rounded-lg transition-all">
-                            <i class="fas fa-times mr-1"></i> Cancelar
-                        </button>
-                    </div>
-                    <div class="text-xs text-gray-600 mt-2" id="estadoDetalle">Esperando a que un delivery tome tu pedido...</div>
-                </div>
-
-                <button onclick="solicitarEnvio()" class="w-full bg-black hover:bg-gray-800 text-white font-bold py-3 rounded-2xl text-base mt-4 transition-all flex items-center justify-center gap-2">
-                    <i class="fas fa-paper-plane"></i> SOLICITAR ENVÍO
+                <div id="destinoSugerencias" class="hidden bg-white border border-gray-200 rounded-xl mt-1 max-h-48 overflow-auto shadow-lg z-50"></div>
+            </div>
+            
+            <div id="tarifaContainer" class="hidden p-3 rounded-2xl text-center" style="background: linear-gradient(135deg, #FF6200, #FF8C00); color: white;">
+                <i class="fas fa-tag mr-2"></i>
+                Tarifa: <span id="tarifaValue" class="font-bold">$0</span>
+                <button onclick="mostrarResumenRuta()" class="ml-3 text-xs bg-white/20 rounded-full px-2 py-1 hover:bg-white/30 transition-all">
+                    <i class="fas fa-info-circle"></i> Detalles
                 </button>
             </div>
-        </div>
 
-        <div class="border-t p-4 text-center text-sm text-gray-500 bg-white">
-            <button onclick="verHistorial()" class="hover:text-[#FF6200] transition-colors px-3 py-1">
-                <i class="fas fa-history mr-1"></i> Mis envíos
-            </button>
-            <button onclick="cerrarSesion()" class="ml-4 hover:text-[#FF6200] transition-colors px-3 py-1">
-                <i class="fas fa-sign-out-alt mr-1"></i> Salir
+            <div>
+                <label class="text-sm text-gray-600 font-medium">📦 ¿Qué vas a enviar?</label>
+                <select id="tipoEnvio" class="w-full mt-1 bg-gray-100 border border-gray-300 rounded-2xl py-2 px-3 text-base outline-none">
+                    <option value="">Seleccionar</option>
+                    <option value="comida">🍔 Comida / Restaurante</option>
+                    <option value="paquete">📦 Paquete / Documentos</option>
+                    <option value="mercancia">📦 Mercancía / Productos</option>
+                    <option value="farmacia">💊 Farmacia / Medicamentos</option>
+                </select>
+            </div>
+
+            <!-- Panel de estado del pedido (DESKTOP) -->
+            <div id="panelEstadoPedido" class="hidden mt-4 p-3 rounded-xl bg-gray-100 border border-gray-300 estado-panel">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <i id="estadoIcono" class="fas fa-clock text-yellow-500"></i>
+                            <span id="estadoTexto" class="font-semibold text-gray-800">Pedido pendiente</span>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-1">ID: <span id="pedidoIdLabel">---</span></p>
+                    </div>
+                    <button id="btnCancelarPedido" class="bg-red-500 hover:bg-red-600 text-white text-sm px-3 py-1 rounded-lg transition-all">
+                        <i class="fas fa-times mr-1"></i> Cancelar
+                    </button>
+                </div>
+                <div class="text-xs text-gray-600 mt-2" id="estadoDetalle">Esperando a que un delivery tome tu pedido...</div>
+            </div>
+
+            <button onclick="solicitarEnvio()" class="w-full bg-black hover:bg-gray-800 text-white font-bold py-3 rounded-2xl text-base mt-4 transition-all flex items-center justify-center gap-2">
+                <i class="fas fa-paper-plane"></i> SOLICITAR ENVÍO
             </button>
         </div>
     </div>
+
+    <div class="border-t p-4 text-center text-sm text-gray-500 bg-white">
+        <button onclick="verHistorial()" class="hover:text-[#FF6200] transition-colors px-3 py-1">
+            <i class="fas fa-history mr-1"></i> Mis envíos
+        </button>
+        <button onclick="cerrarSesion()" class="ml-4 hover:text-[#FF6200] transition-colors px-3 py-1">
+            <i class="fas fa-sign-out-alt mr-1"></i> Salir
+        </button>
+    </div>
+</div> <!-- ✅ Cierre correcto de la sidebar desktop -->
 
     <!-- ==================== MODALES ==================== -->
     <!-- MODAL PAGO -->
@@ -551,8 +682,8 @@
     </div>
     
     <!-- ✅ NUEVO: Información de tiempo estimado (ETA) -->
-    <div id="etaInfo" class="hidden text-center text-[10px] text-gray-500 mb-2">
-        <i class="fas fa-clock mr-1"></i> Llegada estimada: <span id="etaValue" class="font-semibold">---</span>
+    <div id="etaInfoMobile" class="hidden text-center text-[10px] text-gray-500 mb-2">
+        <i class="fas fa-clock mr-1"></i> Llegada estimada: <span id="etaValueMobile" class="font-semibold">---</span>
     </div>
     
     <!-- Mensaje de estado -->
@@ -692,6 +823,16 @@
                     <div id="tipoSeleccionadoMobile" class="text-xs text-green-600 mt-2 hidden">✅ Tipo seleccionado</div>
                 </div>
 
+                <!-- MODAL CONFIRMACIÓN -->
+<div id="modalConfirmacion" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[10001] p-4">
+    <div class="bg-white dark:bg-gray-800 rounded-2xl max-w-sm w-full p-6 text-center">
+        <i class="fas fa-check-circle text-green-500 text-5xl mb-3"></i>
+        <h3 class="text-xl font-bold mb-2 dark:text-white">¡Pedido confirmado!</h3>
+        <p class="text-gray-600 dark:text-gray-300 mb-4">Tu envío ha sido solicitado correctamente.</p>
+        <button onclick="cerrarModalConfirmacion()" class="bg-orange-500 text-white px-6 py-2 rounded-lg">Aceptar</button>
+    </div>
+</div>
+
                 <!-- Panel de estado del pedido (MOBILE) -->
                 <div id="panelEstadoPedidoMobile" class="hidden mt-3 p-3 rounded-xl bg-gray-100 border border-gray-300 estado-panel">
                     <div class="flex items-center justify-between">
@@ -706,7 +847,7 @@
                             <i class="fas fa-times mr-1"></i> Cancelar
                         </button>
                     </div>
-                    <div id="etaInfo" class="text-xs text-gray-500 mt-1 hidden">
+                    <div id="etaInfoMobile" class="text-xs text-gray-500 mt-1 hidden">
                         <i class="fas fa-clock"></i> Llegada estimada: <span id="etaValue">---</span>
                     </div>
                     <div class="text-xs text-gray-600 mt-2" id="estadoDetalleMobile">Esperando a que un delivery tome tu pedido...</div>
@@ -731,88 +872,93 @@
 <script type="module" src="js/cliente.js"></script>
     
     <script>
+    // ==================== VARIABLES MÓVIL ====================
     let mobileSidebarOpen = true;
-
-    // Buscar direcciones en móvil
-    const origenMobile = document.getElementById('origenMobile');
-    const destinoMobile = document.getElementById('destinoMobile');
+    let busquedaTimeout = null;
     
-    if (origenMobile) {
-        origenMobile.addEventListener('input', (e) => {
-            if (busquedaTimeout) clearTimeout(busquedaTimeout);
-            busquedaTimeout = setTimeout(() => {
-                buscarDireccionesMobile(e.target.value, 'origenMobile');
-            }, 500);
-        });
-    }
-    
-    if (destinoMobile) {
-        destinoMobile.addEventListener('input', (e) => {
-            if (busquedaTimeout) clearTimeout(busquedaTimeout);
-            busquedaTimeout = setTimeout(() => {
-                buscarDireccionesMobile(e.target.value, 'destinoMobile');
-            }, 500);
-        });
-    }
-    
-    async function buscarDireccionesMobile(query, tipo) {
+    // ==================== BÚSQUEDA MÓVIL (directa, sin depender de cliente.js) ====================
+    window.buscarDireccionesMobile = async function(query, tipo) {
+        console.log(`🔍 Buscando: ${query}`);
+        
         if (!query || query.length < 3) {
-            document.getElementById(`${tipo}Sugerencias`).classList.add('hidden');
+            const div = document.getElementById(`${tipo}Sugerencias`);
+            if (div) div.classList.add('hidden');
             return;
         }
+        
         try {
-            const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query + ', Ciudad del Carmen, Campeche')}&limit=5&addressdetails=1`);
-            const data = await response.json();
+            const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query + ', Ciudad del Carmen, Campeche')}&limit=5`);
+            const data = await res.json();
             const sugerenciasDiv = document.getElementById(`${tipo}Sugerencias`);
-            if (data.length === 0) {
-                sugerenciasDiv.classList.add('hidden');
+            
+            if (!sugerenciasDiv || data.length === 0) {
+                if (sugerenciasDiv) sugerenciasDiv.classList.add('hidden');
                 return;
             }
+            
             sugerenciasDiv.innerHTML = data.map(lugar => `
-                <div class="sugerencia-item p-3 hover:bg-gray-100 cursor-pointer border-b border-gray-100 flex items-start gap-2" 
-                     onclick="seleccionarDireccionMobile('${tipo}', ${lugar.lat}, ${lugar.lon}, '${lugar.display_name.replace(/'/g, "\\'")}')">
-                    <i class="fas fa-map-marker-alt text-gray-400 mt-0.5 text-xs"></i>
-                    <div class="flex-1">
-                        <div class="text-sm font-medium text-gray-800">${lugar.display_name.split(',')[0]}</div>
-                        <div class="text-xs text-gray-500">${lugar.display_name.split(',').slice(1, 3).join(',')}</div>
+                <div class="sugerencia-item p-3 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer border-b border-gray-100 dark:border-gray-700" 
+                     onclick="window.seleccionarDireccionMobile('${tipo}', ${lugar.lat}, ${lugar.lon}, '${escapeHtml(lugar.display_name)}')">
+                    <div class="flex items-start gap-2">
+                        <i class="fas fa-map-marker-alt text-gray-400 mt-0.5 text-xs"></i>
+                        <div class="flex-1">
+                            <div class="text-sm font-medium">${escapeHtml(lugar.display_name.split(',')[0])}</div>
+                            <div class="text-xs text-gray-500">${escapeHtml(lugar.display_name.split(',').slice(1, 3).join(','))}</div>
+                        </div>
                     </div>
                 </div>
             `).join('');
             sugerenciasDiv.classList.remove('hidden');
         } catch(e) {
-            console.error('Error buscando direcciones:', e);
+            console.error('Error:', e);
+        }
+    };
+    
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>]/g, function(m) {
+            if (m === '&') return '&amp;';
+            if (m === '<') return '&lt;';
+            if (m === '>') return '&gt;';
+            return m;
+        }).replace(/'/g, "\\'");
+    }
+        
+    // ==================== EVENTOS MÓVIL ====================
+    function initMobileEvents() {
+        const origen = document.getElementById('origenMobile');
+        const destino = document.getElementById('destinoMobile');
+        
+        if (origen) {
+            origen.addEventListener('input', (e) => {
+                clearTimeout(busquedaTimeout);
+                busquedaTimeout = setTimeout(() => {
+                    window.buscarDireccionesMobile(e.target.value, 'origenMobile');
+                }, 500);
+            });
+            origen.addEventListener('blur', () => {
+                setTimeout(() => {
+                    document.getElementById('origenMobileSugerencias')?.classList.add('hidden');
+                }, 200);
+            });
+        }
+        
+        if (destino) {
+            destino.addEventListener('input', (e) => {
+                clearTimeout(busquedaTimeout);
+                busquedaTimeout = setTimeout(() => {
+                    window.buscarDireccionesMobile(e.target.value, 'destinoMobile');
+                }, 500);
+            });
+            destino.addEventListener('blur', () => {
+                setTimeout(() => {
+                    document.getElementById('destinoMobileSugerencias')?.classList.add('hidden');
+                }, 200);
+            });
         }
     }
     
-    function seleccionarDireccionMobile(tipo, lat, lng, direccion) {
-        const coords = { lat: parseFloat(lat), lng: parseFloat(lng) };
-        if (coords.lat < 18.58 || coords.lat > 18.70 || coords.lng < -91.88 || coords.lng > -91.75) {
-            mostrarToast("❌ Ubicación fuera de Ciudad del Carmen", true);
-            document.getElementById(`${tipo}Sugerencias`).classList.add('hidden');
-            return;
-        }
-        const direccionCorta = direccion.split(',')[0];
-        if (tipo === 'origenMobile') {
-            if (typeof originMarker !== 'undefined' && originMarker) originMarker.setLatLng([coords.lat, coords.lng]);
-            if (typeof setOriginCoords === 'function') setOriginCoords(coords);
-            else window.originCoords = coords;
-            const origenDesktop = document.getElementById("origen");
-            const origenMobileInput = document.getElementById("origenMobile");
-            if (origenDesktop) origenDesktop.value = direccionCorta;
-            if (origenMobileInput) origenMobileInput.value = direccionCorta;
-        } else {
-            if (typeof destMarker !== 'undefined' && destMarker) destMarker.setLatLng([coords.lat, coords.lng]);
-            if (typeof destCoords !== 'undefined') window.destCoords = coords;
-            const destinoDesktop = document.getElementById("destino");
-            const destinoMobileInput = document.getElementById("destinoMobile");
-            if (destinoDesktop) destinoDesktop.value = direccionCorta;
-            if (destinoMobileInput) destinoMobileInput.value = direccionCorta;
-        }
-        document.getElementById(`${tipo}Sugerencias`).classList.add('hidden');
-        if (typeof actualizarRutaYTarifa === 'function') actualizarRutaYTarifa();
-        mostrarToast(`📍 ${tipo === 'origenMobile' ? 'Origen' : 'Destino'} actualizado: ${direccionCorta}`);
-    }
-    
+    // ==================== UI MÓVIL ====================
     function toggleMobileSidebar() {
         const sidebar = document.getElementById('mobileSidebar');
         if (mobileSidebarOpen) {
@@ -822,196 +968,62 @@
             sidebar.style.transform = 'translateY(0)';
             mobileSidebarOpen = true;
         }
-        // ✅ Forzar redimensionamiento del mapa después de la animación
-        setTimeout(() => {
-            if (typeof map !== 'undefined' && map && typeof map.invalidateSize === 'function') {
-                map.invalidateSize();
-            }
-        }, 300);
+        setTimeout(() => window.map?.invalidateSize(), 300);
     }
-    
-    function sincronizarInputsMobile() {
-        const origenDesktop = document.getElementById("origen");
-        const destinoDesktop = document.getElementById("destino");
-        const origenMobileInput = document.getElementById("origenMobile");
-        const destinoMobileInput = document.getElementById("destinoMobile");
-        const tarifaContainer = document.getElementById("tarifaContainer");
-        const tarifaContainerMobile = document.getElementById("tarifaContainerMobile");
-        const tarifaValue = document.getElementById("tarifaValue");
-        const tarifaValueMobile = document.getElementById("tarifaValueMobile");
-        const tipoEnvio = document.getElementById("tipoEnvio");
-        const tipoEnvioMobile = document.getElementById("tipoEnvioMobile");
-        
-        if (origenDesktop && origenMobileInput && document.activeElement !== origenMobileInput) {
-            if (origenMobileInput.value !== origenDesktop.value) origenMobileInput.value = origenDesktop.value;
-        }
-        if (destinoDesktop && destinoMobileInput && document.activeElement !== destinoMobileInput) {
-            if (destinoMobileInput.value !== destinoDesktop.value) destinoMobileInput.value = destinoDesktop.value;
-        }
-        if (tipoEnvio && tipoEnvioMobile && document.activeElement !== tipoEnvioMobile) {
-            if (tipoEnvio.value !== tipoEnvioMobile.value) {
-                tipoEnvioMobile.value = tipoEnvio.value;
-                const textoSeleccionado = tipoEnvio.options[tipoEnvio.selectedIndex]?.text || '';
-                const mensajeDiv = document.getElementById('tipoSeleccionadoMobile');
-                if (mensajeDiv && textoSeleccionado) {
-                    mensajeDiv.innerHTML = `✅ ${textoSeleccionado}`;
-                    mensajeDiv.classList.remove('hidden');
-                    setTimeout(() => mensajeDiv.classList.add('hidden'), 1500);
-                }
-            }
-        }
-        if (tarifaContainer && tarifaContainerMobile) {
-            if (!tarifaContainer.classList.contains("hidden")) {
-                tarifaContainerMobile.classList.remove("hidden");
-                if (tarifaValue && tarifaValueMobile && tarifaValueMobile.innerHTML !== tarifaValue.innerHTML) {
-                    tarifaValueMobile.innerHTML = tarifaValue.innerHTML;
-                }
-            } else {
-                tarifaContainerMobile.classList.add("hidden");
-            }
-        }
-    }
-    
-    // ==================== ✅ NUEVO: SINCRONIZACIÓN BIDIRECCIONAL MOBILE → DESKTOP ====================
-    const origenMobileInput = document.getElementById('origenMobile');
-    const destinoMobileInput = document.getElementById('destinoMobile');
-    
-    if (origenMobileInput) {
-        origenMobileInput.addEventListener('input', (e) => {
-            const origenDesktop = document.getElementById("origen");
-            if (origenDesktop && document.activeElement !== origenDesktop) {
-                origenDesktop.value = e.target.value;
-                // Disparar búsqueda de direcciones en desktop
-                if (typeof buscarDirecciones === 'function') {
-                    buscarDirecciones(e.target.value, 'origen');
-                }
-            }
-        });
-        
-        // Sincronizar cuando pierde el foco (para actualizar coordenadas)
-        origenMobileInput.addEventListener('blur', () => {
-            const origenDesktop = document.getElementById("origen");
-            if (origenDesktop && origenDesktop.value !== origenMobileInput.value) {
-                origenDesktop.value = origenMobileInput.value;
-                if (typeof actualizarRutaYTarifa === 'function') {
-                    setTimeout(() => actualizarRutaYTarifa(), 100);
-                }
-            }
-        });
-    }
-    
-    if (destinoMobileInput) {
-        destinoMobileInput.addEventListener('input', (e) => {
-            const destinoDesktop = document.getElementById("destino");
-            if (destinoDesktop && document.activeElement !== destinoDesktop) {
-                destinoDesktop.value = e.target.value;
-                // Disparar búsqueda de direcciones en desktop
-                if (typeof buscarDirecciones === 'function') {
-                    buscarDirecciones(e.target.value, 'destino');
-                }
-            }
-        });
-        
-        // Sincronizar cuando pierde el foco (para actualizar coordenadas)
-        destinoMobileInput.addEventListener('blur', () => {
-            const destinoDesktop = document.getElementById("destino");
-            if (destinoDesktop && destinoDesktop.value !== destinoMobileInput.value) {
-                destinoDesktop.value = destinoMobileInput.value;
-                if (typeof actualizarRutaYTarifa === 'function') {
-                    setTimeout(() => actualizarRutaYTarifa(), 100);
-                }
-            }
-        });
-    }
-    // ==================== FIN DE LA NUEVA SINCRONIZACIÓN ====================
     
     function solicitarEnvioMobile() {
-        // Prevenir múltiples clics
-        const btnMobile = document.querySelector('button[onclick="solicitarEnvioMobile()"]');
-        const btnDesktop = document.querySelector('button[onclick="solicitarEnvio()"]');
-        
-        if (btnMobile && btnMobile.disabled) return;
-        
-        // Función auxiliar para reactivar botones (usada en errores)
-        const reenableButtons = () => {
-            if (btnMobile) btnMobile.disabled = false;
-            if (btnDesktop) btnDesktop.disabled = false;
-        };
-        
-        // Deshabilitar botones durante el proceso
-        if (btnMobile) btnMobile.disabled = true;
-        if (btnDesktop) btnDesktop.disabled = true;
+        const btn = document.querySelector('button[onclick="solicitarEnvioMobile()"]');
+        if (btn?.disabled) return;
+        if (btn) btn.disabled = true;
         
         try {
-            const origenMobileVal = document.getElementById("origenMobile")?.value || '';
-            const destinoMobileVal = document.getElementById("destinoMobile")?.value || '';
-            const tipoMobileVal = document.getElementById("tipoEnvioMobile")?.value || '';
+            const origen = document.getElementById("origenMobile")?.value || '';
+            const destino = document.getElementById("destinoMobile")?.value || '';
+            const tipo = document.getElementById("tipoEnvioMobile")?.value || '';
             
-            // Validación 1: origen y destino
-            if (!origenMobileVal || !destinoMobileVal) {
-                mostrarToast("❌ Selecciona origen y destino", true);
-                reenableButtons();
+            if (!origen || !destino) {
+                if (window.mostrarToast) window.mostrarToast("❌ Selecciona origen y destino", true);
+                if (btn) btn.disabled = false;
                 return;
             }
             
-            // Validación 2: tipo de envío
-            if (!tipoMobileVal || tipoMobileVal === '') {
-                mostrarToast("❌ Selecciona el tipo de envío (Comida, Paquete, etc.)", true);
-                document.querySelectorAll('.tipo-mobile-btn').forEach(btn => {
-                    btn.style.animation = 'shake 0.5s ease';
-                    setTimeout(() => { btn.style.animation = ''; }, 500);
-                });
-                reenableButtons();
+            if (!tipo) {
+                if (window.mostrarToast) window.mostrarToast("❌ Selecciona el tipo de envío", true);
+                if (btn) btn.disabled = false;
                 return;
             }
             
-            // Sincronizar con los campos de escritorio
+            // Sincronizar con desktop
             const origenDesktop = document.getElementById("origen");
             const destinoDesktop = document.getElementById("destino");
             const tipoDesktop = document.getElementById("tipoEnvio");
+            if (origenDesktop) origenDesktop.value = origen;
+            if (destinoDesktop) destinoDesktop.value = destino;
+            if (tipoDesktop) tipoDesktop.value = tipo;
             
-            if (origenDesktop) origenDesktop.value = origenMobileVal;
-            if (destinoDesktop) destinoDesktop.value = destinoMobileVal;
-            if (tipoDesktop) tipoDesktop.value = tipoMobileVal;
-            
-            // Llamar a la función principal
-            if (typeof solicitarEnvio === 'function') {
-                solicitarEnvio().catch(err => {
-                    console.error("Error en solicitarEnvio:", err);
-                    mostrarToast("❌ Error al solicitar el envío", true);
-                    reenableButtons();
-                });
-            } else {
-                mostrarToast("❌ Error interno: función no disponible", true);
-                reenableButtons();
+            if (typeof window.solicitarEnvio === 'function') {
+                window.solicitarEnvio();
             }
-        } catch (error) {
-            console.error("Error en solicitarEnvioMobile:", error);
-            mostrarToast("❌ Ocurrió un error inesperado", true);
-            reenableButtons();
+        } catch(e) {
+            console.error(e);
+            if (window.mostrarToast) window.mostrarToast("❌ Error", true);
+        } finally {
+            setTimeout(() => { if (btn) btn.disabled = false; }, 2000);
         }
     }
     
     function seleccionarTipoMobile(valor, texto) {
-        const tipoDesktop = document.getElementById('tipoEnvio');
-        const tipoMobile = document.getElementById('tipoEnvioMobile');
-        const mensajeDiv = document.getElementById('tipoSeleccionadoMobile');
+        const mobileInput = document.getElementById('tipoEnvioMobile');
+        const desktopInput = document.getElementById('tipoEnvio');
+        if (mobileInput) mobileInput.value = valor;
+        if (desktopInput) desktopInput.value = valor;
         
-        if (tipoDesktop) tipoDesktop.value = valor;
-        if (tipoMobile) tipoMobile.value = valor;
-        
-        if (mensajeDiv) {
-            mensajeDiv.innerHTML = `✅ ${texto} seleccionado`;
-            mensajeDiv.classList.remove('hidden');
-            setTimeout(() => mensajeDiv.classList.add('hidden'), 2000);
-        }
-        
-        // Buscar el botón que corresponda según el valor
+        // Resaltar botón seleccionado
         document.querySelectorAll('.tipo-mobile-btn').forEach(btn => {
             btn.classList.remove('bg-orange-500', 'text-white');
             btn.classList.add('bg-gray-100', 'text-gray-800');
             if ((valor === 'mercancia' && btn.textContent.includes('Mercancía')) ||
-                (valor === 'paquete' && btn.textContent.includes('Paquete') && !btn.textContent.includes('Mercancía')) ||
+                (valor === 'paquete' && btn.textContent.includes('Paquete')) ||
                 (valor === 'comida' && btn.textContent.includes('Comida')) ||
                 (valor === 'farmacia' && btn.textContent.includes('Farmacia'))) {
                 btn.classList.remove('bg-gray-100', 'text-gray-800');
@@ -1019,144 +1031,51 @@
             }
         });
         
-        console.log(`✅ Tipo seleccionado: ${valor} - ${texto}`);
-    }
-    
-    let syncInterval = null;
-    
-    function ejecutarSincronizacion() {
-        sincronizarInputsMobile();
-        const userInfo = document.getElementById("userInfo");
-        const userInfoMobile = document.getElementById("userInfoMobile");
-        if (userInfo && userInfoMobile && userInfo.innerHTML !== userInfoMobile.innerHTML) {
-            userInfoMobile.innerHTML = userInfo.innerHTML;
-        }
-    }
-   
-    function iniciarSincronizacion() {
-        if (syncInterval) return;
-        syncInterval = setInterval(ejecutarSincronizacion, 500);
-        console.log("✅ Sincronización mobile iniciada");
-    }
-    
-    function detenerSincronizacion() {
-        if (syncInterval) {
-            clearInterval(syncInterval);
-            syncInterval = null;
-            console.log("🛑 Sincronización mobile detenida");
+        const msg = document.getElementById('tipoSeleccionadoMobile');
+        if (msg) {
+            msg.innerHTML = `✅ ${texto} seleccionado`;
+            msg.classList.remove('hidden');
+            setTimeout(() => msg.classList.add('hidden'), 1500);
         }
     }
     
-    iniciarSincronizacion();
-    window.addEventListener('beforeunload', function() { detenerSincronizacion(); });
-
-    // ==================== MODO OSCURO PARA CLIENTE ====================
-function toggleDarkMode() {
-    const body = document.body;
-    const iconDesktop = document.getElementById('darkModeIcon');
-    const iconMobile = document.getElementById('darkModeIconMobile');
-    
-    if (body.classList.contains('dark-mode')) {
-        body.classList.remove('dark-mode');
-        localStorage.setItem('cliente_dark_mode', 'false');
-        if (iconDesktop) {
-            iconDesktop.classList.remove('fa-sun');
-            iconDesktop.classList.add('fa-moon');
-        }
-        if (iconMobile) {
-            iconMobile.classList.remove('fa-sun');
-            iconMobile.classList.add('fa-moon');
-        }
-        mostrarToast("☀️ Modo claro activado", false);
-    } else {
-        body.classList.add('dark-mode');
-        localStorage.setItem('cliente_dark_mode', 'true');
-        if (iconDesktop) {
-            iconDesktop.classList.remove('fa-moon');
-            iconDesktop.classList.add('fa-sun');
-        }
-        if (iconMobile) {
-            iconMobile.classList.remove('fa-moon');
-            iconMobile.classList.add('fa-sun');
-        }
-        mostrarToast("🌙 Modo oscuro activado", false);
+    function toggleDarkMode() {
+        document.body.classList.toggle('dark-mode');
+        const isDark = document.body.classList.contains('dark-mode');
+        localStorage.setItem('cliente_dark_mode', isDark);
+        
+        const icons = [document.getElementById('darkModeIcon'), document.getElementById('darkModeIconMobile')];
+        icons.forEach(icon => {
+            if (icon) {
+                icon.classList.remove('fa-moon', 'fa-sun');
+                icon.classList.add(isDark ? 'fa-sun' : 'fa-moon');
+            }
+        });
+        
+        if (window.mostrarToast) window.mostrarToast(isDark ? "🌙 Modo oscuro" : "☀️ Modo claro", false);
+        setTimeout(() => window.map?.invalidateSize(), 100);
     }
     
-    // Forzar redimensionamiento del mapa después de cambiar modo
-    setTimeout(() => {
-        if (typeof map !== 'undefined' && map && typeof map.invalidateSize === 'function') {
-            map.invalidateSize();
-        }
-    }, 100);
-}
-
-// Cargar modo oscuro guardado al iniciar
-function cargarModoOscuroCliente() {
-    const darkMode = localStorage.getItem('cliente_dark_mode');
-    const iconDesktop = document.getElementById('darkModeIcon');
-    const iconMobile = document.getElementById('darkModeIconMobile');
+    // ==================== INICIALIZAR ====================
+    initMobileEvents();
     
-    if (darkMode === 'true') {
+    // Cargar modo oscuro guardado
+    if (localStorage.getItem('cliente_dark_mode') === 'true') {
         document.body.classList.add('dark-mode');
-        if (iconDesktop) {
-            iconDesktop.classList.remove('fa-moon');
-            iconDesktop.classList.add('fa-sun');
-        }
-        if (iconMobile) {
-            iconMobile.classList.remove('fa-moon');
-            iconMobile.classList.add('fa-sun');
-        }
-    } else {
-        // Opcional: modo oscuro automático por hora (20:00 a 6:00)
-        const hora = new Date().getHours();
-        if (hora >= 20 || hora < 6) {
-            document.body.classList.add('dark-mode');
-            if (iconDesktop) {
-                iconDesktop.classList.remove('fa-moon');
-                iconDesktop.classList.add('fa-sun');
+        const icons = [document.getElementById('darkModeIcon'), document.getElementById('darkModeIconMobile')];
+        icons.forEach(icon => {
+            if (icon) {
+                icon.classList.remove('fa-moon');
+                icon.classList.add('fa-sun');
             }
-            if (iconMobile) {
-                iconMobile.classList.remove('fa-moon');
-                iconMobile.classList.add('fa-sun');
-            }
-            localStorage.setItem('cliente_dark_mode', 'true');
-        }
+        });
     }
-}
-
-// Ejecutar al cargar la página
-cargarModoOscuroCliente();
-
-    // ==================== MANEJAR ROTACIÓN DE PANTALLA ====================
-function manejarRotacion() {
-    setTimeout(() => {
-        if (typeof map !== 'undefined' && map && typeof map.invalidateSize === 'function') {
-            map.invalidateSize();
-            console.log("🔄 Mapa redimensionado después de rotación");
-            
-            // Centrar en la ubicación actual si hay marcador
-            if (typeof userMarker !== 'undefined' && userMarker && autoFollow) {
-                const latLng = userMarker.getLatLng();
-                map.setView([latLng.lat, latLng.lng], map.getZoom());
-            } else if (typeof deliveryMarker !== 'undefined' && deliveryMarker && autoFollowDelivery) {
-                const latLng = deliveryMarker.getLatLng();
-                map.setView([latLng.lat, latLng.lng], followZoomLevel || 16);
-            }
-        }
-    }, 100);
-}
-
-// Detectar rotación del dispositivo
-window.addEventListener('orientationchange', function() {
-    console.log("🔄 Dispositivo rotado (orientationchange)");
-    manejarRotacion();
-});
-
-// También detectar cambio de tamaño (útil para algunos navegadores)
-window.addEventListener('resize', function() {
-    console.log("📱 Pantalla redimensionada (resize)");
-    manejarRotacion();
-});
+    
+    // Exportar funciones necesarias
+    window.toggleMobileSidebar = toggleMobileSidebar;
+    window.solicitarEnvioMobile = solicitarEnvioMobile;
+    window.seleccionarTipoMobile = seleccionarTipoMobile;
+    window.toggleDarkMode = toggleDarkMode;
 </script>
 </body>
 </html>
