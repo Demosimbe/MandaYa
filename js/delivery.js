@@ -1165,7 +1165,27 @@ function obtenerUbicacionPrecisa() {
 // ==================== AUTO-FOLLOW Y CONTROL DE MAPA ====================
 function toggleAutoFollow() {
     autoFollow = !autoFollow;
-    mostrarToast(autoFollow ? "🚗 Seguimiento automático activado" : "📍 Control manual del mapa");
+    const btn = document.getElementById('btnAutoFollow');
+    
+    if (autoFollow) {
+        // Activado - botón naranja
+        btn.style.background = '#FF6200';
+        btn.style.color = 'white';
+        mostrarToast("🚗 Seguimiento automático ACTIVADO - El mapa seguirá tu moto", false);
+        
+        // Centrar inmediatamente en la posición actual
+        if (userMarker) {
+            const latLng = userMarker.getLatLng();
+            map.setView([latLng.lat, latLng.lng], map.getZoom());
+        } else if (ultimaUbicacionEnviada) {
+            map.setView([ultimaUbicacionEnviada.lat, ultimaUbicacionEnviada.lng], map.getZoom());
+        }
+    } else {
+        // Desactivado - botón gris
+        btn.style.background = '#6B7280';
+        btn.style.color = 'white';
+        mostrarToast("📍 Seguimiento DESACTIVADO - Puedes mover el mapa libremente", false);
+    }
 }
 
 function toggleZoomDinamico() {
