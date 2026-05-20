@@ -556,6 +556,8 @@ async function dibujarRutaRecogida(pedido) {
         routeWhileDragging: false,
         showAlternatives: false,
         fitSelectedRoutes: true,
+        language: 'es',
+
         lineOptions: {
             styles: [{ color: '#10B981', weight: 6, opacity: 0.9 }]
         },
@@ -722,6 +724,8 @@ async function dibujarRutaEntrega(pedido) {
             routeWhileDragging: false,
             showAlternatives: false,
             fitSelectedRoutes: true,
+            language: 'es',
+            
             lineOptions: {
                 styles: [{ color: '#FF6200', weight: 6, opacity: 0.9 }]
             },
